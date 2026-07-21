@@ -7,6 +7,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from flask import Flask, Response, render_template
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.config import resolve_config
 from app.errors import register_error_handlers
@@ -15,9 +16,20 @@ from app.security import register_security
 from app.utils.files import ensure_directory
 
 
-def create_app(config_name: str | None = None) -> Flask:
+def create_app(
+    config_name: str | None = None, overrides: dict | None = None
+) -> Flask:
+    """Build the application.
+
+    ``overrides`` is applied before the extensions are initialised. That
+    matters: Flask-SQLAlchemy builds its engine inside ``init_app``, so a
+    database URI assigned to ``app.config`` afterwards is silently ignored and
+    the app keeps talking to the original database.
+    """
     app = Flask(__name__, instance_relative_config=True)
     app.config.from_object(resolve_config(config_name)())
+    if overrides:
+        app.config.update(overrides)
 
     _prepare_filesystem(app)
     _configure_logging(app)
@@ -36,9 +48,11 @@ def create_app(config_name: str | None = None) -> Flask:
     _register_cli(app)
     _register_generated_assets(app)
 
-    with app.app_context():
-        _bootstrap_database(app)
-
+    # Deliberately no database bootstrap here. create_app() runs for every
+    # `flask` CLI invocation, including `flask db upgrade` - creating tables
+    # at this point would win the race against Alembic and leave the schema
+    # in place but unstamped. Serving entry points call bootstrap_database()
+    # explicitly; see run.py.
     return app
 
 
@@ -50,6 +64,7 @@ def _prepare_filesystem(app: Flask) -> None:
     ensure_directory(Path(app.config["INSTANCE_DIR"]))
     ensure_directory(Path(app.config["BACKUP_DIR"]))
     ensure_directory(Path(app.config["EXPORT_DIR"]))
+    ensure_directory(Path(app.config["UPLOAD_DIR"]))
 
 
 def _configure_logging(app: Flask) -> None:
@@ -79,6 +94,7 @@ def _register_blueprints(app: Flask) -> None:
     from app.blueprints.editor import editor_bp
     from app.blueprints.exports import exports_bp
     from app.blueprints.history import history_bp
+    from app.blueprints.media import media_bp
     from app.blueprints.settings import settings_bp
     from app.blueprints.trash import trash_bp
 
@@ -89,6 +105,7 @@ def _register_blueprints(app: Flask) -> None:
     app.register_blueprint(trash_bp)
     app.register_blueprint(exports_bp)
     app.register_blueprint(settings_bp)
+    app.register_blueprint(media_bp)
     app.register_blueprint(api_bp)
 
 
@@ -105,15 +122,17 @@ def _register_template_helpers(app: Flask) -> None:
     def inject_globals():
         from app.repositories.document_repository import DocumentRepository
 
+        # A database problem must still leave the error page renderable, so
+        # both lookups fall back rather than propagate.
         try:
             settings = SettingsService.all()
-        except Exception:  # pragma: no cover - error pages must still render
+        except SQLAlchemyError:  # pragma: no cover
             settings = SettingsService.defaults()
 
         try:
             # One aggregate query feeds every badge in the sidebar.
             nav_counts = DocumentRepository.stats()
-        except Exception:  # pragma: no cover
+        except SQLAlchemyError:  # pragma: no cover
             nav_counts = empty_counts
 
         return {
@@ -167,11 +186,12 @@ def _register_cli(app: Flask) -> None:
     register_commands(app)
 
 
-def _bootstrap_database(app: Flask) -> None:
+def bootstrap_database(app: Flask) -> None:
     """Create tables on first run and make sure the search index exists.
 
+    Called by serving entry points only, never during ``create_app``.
     Migrations remain the canonical schema path (``flask db upgrade``); this
-    only removes the "empty database" papercut on a fresh clone.
+    exists so a fresh clone runs without a setup step.
     """
     from sqlalchemy import inspect
 
@@ -187,5 +207,5 @@ def _bootstrap_database(app: Flask) -> None:
         # created here regardless of how the schema itself was built.
         if inspector.has_table("documents"):
             search_index.ensure()
-    except Exception:  # pragma: no cover - never block startup on this
+    except SQLAlchemyError:  # pragma: no cover - never block startup on this
         app.logger.exception("Não foi possível preparar o banco de dados.")

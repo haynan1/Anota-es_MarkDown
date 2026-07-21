@@ -1,0 +1,56 @@
+{% from 'components/macros.html' import icon %}
+
+{#
+  Reading-comfort panel.
+
+  The four sizes are discrete buttons rather than a slider: a slider invites
+  values the stylesheet was never checked against, and these four were.
+#}
+<dialog class="modal" id="a11y-dialog" aria-labelledby="a11y-title">
+  <div class="modal-head">
+    <h2 class="modal-title" id="a11y-title">Conforto de leitura</h2>
+    <p class="field-hint a11y-subtitle">
+      Ajusta apenas a tipografia, mantendo menus, cartões e espaçamentos estáveis.
+    </p>
+  </div>
+
+  <div class="modal-body stack stack-4">
+    <div class="field">
+      <span class="field-label" id="a11y-size-label">Tamanho do texto</span>
+      <div class="a11y-sizes" role="group" aria-labelledby="a11y-size-label">
+        {% for scale, name in [
+             ('0.95', 'Compacta'), ('1', 'Padrão'),
+             ('1.12', 'Confortável'), ('1.25', 'Grande')
+           ] %}
+          <button type="button" class="a11y-size" data-a11y-scale="{{ scale }}"
+                  aria-pressed="false">
+            <strong class="a11y-size-sample a11y-sample-{{ loop.index }}">Aa</strong>
+            <span class="a11y-size-name">{{ name }}</span>
+          </button>
+        {% endfor %}
+      </div>
+
+      {# The change is announced, not only shown. #}
+      <p class="a11y-status" data-a11y-status aria-live="polite">Padrão · 100%</p>
+    </div>
+
+    <label class="checkbox">
+      <input type="checkbox" data-a11y-bold>
+      <span>
+        Realce em negrito
+        <span class="field-hint a11y-inline-hint">Aumenta o peso das fontes em toda a interface.</span>
+      </span>
+    </label>
+
+    <div class="a11y-preview" aria-hidden="true">
+      <p class="a11y-preview-title">Prévia</p>
+      <p>Escrever bem é decidir o que não entra.</p>
+      <p class="small muted">Um texto secundário, do tamanho usado em legendas e apoios.</p>
+    </div>
+  </div>
+
+  <div class="modal-foot">
+    <button type="button" class="btn" data-a11y-reset>Restaurar padrão</button>
+    <button type="button" class="btn btn-primary" data-action="close-dialog">Concluído</button>
+  </div>
+</dialog>

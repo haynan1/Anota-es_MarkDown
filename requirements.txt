@@ -1,32 +1,42 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Versões auditadas com pip-audit em 2026-07-20: zero vulnerabilidades
+# conhecidas. Os mínimos marcados com "CVE" não devem ser rebaixados — há
+# testes em tests/test_security_regressions.py que falham se isso acontecer.
+#
+# Reauditar com:  pip install pip-audit && python -m pip_audit
+# ─────────────────────────────────────────────────────────────────────────────
+
 # ── Core ────────────────────────────────────────────────────────────────────
-Flask==3.1.0
+Flask==3.1.3                  # CVE: <3.1.3 não define Vary: Cookie (cache)
 Flask-SQLAlchemy==3.1.1
 Flask-Migrate==4.0.7
 Flask-WTF==1.2.2
 WTForms==3.2.1
 SQLAlchemy==2.0.36
 alembic==1.14.0
-python-dotenv==1.0.1
+python-dotenv==1.2.2          # CVE: <1.2.2 segue symlink em set_key()
 
-# ── Markdown pipeline ───────────────────────────────────────────────────────
-Markdown==3.7
-pymdown-extensions==10.12
-Pygments==2.18.0
-bleach==6.2.0
+# ── Pipeline de Markdown ────────────────────────────────────────────────────
+# Processa conteúdo não confiável. Estes três são o caminho de defesa contra
+# XSS e DoS — mantenha sempre atualizados.
+Markdown==3.10.2              # CVE: <3.8.1 crasha com HTML malformado (DoS)
+pymdown-extensions==11.0.1    # CVE: <10.21.3 path traversal em snippets
+Pygments==2.20.0              # CVE: <2.20.0 ReDoS no lexer AdlLexer
+bleach==6.4.0                 # CVE: <6.4.0 bypass de esquema em href
 python-slugify==8.0.4
 
-# Windows has no system IANA timezone database; zoneinfo needs this.
+# Windows não traz o banco de fusos IANA; zoneinfo depende deste pacote.
 tzdata==2024.2
 
-# ── PDF (primary engine) ────────────────────────────────────────────────────
-# WeasyPrint needs native GTK/Pango/Cairo libraries.
-# On Windows those are NOT bundled - see README "Dependencias do WeasyPrint".
-# If unavailable, the app transparently falls back to the xhtml2pdf engine.
-weasyprint==63.1
+# ── PDF (motor principal) ───────────────────────────────────────────────────
+# WeasyPrint precisa das bibliotecas nativas GTK/Pango/Cairo, que NÃO vêm no
+# pip install do Windows — ver README, "Dependências do WeasyPrint".
+# Sem elas a aplicação cai automaticamente para o xhtml2pdf.
+weasyprint==69.0              # CVE: <68.0 bypass de SSRF via redirect
 
-# ── PDF (fallback engine, pure Python - no native dependencies) ─────────────
-xhtml2pdf==0.2.16
+# ── PDF (motor alternativo, Python puro, sem dependências nativas) ──────────
+xhtml2pdf==0.2.17
 
-# ── Tests ───────────────────────────────────────────────────────────────────
-pytest==8.3.4
-pytest-cov==6.0.0
+# ── Testes ──────────────────────────────────────────────────────────────────
+pytest==9.1.1                 # CVE: <9.0.3 permissões de /tmp no UNIX
+pytest-cov==7.1.0

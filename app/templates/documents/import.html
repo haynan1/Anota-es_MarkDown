@@ -17,14 +17,20 @@
 <form method="post" enctype="multipart/form-data" class="card card-pad stack stack-4" id="import-form">
   {{ form.hidden_tag() }}
 
-  <div class="dropzone" data-dropzone tabindex="0" role="button"
-       aria-label="Selecionar arquivo Markdown ou arrastar até aqui">
+  {#
+    A <label> wrapping the input: clicking anywhere opens the picker natively,
+    the input gets its accessible name, and there is a single tab stop. The
+    input stays focusable (visually-hidden, not display:none) and the dropzone
+    shows the focus ring through :focus-within.
+  #}
+  <label class="dropzone" for="import-file" data-dropzone>
     <span class="empty-icon">{{ icon('upload', 'icon icon-xl') }}</span>
-    <p class="empty-title">Arraste o arquivo até aqui</p>
-    <p class="empty-text">ou clique para escolher no computador</p>
-    <p class="dropzone-filename" data-dropzone-name hidden></p>
+    <span class="empty-title">Arraste o arquivo até aqui</span>
+    <span class="empty-text">ou clique para escolher no computador</span>
+    <span class="dropzone-filename" data-dropzone-name hidden></span>
+    <span class="visually-hidden">Arquivo Markdown para importar</span>
     {{ form.file(class='visually-hidden', id='import-file', accept='.md,.markdown,.mdown,.txt') }}
-  </div>
+  </label>
 
   {% for error in form.file.errors %}
     <p class="field-error">{{ icon('alert', 'icon icon-sm') }}{{ error }}</p>

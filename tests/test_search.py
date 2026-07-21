@@ -11,11 +11,18 @@ from app.repositories.document_repository import (
 )
 from app.repositories.taxonomy_repository import CategoryRepository, TagRepository
 from app.services.document_service import DocumentService
+from app.services.listing_service import list_documents
 from app.services.search_service import search_index
 
 
 def _search(term, **kwargs):
-    return DocumentRepository.paginate(DocumentQuery(search=term, per_page=50, **kwargs))
+    """Search through the real entry point.
+
+    ``DocumentRepository.paginate`` alone never consults the full-text index -
+    resolving it is the listing service's job, so calling the repository
+    directly would silently exercise only the LIKE fallback.
+    """
+    return list_documents(DocumentQuery(search=term, per_page=50, **kwargs)).pagination
 
 
 class TestSearch:

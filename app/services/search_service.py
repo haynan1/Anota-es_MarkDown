@@ -12,13 +12,17 @@ terms, and everything else goes through bound parameters.
 
 from __future__ import annotations
 
+import logging
 import re
 
 from markupsafe import Markup, escape
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.extensions import db
 from app.utils.text import strip_markdown
+
+logger = logging.getLogger(__name__)
 
 FTS_TABLE = "documents_fts"
 
@@ -40,77 +44,156 @@ CREATE VIRTUAL TABLE IF NOT EXISTS {FTS_TABLE} USING fts5(
 
 
 class SearchIndex:
-    """Lifecycle and queries for the FTS5 index."""
+    """Lifecycle and queries for the FTS5 index.
+
+    The index is an optimisation, never a source of truth. Two rules follow
+    from that and are load-bearing:
+
+    * **A failure here must never cost the user their text.** Index writes run
+      inside a SAVEPOINT, so a broken index rolls back only its own statements
+      and leaves the surrounding document transaction intact. Calling
+      ``session.rollback()`` here would discard the very save that triggered
+      the indexing.
+    * **Availability is tracked per database**, not globally. The same process
+      can serve more than one application instance (tests do exactly that),
+      and one database having no FTS table says nothing about another.
+    """
 
     def __init__(self) -> None:
-        self.available = False
+        self._available_by_engine: dict[str, bool] = {}
 
     # ── Lifecycle ───────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _engine_key() -> str:
+        try:
+            return str(db.engine.url)
+        except RuntimeError:  # pragma: no cover - outside an application context
+            return ""
+
+    @property
+    def available(self) -> bool:
+        return self._available_by_engine.get(self._engine_key(), False)
+
+    def _set_available(self, value: bool) -> bool:
+        self._available_by_engine[self._engine_key()] = value
+        return value
 
     def ensure(self) -> bool:
         """Create the virtual table if the backend supports it."""
         if db.engine.dialect.name != "sqlite":
-            self.available = False
-            return False
+            return self._set_available(False)
         try:
             db.session.execute(text(_CREATE_SQL))
             db.session.commit()
-            self.available = True
-        except Exception:  # pragma: no cover - depends on the SQLite build
+            return self._set_available(True)
+        except SQLAlchemyError:  # pragma: no cover - depends on the SQLite build
             db.session.rollback()
-            self.available = False
-        return self.available
+            logger.warning("Índice FTS5 indisponível; a busca usará LIKE.")
+            return self._set_available(False)
 
     def index_document(self, document) -> None:
         """Insert or refresh one document in the index."""
         if not self.available:
             return
         try:
-            db.session.execute(
-                text(f"DELETE FROM {FTS_TABLE} WHERE document_id = :doc_id"),
-                {"doc_id": document.id},
-            )
-            if not document.is_deleted:
+            # SAVEPOINT: a failure discards only these two statements.
+            with db.session.begin_nested():
                 db.session.execute(
-                    text(
-                        f"INSERT INTO {FTS_TABLE} (title, body, document_id) "
-                        "VALUES (:title, :body, :doc_id)"
-                    ),
-                    {
-                        "title": document.title or "",
-                        "body": strip_markdown(document.content_markdown or ""),
-                        "doc_id": document.id,
-                    },
+                    text(f"DELETE FROM {FTS_TABLE} WHERE document_id = :doc_id"),
+                    {"doc_id": document.id},
                 )
-        except Exception:  # pragma: no cover - index must never break a save
-            db.session.rollback()
-            self.available = False
+                if not document.is_deleted:
+                    db.session.execute(
+                        text(
+                            f"INSERT INTO {FTS_TABLE} (title, body, document_id) "
+                            "VALUES (:title, :body, :doc_id)"
+                        ),
+                        {
+                            "title": document.title or "",
+                            "body": strip_markdown(document.content_markdown or ""),
+                            "doc_id": document.id,
+                        },
+                    )
+        except SQLAlchemyError:
+            logger.warning(
+                "Falha ao indexar o documento %s; o salvamento continua válido.",
+                getattr(document, "id", "?"),
+                exc_info=True,
+            )
+            self._set_available(False)
 
     def remove_document(self, document_id: int) -> None:
         if not self.available:
             return
         try:
-            db.session.execute(
-                text(f"DELETE FROM {FTS_TABLE} WHERE document_id = :doc_id"),
-                {"doc_id": document_id},
-            )
-        except Exception:  # pragma: no cover
-            db.session.rollback()
+            with db.session.begin_nested():
+                db.session.execute(
+                    text(f"DELETE FROM {FTS_TABLE} WHERE document_id = :doc_id"),
+                    {"doc_id": document_id},
+                )
+        except SQLAlchemyError:  # pragma: no cover
+            logger.warning("Falha ao remover o documento %s do índice.", document_id)
+            self._set_available(False)
 
-    def rebuild(self) -> int:
-        """Reindex every non-deleted document. Returns the number indexed."""
+    def rebuild(self, batch_size: int = 200) -> int:
+        """Reindex every non-deleted document. Returns the number indexed.
+
+        Streams the corpus in batches, selecting only the three columns the
+        index needs. Loading whole ORM objects would pull ``rendered_html``
+        as well and hold the entire library in memory.
+
+        No per-document SAVEPOINT here: the whole rebuild is one operation, so
+        a failure should abandon all of it rather than leave a half-built
+        index that queries would trust.
+        """
+        # Deferred: app.models imports app.extensions, which this module also
+        # imports at load time. A module-level import here would create a cycle.
         from app.models import Document
 
+        self._available_by_engine.pop(self._engine_key(), None)
         if not self.ensure():
             return 0
-        db.session.execute(text(f"DELETE FROM {FTS_TABLE}"))
-        documents = db.session.scalars(
-            db.select(Document).filter_by(is_deleted=False)
-        ).all()
-        for document in documents:
-            self.index_document(document)
-        db.session.commit()
-        return len(documents)
+
+        try:
+            db.session.execute(text(f"DELETE FROM {FTS_TABLE}"))
+
+            insert = text(
+                f"INSERT INTO {FTS_TABLE} (title, body, document_id) "
+                "VALUES (:title, :body, :doc_id)"
+            )
+            rows = db.session.execute(
+                db.select(Document.id, Document.title, Document.content_markdown)
+                .where(Document.is_deleted.is_(False))
+                .execution_options(yield_per=batch_size)
+            )
+
+            total = 0
+            batch: list[dict[str, object]] = []
+            for document_id, title, content in rows:
+                batch.append(
+                    {
+                        "title": title or "",
+                        "body": strip_markdown(content or ""),
+                        "doc_id": document_id,
+                    }
+                )
+                if len(batch) >= batch_size:
+                    db.session.execute(insert, batch)
+                    total += len(batch)
+                    batch = []
+
+            if batch:
+                db.session.execute(insert, batch)
+                total += len(batch)
+
+            db.session.commit()
+            return total
+        except SQLAlchemyError:
+            db.session.rollback()
+            logger.exception("Falha ao reconstruir o índice de busca.")
+            self._set_available(False)
+            return 0
 
     # ── Querying ────────────────────────────────────────────────────────────
 
@@ -145,8 +228,9 @@ class SearchIndex:
                 ),
                 {"match": match, "limit": limit},
             ).all()
-        except Exception:  # pragma: no cover - malformed expressions
+        except SQLAlchemyError:  # pragma: no cover - malformed FTS expression
             db.session.rollback()
+            logger.warning("Consulta FTS rejeitada; usando busca por LIKE.")
             return None
         return [row[0] for row in rows]
 
@@ -171,7 +255,7 @@ class SearchIndex:
                 ),
                 params,
             ).all()
-        except Exception:  # pragma: no cover
+        except SQLAlchemyError:  # pragma: no cover
             db.session.rollback()
             return {}
         return {row[0]: highlight_sentinels(row[1]) for row in rows}

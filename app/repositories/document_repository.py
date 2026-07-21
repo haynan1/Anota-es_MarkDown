@@ -8,7 +8,6 @@ from sqlalchemy.orm import defer, joinedload, selectinload
 
 from app.extensions import db
 from app.models import Category, Document, Tag
-from app.services.search_service import search_index
 from app.utils.dates import utcnow
 
 SCOPE_ACTIVE = "active"
@@ -28,7 +27,13 @@ SORT_OPTIONS = {
 
 @dataclass(slots=True)
 class DocumentQuery:
-    """Everything the listing screen can ask for."""
+    """Everything the listing screen can ask for.
+
+    ``matched_ids`` is filled in by the search service before the query
+    reaches this layer: ``None`` means "no full-text result to honour, fall
+    back to LIKE". Resolving it here would make the repository depend on a
+    service, inverting the dependency direction of the whole codebase.
+    """
 
     search: str = ""
     category_id: int | None = None
@@ -67,13 +72,6 @@ class DocumentRepository:
         return db.session.scalars(stmt).unique().one_or_none()
 
     @staticmethod
-    def get_by_id(document_id: int, include_deleted: bool = False) -> Document | None:
-        stmt = select(Document).where(Document.id == document_id)
-        if not include_deleted:
-            stmt = stmt.where(Document.is_deleted.is_(False))
-        return db.session.scalars(stmt).unique().one_or_none()
-
-    @staticmethod
     def slug_exists(slug: str, exclude_id: int | None = None) -> bool:
         stmt = select(Document.id).where(Document.slug == slug)
         if exclude_id is not None:
@@ -86,15 +84,16 @@ class DocumentRepository:
     def _base_statement():
         # Listings never need the full body or the rendered HTML; deferring
         # them keeps a 100-document page from pulling megabytes of text.
-        return (
-            select(Document)
-            .options(
-                defer(Document.content_markdown),
-                defer(Document.rendered_html),
-                joinedload(Document.category),
-                selectinload(Document.tags),
-            )
-            .distinct()
+        #
+        # Deliberately no .distinct(): tag filters are EXISTS subqueries and
+        # the category is many-to-one, so no row is ever duplicated. Adding
+        # DISTINCT would force the paginator's COUNT to wrap a subquery over
+        # every column - reading each document's full body just to count it.
+        return select(Document).options(
+            defer(Document.content_markdown),
+            defer(Document.rendered_html),
+            joinedload(Document.category),
+            selectinload(Document.tags),
         )
 
     @classmethod
@@ -144,13 +143,12 @@ class DocumentRepository:
             stmt = stmt.where(Document.tags.any(Tag.slug == slug))
 
         if query.is_searching:
-            term = query.search.strip()
-            matched = search_index.search_ids(term)
-            if matched is not None:
-                query.matched_ids = matched
-                stmt = stmt.where(Document.id.in_(matched or [-1]))
+            if query.matched_ids is not None:
+                # -1 is a sentinel: an empty result set must match nothing,
+                # not degrade into "no filter at all".
+                stmt = stmt.where(Document.id.in_(query.matched_ids or [-1]))
             else:
-                pattern = f"%{term.lower()}%"
+                pattern = f"%{query.search.strip().lower()}%"
                 stmt = stmt.where(
                     func.lower(Document.title).like(pattern)
                     | func.lower(Document.content_markdown).like(pattern)
@@ -227,10 +225,14 @@ class DocumentRepository:
             )
         ).one()
 
+        # Scoped to the same set as the "active" figure it sits under -
+        # otherwise the card reads "4 documentos ativos / +5 nesta semana".
         week_ago = utcnow() - timedelta(days=7)
         created_this_week = db.session.scalar(
             select(func.count(Document.id)).where(
-                Document.is_deleted.is_(False), Document.created_at >= week_ago
+                Document.is_deleted.is_(False),
+                Document.is_archived.is_(False),
+                Document.created_at >= week_ago,
             )
         )
 

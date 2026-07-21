@@ -7,10 +7,21 @@ from app.models import Category, Document, Tag, document_tags
 from app.utils.files import safe_slug
 
 
+# Taxonomies are curated by hand, so these ceilings are far above any real
+# usage. They exist so a runaway import can never turn a page render into an
+# unbounded query.
+MAX_CATEGORIES = 500
+MAX_TAGS = 2000
+
+
 class CategoryRepository:
     @staticmethod
-    def all() -> list[Category]:
-        return list(db.session.scalars(select(Category).order_by(Category.name)).all())
+    def all(limit: int = MAX_CATEGORIES) -> list[Category]:
+        return list(
+            db.session.scalars(
+                select(Category).order_by(Category.name).limit(limit)
+            ).all()
+        )
 
     @staticmethod
     def get(category_id: int) -> Category | None:
@@ -41,8 +52,10 @@ class CategoryRepository:
 
 class TagRepository:
     @staticmethod
-    def all() -> list[Tag]:
-        return list(db.session.scalars(select(Tag).order_by(Tag.name)).all())
+    def all(limit: int = MAX_TAGS) -> list[Tag]:
+        return list(
+            db.session.scalars(select(Tag).order_by(Tag.name).limit(limit)).all()
+        )
 
     @staticmethod
     def get_by_slug(slug: str) -> Tag | None:
@@ -94,10 +107,10 @@ class TagRepository:
         return [(row[0], row[1]) for row in rows]
 
     @staticmethod
-    def delete_orphans() -> int:
+    def delete_orphans(limit: int = MAX_TAGS) -> int:
         """Remove tags that no longer belong to any document."""
         orphans = db.session.scalars(
-            select(Tag).where(~Tag.documents.any())
+            select(Tag).where(~Tag.documents.any()).limit(limit)
         ).all()
         for tag in orphans:
             db.session.delete(tag)

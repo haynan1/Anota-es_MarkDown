@@ -21,13 +21,18 @@ def app(tmp_path):
     backups = tmp_path / "backups"
     exports = tmp_path / "exports"
 
-    application = create_app("testing")
-    application.config.update(
-        SQLALCHEMY_DATABASE_URI=f"sqlite:///{database.as_posix()}",
-        BACKUP_DIR=backups,
-        EXPORT_DIR=exports,
-        WTF_CSRF_ENABLED=False,
-        TESTING=True,
+    # Passed as overrides, not assigned afterwards: the engine is built during
+    # init_app, so a later assignment would leave the app on an in-memory
+    # database while the config claimed otherwise.
+    application = create_app(
+        "testing",
+        {
+            "SQLALCHEMY_DATABASE_URI": f"sqlite:///{database.as_posix()}",
+            "BACKUP_DIR": backups,
+            "EXPORT_DIR": exports,
+            "WTF_CSRF_ENABLED": False,
+            "TESTING": True,
+        },
     )
     backups.mkdir(parents=True, exist_ok=True)
     exports.mkdir(parents=True, exist_ok=True)
@@ -69,13 +74,15 @@ def document(make_document):
 def csrf_app(tmp_path):
     """A second app with CSRF protection left on, for the CSRF tests."""
     database = tmp_path / "csrf.db"
-    application = create_app("testing")
-    application.config.update(
-        SQLALCHEMY_DATABASE_URI=f"sqlite:///{database.as_posix()}",
-        BACKUP_DIR=tmp_path / "backups",
-        EXPORT_DIR=tmp_path / "exports",
-        WTF_CSRF_ENABLED=True,
-        TESTING=True,
+    application = create_app(
+        "testing",
+        {
+            "SQLALCHEMY_DATABASE_URI": f"sqlite:///{database.as_posix()}",
+            "BACKUP_DIR": tmp_path / "backups",
+            "EXPORT_DIR": tmp_path / "exports",
+            "WTF_CSRF_ENABLED": True,
+            "TESTING": True,
+        },
     )
     with application.app_context():
         _db.create_all()

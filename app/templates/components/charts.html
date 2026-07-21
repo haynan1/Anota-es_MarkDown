@@ -1,0 +1,172 @@
+{#
+  Chart macros.
+
+  Rendered on the server as inline SVG: the Content-Security-Policy forbids
+  inline styles and scripts, so colour arrives through CSS classes bound to
+  custom properties (theme-aware) while geometry arrives as SVG attributes,
+  which the policy does not restrict. The charts therefore render with
+  JavaScript disabled and fetch nothing.
+
+  Every chart ships a table view (<details>) so no value is reachable only by
+  hovering, and each mark carries a <title> for the native tooltip.
+#}
+
+{% macro line_chart(chart, caption) -%}
+{% if chart.is_empty %}
+  <p class="viz-empty">Ainda não há atividade suficiente para desenhar este gráfico.</p>
+{% else %}
+<figure class="viz">
+  <figcaption class="visually-hidden">{{ caption }}</figcaption>
+
+  {# Legend: always present for two or more series, so identity never rests on
+     colour matching alone. It also carries each series' latest value — the
+     direct label. That number used to float inside the plot as SVG text,
+     where it scaled with the container and fell to about 5px on a phone. #}
+  <ul class="viz-legend">
+    {% for series in chart.series %}
+      <li class="viz-legend-item">
+        <span class="viz-key viz-series-{{ series.slot }}" aria-hidden="true"></span>
+        <span>{{ series.name }}</span>
+        <b class="viz-legend-value tabular">{{ series.last_value }}</b>
+      </li>
+    {% endfor %}
+  </ul>
+
+  {# No text inside the SVG. Axis labels are HTML in the grid around it, so
+     they keep a fixed, readable size and follow the accessibility font
+     scale, whatever width the card happens to be. #}
+  <div class="viz-plot">
+    <div class="viz-yaxis" aria-hidden="true">
+      {# Ticks run top to bottom; the data comes bottom-up. #}
+      {% for _, label in chart.y_ticks | reverse %}
+        <span class="viz-tick">{{ label }}</span>
+      {% endfor %}
+    </div>
+
+    <div class="viz-canvas">
+      <svg class="viz-svg" viewBox="0 0 {{ chart.width }} {{ chart.height }}"
+           preserveAspectRatio="none" role="img" aria-label="{{ caption }}">
+        {# Gridlines: solid hairlines, one step off the surface, recessive.
+           non-scaling-stroke keeps every stroke at its true weight while the
+           viewBox is stretched horizontally. #}
+        {% for y, _ in chart.y_ticks %}
+          <line class="viz-grid" vector-effect="non-scaling-stroke"
+                x1="0" y1="{{ '%.1f'|format(y) }}"
+                x2="{{ chart.width }}" y2="{{ '%.1f'|format(y) }}"></line>
+        {% endfor %}
+
+        {% for series in chart.series %}
+          <path class="viz-area viz-fill-{{ series.slot }}" d="{{ series.area_path }}"></path>
+        {% endfor %}
+
+        {% for series in chart.series %}
+          <polyline class="viz-line viz-stroke-{{ series.slot }}"
+                    vector-effect="non-scaling-stroke"
+                    points="{{ series.polyline }}"></polyline>
+        {% endfor %}
+
+        {# Hover targets sized well past the 2px mark. #}
+        {% for series in chart.series %}
+          {% for point in series.points %}
+            <circle class="viz-hit" cx="{{ '%.1f'|format(point.x) }}"
+                    cy="{{ '%.1f'|format(point.y) }}" r="12">
+              <title>{{ series.name }} — {{ point.label }}: {{ point.value }}</title>
+            </circle>
+          {% endfor %}
+        {% endfor %}
+      </svg>
+    </div>
+
+    {# One cell per bucket, so a label sits over the band it describes by
+       construction. Blank cells hold the spacing on a crowded axis. #}
+    <div class="viz-xaxis viz-cols-{{ chart.columns }}" aria-hidden="true">
+      {% for label in chart.x_labels %}
+        <span class="viz-tick">{{ label }}</span>
+      {% endfor %}
+    </div>
+  </div>
+
+  {# Headers come from the plotted series themselves, so a column can never
+     appear in the table that has no data behind it. #}
+  {{ table_view(
+       ['Período'] + (chart.series | map(attribute='name') | list),
+       chart.series[0].points | map(attribute='label') | list,
+       chart.series
+     ) }}
+</figure>
+{% endif %}
+{%- endmacro %}
+
+
+{% macro table_view(headers, labels, series) -%}
+<details class="viz-table">
+  <summary>Ver os dados em tabela</summary>
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>{% for header in headers %}<th scope="col">{{ header }}</th>{% endfor %}</tr>
+      </thead>
+      <tbody>
+        {% for label in labels %}
+          {# The inner loop shadows `loop`, so the row index is captured here. #}
+          {% set row = loop.index0 %}
+          <tr>
+            <th scope="row">{{ label }}</th>
+            {% for s in series %}
+              <td class="tabular">{{ s.points[row].value }}</td>
+            {% endfor %}
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</details>
+{%- endmacro %}
+
+
+{% macro bar_chart(chart, caption, unit='') -%}
+{% if chart.is_empty %}
+  <p class="viz-empty">Nada para mostrar aqui ainda.</p>
+{% else %}
+<figure class="viz">
+  <figcaption class="visually-hidden">{{ caption }}</figcaption>
+
+  {# Laid out in HTML, not SVG. An SVG at width:100% scales its own text with
+     the container, so a 12px label rendered at ~9px in a narrow card and
+     ignored the accessibility font scale. Here the label is real text.
+     One series, so no legend box: the card title already says what is plotted. #}
+  <ul class="viz-bars" role="list">
+    {% for bar in chart.bars %}
+      <li class="viz-bar-row">
+        <span class="viz-barlabel" title="{{ bar.label }}">{{ bar.label }}</span>
+        <span class="viz-track">
+          <span class="viz-bar viz-w-{{ bar.percent }}"
+                title="{{ bar.label }}: {{ bar.display }}{{ ' ' ~ unit if unit }}"></span>
+        </span>
+        {# Value outside the bar — never clipped inside a short one. #}
+        <span class="viz-barvalue tabular">{{ bar.display }}</span>
+      </li>
+    {% endfor %}
+  </ul>
+
+  <details class="viz-table">
+    <summary>Ver os dados em tabela</summary>
+    <div class="table-wrap">
+      <table class="table">
+        <thead>
+          <tr><th scope="col">{{ caption }}</th><th scope="col">Total</th></tr>
+        </thead>
+        <tbody>
+          {% for bar in chart.bars %}
+            <tr>
+              <th scope="row">{{ bar.label }}</th>
+              <td class="tabular">{{ bar.display }}{{ ' ' ~ unit if unit }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+</figure>
+{% endif %}
+{%- endmacro %}

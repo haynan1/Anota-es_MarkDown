@@ -23,6 +23,7 @@ from datetime import datetime
 from pathlib import Path
 
 from flask import current_app
+from sqlalchemy.orm import joinedload, selectinload
 
 from app.extensions import db
 from app.models import Category, Document, DocumentVersion, Setting, Tag
@@ -114,6 +115,7 @@ def _serialize_document(document: Document) -> dict:
         "category": document.category.name if document.category else None,
         "tags": [tag.name for tag in document.tags],
         "is_favorite": document.is_favorite,
+        "is_locked": document.is_locked,
         "is_archived": document.is_archived,
         "is_deleted": document.is_deleted,
         "deleted_at": _iso(document.deleted_at),
@@ -140,7 +142,19 @@ def _serialize_document(document: Document) -> dict:
 def build_export_payload() -> dict:
     from app.services.settings_service import SettingsService
 
-    documents = db.session.scalars(db.select(Document)).unique().all()
+    # selectinload is load-bearing: DocumentVersion is lazy by default, so
+    # serialising each document's history would issue one query per document.
+    documents = (
+        db.session.scalars(
+            db.select(Document).options(
+                selectinload(Document.versions),
+                selectinload(Document.tags),
+                joinedload(Document.category),
+            )
+        )
+        .unique()
+        .all()
+    )
     return {
         "categories": [
             {"name": category.name, "slug": category.slug, "color": category.color}
@@ -370,6 +384,9 @@ def _restore_document(entry: dict) -> Document:
         word_count=count_words(body),
         character_count=count_characters(body),
         is_favorite=bool(entry.get("is_favorite")),
+        # Absent in archives written before the lock existed - those documents
+        # were unprotected, so False is the correct reading.
+        is_locked=bool(entry.get("is_locked")),
         is_archived=bool(entry.get("is_archived")),
         is_deleted=bool(entry.get("is_deleted")),
         page_size=entry.get("page_size") or "A4",
@@ -471,7 +488,11 @@ def restore_backup(source, mode: str = "merge") -> RestoreReport:
             continue
         try:
             document = _restore_document(raw)
-        except Exception as exc:  # pragma: no cover - defensive
+        except Exception as exc:  # noqa: BLE001 - untrusted-input boundary
+            # The archive is attacker-shaped data: any field can be the wrong
+            # type, out of range or malformed. One bad entry must not abort a
+            # restore of hundreds of good documents, so the failure is logged,
+            # surfaced in the report and the loop continues.
             logger.exception("Falha ao restaurar documento")
             report.warnings.append(f"Documento ignorado: {type(exc).__name__}")
             db.session.rollback()

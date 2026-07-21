@@ -92,6 +92,24 @@ def register_commands(app: Flask) -> None:
         info = create_backup(label=label)
         click.echo(f"Backup criado: {info.name} ({info.size_readable})")
 
+    @app.cli.command("prune-media")
+    @click.option(
+        "--hours",
+        default=24,
+        show_default=True,
+        help="Idade mínima de um arquivo para ser considerado órfão.",
+    )
+    @with_appcontext
+    def prune_media(hours: int) -> None:
+        """Remove uploads that no document references any more."""
+        from app.services.media_service import prune_orphans
+
+        rows, files = prune_orphans(max_age_hours=hours)
+        if rows:
+            click.echo(f"{rows} mídia(s) órfã(s) removida(s); {files} arquivo(s) apagado(s).")
+        else:
+            click.echo("Nenhuma mídia órfã encontrada.")
+
     @app.cli.command("pdf-engine")
     @with_appcontext
     def pdf_engine() -> None:

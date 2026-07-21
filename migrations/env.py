@@ -51,6 +51,19 @@ def get_metadata():
     return target_db.metadata
 
 
+# The SQLite FTS5 search index is created with raw DDL (see
+# app/services/search_service.py) and deliberately kept out of the ORM
+# metadata. Without this filter every autogenerate proposes dropping it and
+# its shadow tables, which would wipe the search index on the next upgrade.
+FTS_TABLE_PREFIX = 'documents_fts'
+
+
+def include_object(object_, name, type_, reflected, compare_to):
+    if type_ == 'table' and name and name.startswith(FTS_TABLE_PREFIX):
+        return False
+    return True
+
+
 def run_migrations_offline():
     """Run migrations in 'offline' mode.
 
@@ -65,7 +78,10 @@ def run_migrations_offline():
     """
     url = config.get_main_option("sqlalchemy.url")
     context.configure(
-        url=url, target_metadata=get_metadata(), literal_binds=True
+        url=url,
+        target_metadata=get_metadata(),
+        literal_binds=True,
+        include_object=include_object,
     )
 
     with context.begin_transaction():
@@ -93,6 +109,7 @@ def run_migrations_online():
     conf_args = current_app.extensions['migrate'].configure_args
     if conf_args.get("process_revision_directives") is None:
         conf_args["process_revision_directives"] = process_revision_directives
+    conf_args.setdefault("include_object", include_object)
 
     connectable = get_engine()
 

@@ -143,9 +143,21 @@ class TestRoutes:
         assert b'data-editor-content' in response.data
 
     def test_editor_new_redirects_to_a_real_document(self, client, app, db):
-        response = client.get("/editor/novo")
+        response = client.post("/editor/novo")
         assert response.status_code == 302
         assert db.session.scalar(db.select(db.func.count(Document.id))) == 1
+
+    def test_creating_a_document_is_not_reachable_by_get(self, client, app, db):
+        """A GET must be safe. While this was a GET, a prefetched link, a
+        restored tab or a back-navigation each wrote a document — and CSRF
+        protection exempts GET, so any page could trigger it with an <img>."""
+        response = client.get("/editor/novo")
+
+        # 404 rather than 405: with the GET rule gone, "/editor/novo" falls
+        # through to the "/editor/<public_uuid>" rule and no such document
+        # exists. What matters is the write, and there is none.
+        assert response.status_code in (404, 405)
+        assert db.session.scalar(db.select(db.func.count(Document.id))) == 0
 
     def test_unknown_document_returns_404(self, client):
         response = client.get("/editor/00000000-0000-0000-0000-000000000000")

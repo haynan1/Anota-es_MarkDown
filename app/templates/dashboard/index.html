@@ -1,5 +1,10 @@
 {% extends 'base.html' %}
 {% from 'components/macros.html' import icon, category_badge, empty_state %}
+{% from 'components/charts.html' import line_chart, bar_chart %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/charts.css') }}">
+{% endblock %}
 
 {% set topbar_title = 'Painel' %}
 {% block title %}Painel · {{ app_name }}{% endblock %}
@@ -18,12 +23,11 @@
         {% endif %}
       </p>
     </div>
+    {# "Novo documento" lives in the top bar on every screen; repeating it
+       eighty pixels below would be two identical primary calls to action. #}
     <div class="page-head-actions">
       <a class="btn" href="{{ url_for('documents.import_markdown') }}">
         {{ icon('upload', 'icon icon-sm') }} Importar Markdown
-      </a>
-      <a class="btn btn-primary" href="{{ url_for('editor.create_and_edit') }}">
-        {{ icon('plus', 'icon icon-sm') }} Novo documento
       </a>
     </div>
   </div>
@@ -61,6 +65,61 @@
     </p>
   </div>
 </section>
+
+{% if summary.has_any_data %}
+<section class="section-gap" aria-labelledby="reports-title">
+  <div class="page-head-row reports-head">
+    <div>
+      <h2 class="section-title" id="reports-title">Relatórios</h2>
+      <p class="muted small">
+        {% if summary.busiest_month %}
+          {% set edits = summary.busiest_month[1] %}
+          Seu período mais ativo foi {{ summary.busiest_month[0] }},
+          com {{ edits|number_br }} {{ 'edição salva' if edits == 1 else 'edições salvas' }}.
+        {% else %}
+          Um retrato dos seus últimos {{ summary.period_label }} de escrita.
+        {% endif %}
+        {% if summary.average_words %}
+          Em média, {{ summary.average_words|number_br }} palavras por documento.
+        {% endif %}
+      </p>
+    </div>
+
+    {# One filter row above everything it scopes — never inside a chart card. #}
+    <nav class="period-filter" aria-label="Período dos relatórios">
+      {% for key, config in periods.items() %}
+        <a class="chip{{ ' is-active' if key == current_period }}"
+           href="{{ url_for('dashboard.index', periodo=key) }}#reports-title"
+           {% if key == current_period %}aria-current="true"{% endif %}>
+          {{ config.label }}
+        </a>
+      {% endfor %}
+    </nav>
+  </div>
+
+  <article class="card card-pad section-gap">
+    <h3 class="card-title">Atividade — últimos {{ summary.period_label }}</h3>
+    <p class="muted small viz-subtitle">
+      Quantos documentos você começou em cada período.
+    </p>
+    {{ line_chart(reports.activity, 'Documentos criados por período') }}
+  </article>
+
+  <div class="reports-grid section-gap">
+    <article class="card card-pad">
+      <h3 class="card-title">Palavras por categoria</h3>
+      <p class="muted small viz-subtitle">Onde o seu texto está concentrado.</p>
+      {{ bar_chart(reports.categories, 'Palavras por categoria', 'palavras') }}
+    </article>
+
+    <article class="card card-pad">
+      <h3 class="card-title">Documentos mais longos</h3>
+      <p class="muted small viz-subtitle">Os cinco maiores da sua biblioteca.</p>
+      {{ bar_chart(reports.longest, 'Documentos mais longos', 'palavras') }}
+    </article>
+  </div>
+</section>
+{% endif %}
 
 <div class="grid grid-2 section-gap">
   <section class="card" aria-labelledby="recent-title">

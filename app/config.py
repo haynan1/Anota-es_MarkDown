@@ -50,8 +50,26 @@ class Config:
     SQLALCHEMY_ENGINE_OPTIONS = {"pool_pre_ping": True}
 
     # ── Uploads / limits ────────────────────────────────────────────────────
-    # Hard ceiling enforced by Werkzeug -> triggers a 413 page.
-    MAX_CONTENT_LENGTH = _env_int("MAX_UPLOAD_MB", 8) * 1024 * 1024
+    # Per-purpose ceilings. Keep these as the source of truth: the global
+    # Werkzeug limit below is derived from them, because a global limit lower
+    # than a feature's own limit silently breaks that feature (a 100 MB video
+    # rejected with 413 long before the video check ever runs).
+    MAX_DOCUMENT_UPLOAD_BYTES = _env_int("MAX_UPLOAD_MB", 8) * 1024 * 1024
+    MEDIA_MAX_IMAGE_BYTES = _env_int("MEDIA_MAX_IMAGE_MB", 10) * 1024 * 1024
+    MEDIA_MAX_VIDEO_BYTES = _env_int("MEDIA_MAX_VIDEO_MB", 100) * 1024 * 1024
+
+    # Hard ceiling enforced by Werkzeug -> triggers a 413 page. Sized for the
+    # largest legitimate upload, with room for multipart framing. Endpoints
+    # that accept something smaller enforce their own limit first.
+    MAX_CONTENT_LENGTH = (
+        max(
+            MAX_DOCUMENT_UPLOAD_BYTES,
+            MEDIA_MAX_IMAGE_BYTES,
+            MEDIA_MAX_VIDEO_BYTES,
+        )
+        + 1024 * 1024
+    )
+
     # Soft ceiling for a single markdown document body.
     MAX_MARKDOWN_BYTES = _env_int("MAX_MARKDOWN_MB", 2) * 1024 * 1024
     ALLOWED_IMPORT_EXTENSIONS = {".md", ".markdown", ".mdown", ".txt"}
@@ -69,6 +87,7 @@ class Config:
     INSTANCE_DIR = INSTANCE_DIR
     BACKUP_DIR = Path(os.getenv("BACKUP_DIR") or (INSTANCE_DIR / "backups"))
     EXPORT_DIR = Path(os.getenv("EXPORT_DIR") or (INSTANCE_DIR / "exports"))
+    UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR") or (INSTANCE_DIR / "uploads"))
 
     # Create missing tables on startup so a fresh clone just runs. Migrations
     # remain the canonical schema path; set AUTO_CREATE_DB=0 when generating
@@ -113,7 +132,10 @@ class ProductionConfig(Config):
 class TestingConfig(Config):
     TESTING = True
     DEBUG = False
-    SECRET_KEY = "testing-secret-key-not-used-anywhere-else"
+    # Generated per process, never a literal. A checked-in key would let anyone
+    # reading the repository forge session cookies against any deployment that
+    # happens to start with FLASK_ENV=testing.
+    SECRET_KEY = secrets.token_urlsafe(32)
     SQLALCHEMY_DATABASE_URI = "sqlite://"
     WTF_CSRF_ENABLED = False
     DOCUMENTS_PER_PAGE = 5

@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+{% from 'components/macros.html' import icon %}
+
+{% set topbar_title = 'Criar documento' %}
+{% block title %}Criar “{{ title }}” · {{ app_name }}{% endblock %}
+{% block content_class %}content-narrow{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1 class="page-title">Este documento ainda não existe</h1>
+  <p class="page-subtitle">
+    Você seguiu um link para
+    {% if title %}<strong>{{ title }}</strong>{% else %}um documento sem título{% endif %},
+    que ainda não foi criado.
+  </p>
+</div>
+
+{#
+  A confirmation step, not a formality. The previous version created the
+  document on the GET itself, so a prefetched link or a restored tab wrote one
+  without anyone asking. Now the page says what it is about to do and the
+  writing happens on the POST.
+#}
+<form method="post" class="card card-pad stack stack-4">
+  {{ form.hidden_tag() }}
+  <input type="hidden" name="titulo" value="{{ title }}">
+
+  <p class="muted">
+    Criar agora abre o editor com esse título já preenchido. Todos os outros
+    links <code>[[{{ title or 'nome' }}]]</code> passam a apontar para ele.
+  </p>
+
+  <div class="form-actions">
+    <a class="btn" href="{{ url_for('documents.index') }}">Cancelar</a>
+    <button type="submit" class="btn btn-primary">
+      {{ icon('file-plus', 'icon icon-sm') }}
+      Criar {% if title %}“{{ title }}”{% else %}documento{% endif %}
+    </button>
+  </div>
+</form>
+{% endblock %}

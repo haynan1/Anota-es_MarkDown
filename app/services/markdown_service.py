@@ -10,11 +10,28 @@ the Flask development server is threaded, so one instance is kept per thread.
 
 from __future__ import annotations
 
+import logging
 import threading
 
 import markdown
+from markupsafe import escape
 
 from app.services.sanitizer import pre_strip_dangerous, sanitize_html
+from app.services.wikilink_service import WikiLinkExtension, build_resolver
+
+logger = logging.getLogger(__name__)
+
+
+def _current_wikilink_resolver(key: str):
+    """Bridge between the cached renderer and the per-render link resolver.
+
+    The Markdown instance is built once per thread, but wiki links must be
+    resolved against the database on every render. The extension therefore
+    asks this function, which reads the resolver installed for the render
+    currently in progress.
+    """
+    resolver = getattr(_local, "wiki_resolver", None)
+    return resolver(key) if resolver else None
 
 _EXTENSIONS = [
     "markdown.extensions.tables",
@@ -68,13 +85,31 @@ def _renderer() -> markdown.Markdown:
     instance = getattr(_local, "renderer", None)
     if instance is None:
         instance = markdown.Markdown(
-            extensions=_EXTENSIONS,
+            extensions=[*_EXTENSIONS, WikiLinkExtension(_current_wikilink_resolver)],
             extension_configs=_EXTENSION_CONFIGS,
             output_format="html",
             tab_length=4,
         )
         _local.renderer = instance
     return instance
+
+
+def _plain_text_fallback(markdown_text: str) -> str:
+    """Escaped, unformatted rendering used when the parser gives up.
+
+    Losing the formatting is bad; losing the user's text is worse. The document
+    still saves, still exports and still shows its content - just without
+    markdown structure, with a visible explanation.
+    """
+    return (
+        '<div class="md-render-warning" role="note">'
+        "Este documento tem aninhamento profundo demais para ser formatado "
+        "(por exemplo, listas com centenas de níveis). O texto está preservado "
+        "abaixo sem formatação — simplifique a estrutura para voltar a "
+        "visualizá-lo normalmente."
+        "</div>"
+        f"<pre>{escape(markdown_text)}</pre>"
+    )
 
 
 def render_markdown(markdown_text: str) -> str:
@@ -84,16 +119,28 @@ def render_markdown(markdown_text: str) -> str:
 
     renderer = _renderer()
     renderer.reset()
-    raw_html = renderer.convert(pre_strip_dangerous(markdown_text))
+    # One database lookup for every [[link]] in this document, resolved before
+    # parsing starts rather than one query per link during it.
+    _local.wiki_resolver = build_resolver(markdown_text)
+
+    try:
+        raw_html = renderer.convert(pre_strip_dangerous(markdown_text))
+    except RecursionError:
+        # Python-Markdown recurses once per nesting level, so a line like
+        # "- " * 800 exhausts the stack. Left unhandled this is a 500 on every
+        # save and preview of that document - the user simply cannot store
+        # their text. Degrade instead of failing.
+        logger.warning(
+            "Aninhamento excessivo ao renderizar markdown (%d caracteres); "
+            "usando fallback em texto puro.",
+            len(markdown_text),
+        )
+        # The parser may be left in an inconsistent state; discard it.
+        _local.renderer = None
+        return sanitize_html(_plain_text_fallback(markdown_text))
+    finally:
+        _local.wiki_resolver = None
+
     return sanitize_html(raw_html)
 
 
-def render_table_of_contents(markdown_text: str) -> str:
-    """Render ``markdown_text`` and return only the generated table of contents."""
-    if not markdown_text or not markdown_text.strip():
-        return ""
-
-    renderer = _renderer()
-    renderer.reset()
-    renderer.convert(pre_strip_dangerous(markdown_text))
-    return sanitize_html(getattr(renderer, "toc", "") or "")

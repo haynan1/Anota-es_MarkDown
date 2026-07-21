@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from flask import flash, redirect, render_template, request, send_file, url_for
+from flask import current_app, flash, redirect, render_template, request, send_file, url_for
 
 from app.blueprints.documents.forms import ConfirmForm
 from app.blueprints.settings import settings_bp
@@ -12,6 +12,7 @@ from app.services.backup_service import (
     restore_backup,
 )
 from app.services.exceptions import ServiceError
+from app.services.media_service import enforce_content_length
 from app.services.pdf_service import engine_info
 from app.services.search_service import search_index
 from app.services.settings_service import SettingsService
@@ -93,6 +94,9 @@ def restore_stored_backup(name: str):
 
 @settings_bp.post("/backups/restaurar")
 def restore_uploaded_backup():
+    # A backup archive is not a video; hold it to the document ceiling.
+    enforce_content_length(current_app.config["MAX_DOCUMENT_UPLOAD_BYTES"])
+
     form = BackupRestoreForm()
     if not form.validate_on_submit():
         for errors in form.errors.values():

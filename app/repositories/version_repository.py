@@ -22,15 +22,6 @@ class VersionRepository:
         )
 
     @staticmethod
-    def exists_with_hash(document_id: int, content_hash: str) -> bool:
-        """True when this exact content was already snapshotted."""
-        stmt = select(DocumentVersion.id).where(
-            DocumentVersion.document_id == document_id,
-            DocumentVersion.content_hash == content_hash,
-        )
-        return db.session.scalar(stmt.limit(1)) is not None
-
-    @staticmethod
     def latest(document_id: int) -> DocumentVersion | None:
         stmt = (
             select(DocumentVersion)

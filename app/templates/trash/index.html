@@ -29,10 +29,16 @@
     {% for document in pagination.items %}
       <div class="doc-row">
         <div class="doc-row-main">
-          <span class="doc-row-title">{{ document.display_title }}</span>
+          <span class="doc-row-title">
+            {% if document.is_locked %}{{ icon('lock', 'icon icon-sm locked-on', 'Protegido') }} {% endif %}
+            {{ document.display_title }}
+          </span>
           <div class="doc-row-sub">
             <span>Excluído {{ document.deleted_at|since }}</span>
             <span class="tabular">{{ document.word_count|number_br }} palavras</span>
+            {% if document.is_locked %}
+              <span class="badge badge-accent">{{ icon('lock', 'icon icon-sm') }} Protegido</span>
+            {% endif %}
           </div>
         </div>
         <div class="doc-row-actions">
@@ -42,13 +48,24 @@
               {{ icon('restore', 'icon icon-sm') }} Restaurar
             </button>
           </form>
-          <form method="post" action="{{ url_for('trash.purge', public_uuid=document.uuid) }}" class="inline-form"
-                data-confirm="Excluir “{{ document.display_title }}” definitivamente? Esta ação não pode ser desfeita.">
-            {{ confirm_form.hidden_tag() }}
-            <button type="submit" class="btn btn-sm btn-danger">
-              {{ icon('trash', 'icon icon-sm') }} Excluir para sempre
-            </button>
-          </form>
+
+          {% if document.is_locked %}
+            <form method="post" action="{{ url_for('documents.toggle_lock', public_uuid=document.uuid) }}" class="inline-form">
+              {{ confirm_form.hidden_tag() }}
+              <input type="hidden" name="next" value="{{ url_for('trash.index') }}">
+              <button type="submit" class="btn btn-sm">
+                {{ icon('unlock', 'icon icon-sm') }} Remover proteção
+              </button>
+            </form>
+          {% else %}
+            <form method="post" action="{{ url_for('trash.purge', public_uuid=document.uuid) }}" class="inline-form"
+                  data-confirm="Excluir “{{ document.display_title }}” definitivamente? Esta ação não pode ser desfeita.">
+              {{ confirm_form.hidden_tag() }}
+              <button type="submit" class="btn btn-sm btn-danger">
+                {{ icon('trash', 'icon icon-sm') }} Excluir para sempre
+              </button>
+            </form>
+          {% endif %}
         </div>
       </div>
     {% endfor %}

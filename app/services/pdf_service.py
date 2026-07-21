@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import io
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import unquote, urlparse
@@ -26,7 +27,10 @@ from urllib.parse import unquote, urlparse
 from flask import current_app, render_template
 
 from app.models import Document
-from app.utils.dates import utcnow
+from app.services.exceptions import NotFoundError
+from app.services.media_service import asset_path, get_asset
+from app.services.settings_service import SettingsService
+from app.utils.dates import format_datetime, utcnow
 from app.utils.files import safe_filename
 
 logger = logging.getLogger(__name__)
@@ -70,17 +74,46 @@ def _static_root() -> Path:
     return Path(current_app.static_folder).resolve()
 
 
+MEDIA_URL_PREFIX = "/midia/"
+_MEDIA_UUID_RE = re.compile(r"^[0-9a-fA-F-]{36}$")
+
+
+def _resolve_media_asset(path: str) -> Path | None:
+    """Resolve ``/midia/<uuid>`` to the stored file, or ``None``.
+
+    The UUID is validated by shape and then looked up in the database; the
+    filesystem path comes from the row. Nothing from the document reaches the
+    filesystem, so an embedded ``/midia/../../secret`` resolves to nothing.
+    """
+    identifier = path[len(MEDIA_URL_PREFIX) :].split("/", 1)[0].split("?", 1)[0]
+    if not _MEDIA_UUID_RE.match(identifier):
+        return None
+
+    try:
+        asset = get_asset(identifier)
+        if asset.kind != "image":
+            return None  # Video frames cannot be embedded in a PDF.
+        return asset_path(asset)
+    except NotFoundError:
+        return None
+
+
 def _resolve_local_asset(url: str) -> Path | None:
-    """Map a URL onto a file inside ``static/``, or ``None`` if it escapes.
+    """Map a URL onto a file this application owns, or ``None`` if it escapes.
 
     This is the single choke point that prevents a crafted document from
     reading arbitrary files (``file:///etc/passwd``) or reaching internal
-    network addresses (SSRF) while the PDF is being rendered.
+    network addresses (SSRF) while the PDF is being rendered. Only two
+    sources are permitted: the bundled ``static/`` tree and uploaded images
+    resolved through the database.
     """
     parsed = urlparse(url)
 
     if parsed.scheme in {"http", "https"}:
         return None  # Remote fetches are never performed - see README.
+
+    if (parsed.path or "").startswith(MEDIA_URL_PREFIX):
+        return _resolve_media_asset(parsed.path)
 
     if parsed.scheme and parsed.scheme != "file":
         return None
@@ -123,7 +156,9 @@ class WeasyPrintEngine:
                 import weasyprint  # noqa: F401
 
                 cls._probe = True
-            except Exception as exc:  # pragma: no cover - environment dependent
+            except (ImportError, OSError) as exc:
+                # OSError is what a missing GTK/Pango/Cairo library raises on
+                # Windows; ImportError covers the package simply being absent.
                 logger.info("WeasyPrint indisponível: %s", type(exc).__name__)
                 cls._probe = False
         return cls._probe
@@ -159,7 +194,7 @@ class Xhtml2PdfEngine:
             from xhtml2pdf import pisa  # noqa: F401
 
             return True
-        except Exception:  # pragma: no cover
+        except (ImportError, OSError):  # pragma: no cover
             return False
 
     @staticmethod
@@ -235,9 +270,6 @@ def engine_info() -> dict[str, object]:
 
 
 def build_context(document: Document, overrides: dict | None = None) -> RenderContext:
-    from app.services.settings_service import SettingsService
-    from app.utils.dates import format_datetime
-
     settings = SettingsService.all()
     overrides = overrides or {}
 
@@ -259,18 +291,50 @@ def build_context(document: Document, overrides: dict | None = None) -> RenderCo
     )
 
 
+_VIDEO_TAG_RE = re.compile(r"<video\b[^>]*>.*?</video>|<video\b[^>]*/?>", re.S | re.I)
+
+
+def replace_videos_for_print(html: str) -> str:
+    """Swap ``<video>`` for a printable note.
+
+    A video cannot exist on paper. Leaving the tag in produces an empty gap
+    that reads as a rendering failure; a labelled placeholder is honest.
+    """
+    return _VIDEO_TAG_RE.sub(
+        '<p class="media-placeholder">[vídeo — disponível na versão digital]</p>',
+        html or "",
+    )
+
+
+VARIANT_RENDERED = "rendered"
+VARIANT_SOURCE = "source"
+VARIANTS = (VARIANT_RENDERED, VARIANT_SOURCE)
+
+# A single document should not be able to produce a thousand-page listing.
+MAX_SOURCE_LINES = 20_000
+
+
 def render_document_pdf(
-    document: Document, overrides: dict | None = None
+    document: Document,
+    overrides: dict | None = None,
+    variant: str = VARIANT_RENDERED,
 ) -> tuple[bytes, str]:
-    """Render ``document`` and return ``(pdf_bytes, filename)``."""
+    """Render ``document`` and return ``(pdf_bytes, filename)``.
+
+    ``variant`` selects between the formatted document and a numbered listing
+    of its Markdown source.
+    """
     engine = select_engine()
     context = build_context(document, overrides)
+    is_source = variant == VARIANT_SOURCE
 
-    template = (
-        "pdf/document.html"
-        if engine is WeasyPrintEngine
-        else "pdf/document_fallback.html"
-    )
+    if is_source:
+        template = "pdf/source.html"
+    elif engine is WeasyPrintEngine:
+        template = "pdf/document.html"
+    else:
+        template = "pdf/document_fallback.html"
+
     html = render_template(
         template,
         ctx=context,
@@ -278,13 +342,21 @@ def render_document_pdf(
         margin=MARGIN_VALUES.get(context.margin, "22mm"),
         font_stack=FONT_STACKS.get(context.font, FONT_STACKS["serif"]),
         fallback_font=FALLBACK_FONTS.get(context.font, "Times-Roman"),
+        fallback=engine is not WeasyPrintEngine,
+        lines=(document.content_markdown or "").splitlines()[:MAX_SOURCE_LINES],
+        printable_html=replace_videos_for_print(document.rendered_html),
     )
 
     try:
         pdf_bytes = engine.render(html)
     except PdfGenerationError:
         raise
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - deliberate third-party boundary
+        # WeasyPrint and ReportLab raise a wide, undocumented range of types
+        # for malformed content (font, image and layout errors among them).
+        # Enumerating them would be guesswork that silently breaks on upgrade.
+        # The exception is logged in full and converted to a domain error - it
+        # is never swallowed.
         logger.exception("Falha ao gerar PDF com o motor %s", engine.name)
         raise PdfGenerationError(
             "Não foi possível gerar o PDF deste documento."
@@ -293,4 +365,7 @@ def render_document_pdf(
     if not pdf_bytes:
         raise PdfGenerationError("O PDF gerado ficou vazio.")
 
-    return pdf_bytes, safe_filename(document.title, ".pdf")
+    # The marker goes through the slug, not the extension argument: passing
+    # "-markdown.pdf" as an extension yields "titulo.-markdown.pdf".
+    stem = f"{document.title} markdown" if is_source else document.title
+    return pdf_bytes, safe_filename(stem, ".pdf")

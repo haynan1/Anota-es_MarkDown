@@ -1,0 +1,75 @@
+{#
+  Markdown source listing.
+
+  Deliberately engine-agnostic: a numbered two-column table renders correctly
+  in both WeasyPrint and xhtml2pdf, unlike CSS counters or ::before content,
+  which the fallback engine ignores.
+#}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>{{ document.display_title }} — código-fonte</title>
+<style>
+  @page {
+    size: {{ 'a4' if ctx.page_size == 'A4' else 'letter' }} portrait;
+    margin: {{ margin }};
+  }
+
+  body {
+    font-family: {{ fallback_font if fallback else font_stack }};
+    font-size: 10pt;
+    color: #111827;
+  }
+
+  .doc-header {
+    margin-bottom: 14pt;
+    padding-bottom: 8pt;
+    border-bottom: 1pt solid #111827;
+  }
+  .doc-title { font-size: 17pt; font-weight: bold; margin: 0 0 4pt; }
+  .doc-meta { font-size: 8pt; color: #6B7280; margin: 0; }
+
+  table.listing {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: {{ 'Courier' if fallback else '"Cascadia Mono", Consolas, "Courier New", monospace' }};
+    font-size: 8.5pt;
+  }
+  table.listing td { vertical-align: top; padding: 0.6pt 0; }
+
+  td.ln {
+    width: 26pt;
+    padding-right: 8pt;
+    text-align: right;
+    color: #9CA3AF;
+    border-right: 0.5pt solid #E5E7EB;
+  }
+  td.src {
+    padding-left: 8pt;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+  }
+  tr.blank td.src { color: #E5E7EB; }
+</style>
+</head>
+<body>
+  <div class="doc-header">
+    <div class="doc-title">{{ document.display_title }}</div>
+    <p class="doc-meta">
+      Código-fonte Markdown &middot; {{ lines|length }} linhas &middot;
+      {{ document.character_count }} caracteres
+      {% if ctx.show_generated_date %} &middot; Gerado em {{ ctx.generated_at }}{% endif %}
+    </p>
+  </div>
+
+  <table class="listing">
+    {% for line in lines %}
+      <tr {% if not line.strip() %}class="blank"{% endif %}>
+        <td class="ln">{{ loop.index }}</td>
+        <td class="src">{{ line if line.strip() else '·' }}</td>
+      </tr>
+    {% endfor %}
+  </table>
+</body>
+</html>

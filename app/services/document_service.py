@@ -22,8 +22,10 @@ from app.repositories.version_repository import VersionRepository
 from app.services.exceptions import ConflictError, NotFoundError, ValidationError
 from app.services.history_service import HistoryService
 from app.services.markdown_service import render_markdown
+from app.services.media_service import delete_for_documents
 from app.services.sanitizer import sanitize_plain_text
 from app.services.search_service import search_index
+from app.services.settings_service import SettingsService
 from app.utils.dates import as_utc, utcnow
 from app.utils.files import safe_slug
 from app.utils.text import (
@@ -137,8 +139,6 @@ class DocumentService:
         pdf_theme: str | None = None,
         change_summary: str = "Documento criado",
     ) -> Document:
-        from app.services.settings_service import SettingsService
-
         settings = SettingsService.all()
         document = Document(
             page_size=page_size or settings["pdf_page_size"],
@@ -266,6 +266,22 @@ class DocumentService:
         return document.is_favorite
 
     @staticmethod
+    def toggle_lock(document: Document) -> bool:
+        """Protect a document from deletion, or release that protection."""
+        document.is_locked = not document.is_locked
+        db.session.commit()
+        return document.is_locked
+
+    @staticmethod
+    def ensure_deletable(document: Document) -> None:
+        """Raise if the document is locked against removal."""
+        if document.is_locked:
+            raise ValidationError(
+                f"“{document.display_title}” está protegido por cadeado. "
+                "Remova a proteção antes de excluir."
+            )
+
+    @staticmethod
     def set_archived(document: Document, archived: bool) -> Document:
         document.is_archived = bool(archived)
         db.session.commit()
@@ -302,6 +318,7 @@ class DocumentService:
 
     @staticmethod
     def move_to_trash(document: Document) -> Document:
+        DocumentService.ensure_deletable(document)
         document.is_deleted = True
         document.deleted_at = utcnow()
         search_index.remove_document(document.id)
@@ -330,7 +347,11 @@ class DocumentService:
             raise ValidationError(
                 "Só é possível excluir definitivamente documentos que estão na lixeira."
             )
+        DocumentService.ensure_deletable(document)
         search_index.remove_document(document.id)
+        # Before the row goes: the media foreign key is ON DELETE SET NULL, so
+        # afterwards there would be nothing left linking the files to it.
+        delete_for_documents([document.id])
         db.session.delete(document)
         db.session.commit()
         TagRepository.delete_orphans()
@@ -338,16 +359,44 @@ class DocumentService:
 
     @staticmethod
     def empty_trash() -> int:
-        documents = db.session.scalars(
-            db.select(Document).where(Document.is_deleted.is_(True))
-        ).all()
-        for document in documents:
-            search_index.remove_document(document.id)
-            db.session.delete(document)
+        """Permanently delete everything in the trash.
+
+        Locked documents are skipped, not deleted: a bulk action must never be
+        the one path that bypasses the protection the user asked for.
+
+        Only the ids are loaded: materialising full documents would pull every
+        body and rendered HTML into memory just to throw them away. The rows
+        go out with a bulk DELETE, and the versions follow via ON DELETE
+        CASCADE (enabled by the SQLite foreign-key pragma).
+        """
+        document_ids = list(
+            db.session.scalars(
+                db.select(Document.id).where(
+                    Document.is_deleted.is_(True),
+                    Document.is_locked.is_(False),
+                )
+            ).all()
+        )
+        if not document_ids:
+            return 0
+
+        for document_id in document_ids:
+            search_index.remove_document(document_id)
+
+        delete_for_documents(document_ids)
+
+        db.session.execute(
+            db.delete(Document).where(Document.id.in_(document_ids))
+        )
         db.session.commit()
+        # A bulk DELETE bypasses the identity map. Expire rather than expunge:
+        # only the trashed rows are gone, so surviving documents must stay
+        # attached to the session - they just need to be re-read.
+        db.session.expire_all()
+
         TagRepository.delete_orphans()
         db.session.commit()
-        return len(documents)
+        return len(document_ids)
 
     # ── Lookup wrappers ─────────────────────────────────────────────────────
 

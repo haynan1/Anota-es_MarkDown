@@ -13,6 +13,9 @@ import re
 _CODE_FENCE_RE = re.compile(r"^```.*?^```", re.MULTILINE | re.DOTALL)
 _INLINE_CODE_RE = re.compile(r"`[^`\n]+`")
 _IMAGE_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
+# Wiki links keep their visible label: [[Alvo]] -> Alvo, [[Alvo|texto]] -> texto.
+# Without this the raw brackets leak into every excerpt and search snippet.
+_WIKILINK_RE = re.compile(r"\[\[([^\[\]\n|]+?)(?:\|([^\[\]\n]+?))?\]\]")
 _LINK_RE = re.compile(r"\[([^\]]*)\]\([^)]*\)")
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
 _HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+", re.MULTILINE)
@@ -37,6 +40,7 @@ def strip_markdown(markdown_text: str) -> str:
     text = _CODE_FENCE_RE.sub(" ", markdown_text)
     text = _INLINE_CODE_RE.sub(" ", text)
     text = _IMAGE_RE.sub(" ", text)
+    text = _WIKILINK_RE.sub(lambda m: (m.group(2) or m.group(1)).strip(), text)
     text = _LINK_RE.sub(r"\1", text)
     text = _HTML_TAG_RE.sub(" ", text)
     text = _HRULE_RE.sub(" ", text)
@@ -64,9 +68,18 @@ def reading_time_minutes(word_count: int, wpm: int = 200) -> int:
     return max(1, round(word_count / max(wpm, 1)))
 
 
+_LEADING_HEADING_RE = re.compile(r"\A\s*#{1,6}\s+[^\n]*\n?")
+
+
 def build_excerpt(markdown_text: str, limit: int = 240) -> str:
-    """Short plain-text summary, cut on a word boundary."""
-    plain = strip_markdown(markdown_text)
+    """Short plain-text summary, cut on a word boundary.
+
+    The opening heading is dropped: it almost always repeats the document
+    title, and an excerpt that restates the title directly beneath it is
+    wasted space in every listing.
+    """
+    body = _LEADING_HEADING_RE.sub("", markdown_text or "", count=1)
+    plain = strip_markdown(body) or strip_markdown(markdown_text)
     if len(plain) <= limit:
         return plain
     cut = plain[:limit]

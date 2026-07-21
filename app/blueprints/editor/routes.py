@@ -8,12 +8,20 @@ from app.repositories.taxonomy_repository import CategoryRepository
 from app.repositories.version_repository import VersionRepository
 from app.services.document_service import DocumentService
 from app.services.exceptions import ConflictError, ServiceError
+from app.services.media_service import PICKER_ACCEPT
 from app.services.settings_service import SettingsService
 
 
-@editor_bp.get("/novo")
+@editor_bp.post("/novo")
 def create_and_edit():
-    """Create an empty document and jump straight into it."""
+    """Create an empty document and jump straight into it.
+
+    POST, not GET. A GET has to be safe — browsers prefetch links, restore
+    tabs, and re-issue them on back-navigation, and CSRF protection exempts
+    GET by design. While this was a GET, merely linking to it was enough to
+    create documents nobody asked for, and any third-party page could do the
+    same with an <img src>.
+    """
     document = DocumentService.create(title="", content_markdown="")
     return redirect(url_for("editor.edit", public_uuid=document.uuid))
 
@@ -67,6 +75,7 @@ def edit(public_uuid: str):
     settings = SettingsService.all()
     return render_template(
         "editor/edit.html",
+        media_accept=PICKER_ACCEPT,
         document=document,
         form=form,
         confirm_form=ConfirmForm(),

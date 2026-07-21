@@ -1,7 +1,7 @@
 {% from 'components/macros.html' import icon %}
 
 <header class="topbar">
-  <button type="button" class="btn btn-ghost btn-icon" data-action="open-mobile-nav"
+  <button type="button" class="btn btn-ghost btn-icon menu-trigger" data-action="open-mobile-nav"
           aria-label="Abrir menu de navegação" aria-expanded="false" aria-controls="app-shell">
     {{ icon('menu') }}
   </button>
@@ -19,14 +19,25 @@
              autocomplete="off">
     </form>
 
+    <button type="button" class="btn btn-ghost btn-icon" data-action="open-a11y"
+            aria-label="Conforto de leitura" title="Conforto de leitura"
+            aria-haspopup="dialog">
+      {{ icon('word') }}
+    </button>
+
     <button type="button" class="btn btn-ghost btn-icon" data-action="toggle-theme"
             aria-label="Alternar entre tema claro e escuro">
       {{ icon('sun', 'icon theme-icon-light') }}
       {{ icon('moon', 'icon theme-icon-dark') }}
     </button>
 
-    <a class="btn btn-primary btn-sm" href="{{ url_for('editor.create_and_edit') }}">
-      {{ icon('plus', 'icon icon-sm') }}<span class="hide-sm">Novo documento</span>
-    </a>
+    {# A form, not a link: creating a document changes state, and a link would
+       be followed by prefetch, tab restore and back-navigation alike. #}
+    <form method="post" action="{{ url_for('editor.create_and_edit') }}" class="inline-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="btn btn-primary btn-sm">
+        {{ icon('plus', 'icon icon-sm') }}<span class="hide-sm">Novo documento</span>
+      </button>
+    </form>
   </div>
 </header>

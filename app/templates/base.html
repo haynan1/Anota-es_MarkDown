@@ -1,10 +1,21 @@
 <!DOCTYPE html>
-<html lang="pt-BR" data-theme="light">
+{# The theme before JavaScript refines it. An explicit choice is honoured here
+   on the server, so a user who picked light and browses with scripting
+   disabled is not left with a permanently dark interface; only "auto" falls
+   back to dark-first, since the system preference is knowable to the client
+   alone. #}
+<html lang="pt-BR" data-theme="{{ 'light' if settings.theme == 'light' else 'dark' }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="light dark">
   <title>{% block title %}{{ app_name }}{% endblock %}</title>
+
+  {# This meta must precede theme-init.js: the script runs synchronously during
+     parsing, so a meta declared below it would not exist yet and the user's
+     saved preference would be silently replaced by the system setting. #}
+  <meta name="theme-preference" content="{{ settings.theme }}">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
 
   {# Applies the saved theme before first paint so there is no flash. #}
   <script src="{{ url_for('static', filename='js/theme-init.js') }}"></script>
@@ -14,9 +25,6 @@
   {% block styles %}{% endblock %}
   <link rel="stylesheet" href="{{ url_for('theme_css') }}">
   <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
-
-  <meta name="csrf-token" content="{{ csrf_token() }}">
-  <meta name="theme-preference" content="{{ settings.theme }}">
 </head>
 <body>
   {% include 'components/icon_sprite.html' %}
@@ -39,6 +47,7 @@
 
   {% include 'components/toasts.html' %}
   {% include 'components/confirm_dialog.html' %}
+  {% include 'components/a11y_dialog.html' %}
 
   <script src="{{ url_for('static', filename='js/app.js') }}" type="module"></script>
   {% block scripts %}{% endblock %}

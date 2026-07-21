@@ -1,16 +1,17 @@
-{# Quick actions shared by the card and the list row. #}
+{#
+  Document actions.
+
+  Only "favourite" stays on the surface — it is the one action people toggle
+  while scanning a list. Everything else moves into a labelled menu: seven
+  undifferentiated icons gave every action the same weight, made "rename"
+  unreadable (it was a heading glyph) and kept a red delete button competing
+  for attention on every card.
+
+  Built on <details>, so it opens by mouse or keyboard with no JavaScript.
+#}
 {% from 'components/macros.html' import icon %}
 
 {% set here = request.full_path if request.query_string else request.path %}
-
-<a class="btn btn-ghost btn-icon btn-sm" href="{{ url_for('editor.edit', public_uuid=document.uuid) }}"
-   title="Abrir" aria-label="Abrir {{ document.display_title }}">{{ icon('edit', 'icon icon-sm') }}</a>
-
-<button type="button" class="btn btn-ghost btn-icon btn-sm"
-        data-action="rename" data-uuid="{{ document.uuid }}" data-title="{{ document.title }}"
-        title="Renomear" aria-label="Renomear {{ document.display_title }}">
-  {{ icon('heading', 'icon icon-sm') }}
-</button>
 
 <form method="post" action="{{ url_for('documents.toggle_favorite', public_uuid=document.uuid) }}" class="inline-form">
   {{ confirm_form.hidden_tag() }}
@@ -23,32 +24,75 @@
   </button>
 </form>
 
-<form method="post" action="{{ url_for('documents.duplicate', public_uuid=document.uuid) }}" class="inline-form">
-  {{ confirm_form.hidden_tag() }}
-  <input type="hidden" name="next" value="{{ here }}">
-  <button type="submit" class="btn btn-ghost btn-icon btn-sm" title="Duplicar"
-          aria-label="Duplicar {{ document.display_title }}">{{ icon('copy', 'icon icon-sm') }}</button>
-</form>
+<details class="menu">
+  <summary class="btn btn-ghost btn-icon btn-sm" title="Mais ações"
+           aria-label="Mais ações para {{ document.display_title }}">
+    {{ icon('more', 'icon icon-sm') }}
+  </summary>
 
-<form method="post" action="{{ url_for('documents.toggle_archive', public_uuid=document.uuid) }}" class="inline-form">
-  {{ confirm_form.hidden_tag() }}
-  <input type="hidden" name="next" value="{{ here }}">
-  <button type="submit" class="btn btn-ghost btn-icon btn-sm"
-          title="{{ 'Desarquivar' if document.is_archived else 'Arquivar' }}"
-          aria-label="{{ 'Desarquivar' if document.is_archived else 'Arquivar' }} {{ document.display_title }}">
-    {{ icon('archive', 'icon icon-sm') }}
-  </button>
-</form>
+  <div class="menu-panel" role="group" aria-label="Ações do documento">
+    <a class="menu-item" href="{{ url_for('editor.edit', public_uuid=document.uuid) }}">
+      {{ icon('edit', 'icon icon-sm') }} Abrir no editor
+    </a>
 
-<a class="btn btn-ghost btn-icon btn-sm" href="{{ url_for('exports.download_markdown', public_uuid=document.uuid) }}"
-   title="Baixar .md" aria-label="Baixar {{ document.display_title }} em Markdown">
-  {{ icon('download', 'icon icon-sm') }}
-</a>
+    <button type="button" class="menu-item" data-action="rename"
+            data-uuid="{{ document.uuid }}" data-title="{{ document.title }}">
+      {# A serif "T" reads as "text/title"; the heading bars read as nothing. #}
+      {{ icon('word', 'icon icon-sm') }} Renomear
+    </button>
 
-<form method="post" action="{{ url_for('documents.move_to_trash', public_uuid=document.uuid) }}"
-      class="inline-form" data-confirm="Mover “{{ document.display_title }}” para a lixeira? Você poderá restaurá-lo depois.">
-  {{ confirm_form.hidden_tag() }}
-  <input type="hidden" name="next" value="{{ here }}">
-  <button type="submit" class="btn btn-ghost btn-icon btn-sm btn-danger" title="Mover para a lixeira"
-          aria-label="Mover {{ document.display_title }} para a lixeira">{{ icon('trash', 'icon icon-sm') }}</button>
-</form>
+    <form method="post" action="{{ url_for('documents.duplicate', public_uuid=document.uuid) }}">
+      {{ confirm_form.hidden_tag() }}
+      <input type="hidden" name="next" value="{{ here }}">
+      <button type="submit" class="menu-item">{{ icon('copy', 'icon icon-sm') }} Duplicar</button>
+    </form>
+
+    <form method="post" action="{{ url_for('documents.toggle_archive', public_uuid=document.uuid) }}">
+      {{ confirm_form.hidden_tag() }}
+      <input type="hidden" name="next" value="{{ here }}">
+      <button type="submit" class="menu-item">
+        {{ icon('archive', 'icon icon-sm') }}
+        {{ 'Desarquivar' if document.is_archived else 'Arquivar' }}
+      </button>
+    </form>
+
+    <a class="menu-item" href="{{ url_for('exports.download_markdown', public_uuid=document.uuid) }}">
+      {{ icon('download', 'icon icon-sm') }} Baixar .md
+    </a>
+
+    <a class="menu-item" href="{{ url_for('exports.download_pdf', public_uuid=document.uuid) }}">
+      {{ icon('printer', 'icon icon-sm') }} PDF formatado
+    </a>
+
+    <a class="menu-item"
+       href="{{ url_for('exports.download_pdf', public_uuid=document.uuid, formato='source') }}">
+      {{ icon('code', 'icon icon-sm') }} PDF do código-fonte
+    </a>
+
+    <hr class="menu-separator">
+
+    <form method="post" action="{{ url_for('documents.toggle_lock', public_uuid=document.uuid) }}">
+      {{ confirm_form.hidden_tag() }}
+      <input type="hidden" name="next" value="{{ here }}">
+      <button type="submit" class="menu-item">
+        {{ icon('unlock' if document.is_locked else 'lock', 'icon icon-sm') }}
+        {{ 'Remover proteção' if document.is_locked else 'Proteger contra exclusão' }}
+      </button>
+    </form>
+
+    {% if document.is_locked %}
+      {# No delete entry at all while locked: offering a button that always
+         fails is worse than not offering it. #}
+      <p class="menu-note">{{ icon('lock', 'icon icon-sm') }} Protegido contra exclusão</p>
+    {% else %}
+      <form method="post" action="{{ url_for('documents.move_to_trash', public_uuid=document.uuid) }}"
+            data-confirm="Mover “{{ document.display_title }}” para a lixeira? Você poderá restaurá-lo depois.">
+        {{ confirm_form.hidden_tag() }}
+        <input type="hidden" name="next" value="{{ here }}">
+        <button type="submit" class="menu-item menu-item-danger">
+          {{ icon('trash', 'icon icon-sm') }} Mover para a lixeira
+        </button>
+      </form>
+    {% endif %}
+  </div>
+</details>

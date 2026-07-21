@@ -123,6 +123,12 @@
 
   img { max-width: 100%; height: auto; }
 
+  .media-placeholder {
+    padding: 8pt; margin: 0 0 8pt;
+    border: 0.5pt dashed var(--line); border-radius: 3pt;
+    color: var(--muted); font-size: 8.5pt; text-align: center;
+  }
+
   hr { border: 0; border-top: 0.5pt solid var(--line); margin: 14pt 0; }
 
   .footnote { margin-top: 18pt; padding-top: 8pt; border-top: 0.5pt solid var(--line); font-size: 8.5pt; color: var(--muted); }
@@ -174,7 +180,7 @@
   </header>
 
   <main>
-    {{ document.rendered_html | safe }}
+    {{ printable_html | safe }}
   </main>
 </body>
 </html>

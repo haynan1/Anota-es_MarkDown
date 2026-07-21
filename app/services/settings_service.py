@@ -8,13 +8,19 @@ or hand-edited row degrades to the default instead of breaking a page.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Literal, TypeAlias
 
 from flask import g
 
 from app.extensions import db
 from app.models import PAGE_SIZES, PDF_THEMES, Setting
 from app.services.sanitizer import sanitize_plain_text
+
+# Settings are a closed set of three shapes, not arbitrary objects. Naming the
+# union instead of reaching for ``Any`` keeps the coercion functions honest and
+# turns an unexpected type into a type error rather than a runtime surprise.
+SettingValue: TypeAlias = str | int | bool
+SettingKind: TypeAlias = Literal["str", "int", "bool", "color"]
 
 THEMES = ("auto", "light", "dark")
 PDF_FONTS = ("sans", "serif", "mono")
@@ -30,8 +36,8 @@ _HEX_COLOR_LENGTHS = {4, 7}
 @dataclass(frozen=True, slots=True)
 class SettingDefinition:
     key: str
-    default: Any
-    kind: str = "str"
+    default: SettingValue
+    kind: SettingKind = "str"
     choices: tuple[str, ...] | None = None
     minimum: int | None = None
     maximum: int | None = None
@@ -59,7 +65,7 @@ _BY_KEY = {definition.key: definition for definition in SETTINGS_SCHEMA}
 _CACHE_KEY = "_markdown_studio_settings"
 
 
-def _coerce(definition: SettingDefinition, raw: str | None) -> Any:
+def _coerce(definition: SettingDefinition, raw: str | None) -> SettingValue:
     if raw is None:
         return definition.default
 
@@ -78,22 +84,22 @@ def _coerce(definition: SettingDefinition, raw: str | None) -> Any:
         return value
 
     if definition.kind == "color":
-        value = (raw or "").strip()
+        color = (raw or "").strip()
         if (
-            value.startswith("#")
-            and len(value) in _HEX_COLOR_LENGTHS
-            and all(char in "0123456789abcdefABCDEF" for char in value[1:])
+            color.startswith("#")
+            and len(color) in _HEX_COLOR_LENGTHS
+            and all(char in "0123456789abcdefABCDEF" for char in color[1:])
         ):
-            return value
+            return color
         return definition.default
 
-    value = sanitize_plain_text(raw, max_length=definition.max_length)
-    if definition.choices and value not in definition.choices:
+    text = sanitize_plain_text(raw, max_length=definition.max_length)
+    if definition.choices and text not in definition.choices:
         return definition.default
-    return value
+    return text
 
 
-def _serialize(definition: SettingDefinition, value: Any) -> str:
+def _serialize(definition: SettingDefinition, value: SettingValue) -> str:
     if definition.kind == "bool":
         return "true" if value else "false"
     return str(value)
@@ -103,11 +109,11 @@ class SettingsService:
     """Read/write access to application preferences."""
 
     @staticmethod
-    def defaults() -> dict[str, Any]:
+    def defaults() -> dict[str, SettingValue]:
         return {definition.key: definition.default for definition in SETTINGS_SCHEMA}
 
     @staticmethod
-    def all() -> dict[str, Any]:
+    def all() -> dict[str, SettingValue]:
         """All settings, coerced. Cached for the lifetime of the request."""
         cached = g.get(_CACHE_KEY) if g else None
         if cached is not None:
@@ -120,19 +126,26 @@ class SettingsService:
         }
         try:
             setattr(g, _CACHE_KEY, resolved)
-        except RuntimeError:  # pragma: no cover - outside an app context
+        except RuntimeError:  # pragma: no cover - outside an application context
             pass
         return resolved
 
     @staticmethod
-    def get(key: str, default: Any = None) -> Any:
+    def get(key: str, default: SettingValue | None = None) -> SettingValue | None:
         definition = _BY_KEY.get(key)
         if definition is None:
             return default
         return SettingsService.all().get(key, definition.default)
 
     @staticmethod
-    def set(key: str, value: Any) -> Any:
+    def set(key: str, value: SettingValue) -> SettingValue:
+        """Stage one setting. **Does not commit** — the caller must.
+
+        Deliberate: a settings form applies many keys and either all of them
+        land or none do. Use ``update_many`` unless you are batching writes
+        yourself; calling this alone leaves the change in the session and it
+        disappears when the request ends.
+        """
         definition = _BY_KEY.get(key)
         if definition is None:
             raise KeyError(f"Configuração desconhecida: {key}")
@@ -149,7 +162,7 @@ class SettingsService:
         return coerced
 
     @staticmethod
-    def update_many(values: dict[str, Any]) -> dict[str, Any]:
+    def update_many(values: dict[str, SettingValue]) -> dict[str, SettingValue]:
         applied = {
             key: SettingsService.set(key, value)
             for key, value in values.items()
@@ -160,7 +173,7 @@ class SettingsService:
         return applied
 
     @staticmethod
-    def reset_to_defaults() -> dict[str, Any]:
+    def reset_to_defaults() -> dict[str, SettingValue]:
         db.session.execute(db.delete(Setting))
         db.session.commit()
         SettingsService.invalidate_cache()
@@ -171,7 +184,7 @@ class SettingsService:
         try:
             if g and _CACHE_KEY in g:
                 g.pop(_CACHE_KEY)
-        except RuntimeError:  # pragma: no cover - outside an app context
+        except RuntimeError:  # pragma: no cover - outside an application context
             pass
 
     @staticmethod
@@ -180,7 +193,7 @@ class SettingsService:
         return {row.key: row.value for row in db.session.scalars(db.select(Setting))}
 
     @staticmethod
-    def import_values(values: dict[str, Any]) -> int:
+    def import_values(values: dict[str, SettingValue]) -> int:
         applied = SettingsService.update_many(
             {key: value for key, value in (values or {}).items() if key in _BY_KEY}
         )

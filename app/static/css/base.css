@@ -49,6 +49,33 @@
   --font-mono: "Cascadia Code", "JetBrains Mono", "SF Mono", Consolas,
                "Liberation Mono", monospace;
 
+  /* ── Type scale ─────────────────────────────────────────────────────────
+     Every font-size in the app comes from this scale, so the reading size is
+     one decision in one place.
+
+     `--a11y-font-scale` multiplies *only* typography. Scaling the root font
+     size instead would drag the whole --sp-* spacing scale with it and inflate
+     padding, icons and gutters — the layout must hold its shape while the text
+     grows.
+     -------------------------------------------------------------------- */
+  --a11y-font-scale: 1;
+
+  --fs-2xs:  calc(0.75rem   * var(--a11y-font-scale));
+  --fs-xs:   calc(0.8125rem * var(--a11y-font-scale));
+  --fs-sm:   calc(0.875rem  * var(--a11y-font-scale));
+  --fs-md:   calc(0.9375rem * var(--a11y-font-scale));
+  --fs-base: calc(1rem      * var(--a11y-font-scale));
+  --fs-lg:   calc(1.0625rem * var(--a11y-font-scale));
+  --fs-xl:   calc(1.25rem   * var(--a11y-font-scale));
+  --fs-2xl:  calc(1.4rem    * var(--a11y-font-scale));
+  --fs-3xl:  calc(2.125rem  * var(--a11y-font-scale));
+  --fs-4xl:  calc(2.75rem   * var(--a11y-font-scale));
+  --fs-5xl:  calc(3rem      * var(--a11y-font-scale));
+
+  /* No chart-specific type scale: charts wear the same tokens as everything
+     else. A px size inside an SVG is *not* immune to the viewBox — it is
+     multiplied by the same factor as the geometry — so chart text is HTML. */
+
   --sidebar-width: 264px;
   --header-height: 60px;
 
@@ -95,10 +122,12 @@ html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0;
   min-height: 100vh;
+  /* No screen may scroll sideways; wide content scrolls inside its own box. */
+  overflow-x: hidden;
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-ui);
-  font-size: 0.9375rem;
+  font-size: var(--fs-md);
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
@@ -108,6 +137,8 @@ h1, h2, h3, h4, h5, h6 { margin: 0; font-weight: 650; letter-spacing: -0.018em; 
 p { margin: 0; }
 ul, ol { margin: 0; padding: 0; }
 img, svg { max-width: 100%; }
+/* `font: inherit` carries the scaled size into form controls, which otherwise
+   fall back to the browser default and ignore the setting entirely. */
 button, input, select, textarea { font: inherit; color: inherit; }
 
 a { color: var(--accent); text-decoration: none; }
@@ -143,6 +174,66 @@ a:hover { text-decoration: underline; }
 }
 .skip-link:focus { top: var(--sp-3); text-decoration: none; }
 
+/* ── Scrollbars ─────────────────────────────────────────────────────────────
+   One treatment for every scrollable surface in the app.
+
+   The platform default on Windows is a wide light-grey bar with stepper
+   arrows — it ignores the theme entirely and reads as a foreign object on a
+   dark surface. This replaces it with a thin, themed, arrow-less bar that is
+   only painted while there is something to scroll.
+
+   No `scrollbar-gutter` is reserved: the space belongs to the content, and
+   the bar overlays it only while scrolling is actually possible.
+   ------------------------------------------------------------------------ */
+
+:root {
+  --scrollbar-size: 10px;
+  --scrollbar-thumb: color-mix(in srgb, var(--text-subtle) 40%, transparent);
+  --scrollbar-thumb-hover: color-mix(in srgb, var(--text-muted) 70%, transparent);
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+/* WebKit / Blink */
+::-webkit-scrollbar {
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  /* The transparent border plus content-box clipping is what gives the thumb
+     breathing room without a visible track. */
+  background: var(--scrollbar-thumb);
+  background-clip: content-box;
+  border: 2px solid transparent;
+  border-radius: var(--radius-full);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+  background-clip: content-box;
+}
+/* No stepper arrows. */
+::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+/* Panels that scroll on their own: vertical only, and no chaining to the
+   page behind them. */
+.scroll-y {
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+}
+
 /* ── Icons ──────────────────────────────────────────────────────────────── */
 
 .icon { width: 18px; height: 18px; flex: none; vertical-align: -0.2em; }
@@ -166,54 +257,135 @@ a:hover { text-decoration: underline; }
   padding: var(--sp-4) var(--sp-3);
   background: var(--surface);
   border-right: 1px solid var(--border);
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
 }
 
-.brand {
+/*
+  Collapsed, the labels are gone and the tooltips are the only thing naming
+  each icon — they have to be able to escape the rail. `overflow: hidden`
+  clipped them entirely, which left the collapsed state as a column of mute
+  glyphs. The rail is eight fixed items, so dropping the scroll container
+  here costs nothing.
+*/
+.app[data-sidebar="collapsed"] .sidebar,
+.app[data-sidebar="collapsed"] .nav { overflow: visible; }
+
+.sidebar-head {
   display: flex; align-items: center; gap: var(--sp-3);
   padding: var(--sp-2) var(--sp-2) var(--sp-5);
-  color: var(--text);
 }
-.brand:hover { text-decoration: none; }
+/* The brand mark doubles as the collapse control. */
 .brand-mark {
+  position: relative;
   display: grid; place-items: center;
   width: 34px; height: 34px; flex: none;
+  padding: 0; border: 0;
   border-radius: 9px;
   background: linear-gradient(140deg, var(--accent), var(--accent-strong));
   color: var(--accent-contrast);
+  cursor: pointer;
+  transition: filter var(--dur) var(--ease), transform var(--dur) var(--ease);
 }
-.brand-name { font-weight: 660; letter-spacing: -0.02em; font-size: 0.98rem; white-space: nowrap; }
+.brand-mark:hover { filter: brightness(1.08); }
+.brand-mark:active { transform: scale(0.94); }
+
+/* The icons stack in the same cell so the swap never shifts the layout. */
+.brand-mark .icon { grid-area: 1 / 1; }
+
+.brand-icon-action { display: none; }
+.brand-mark:hover .brand-icon-rest,
+.brand-mark:focus-visible .brand-icon-rest { display: none; }
+
+.brand-mark:hover .toggle-icon-collapse,
+.brand-mark:focus-visible .toggle-icon-collapse { display: block; }
+.app[data-sidebar="collapsed"] .brand-mark:hover .toggle-icon-collapse,
+.app[data-sidebar="collapsed"] .brand-mark:focus-visible .toggle-icon-collapse { display: none; }
+.app[data-sidebar="collapsed"] .brand-mark:hover .toggle-icon-expand,
+.app[data-sidebar="collapsed"] .brand-mark:focus-visible .toggle-icon-expand { display: block; }
+.brand-name {
+  flex: 1; min-width: 0;
+  color: var(--text);
+  font-weight: 660; letter-spacing: -0.02em; font-size: var(--fs-base);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.brand-name:hover { text-decoration: none; color: var(--accent); }
+
+/* ── Collapsed rail ─────────────────────────────────────────────────────── */
+
 .app[data-sidebar="collapsed"] .brand-name,
 .app[data-sidebar="collapsed"] .nav-label,
-.app[data-sidebar="collapsed"] .nav-section-title,
-.app[data-sidebar="collapsed"] .sidebar-footer-text { display: none; }
+.app[data-sidebar="collapsed"] .nav-count { display: none; }
 
-.nav { display: flex; flex-direction: column; gap: var(--sp-1); flex: 1; overflow-y: auto; }
+/* The section heading becomes a hairline: the grouping survives, the words go. */
+.app[data-sidebar="collapsed"] .nav-section-title {
+  height: 1px; padding: 0; margin: var(--sp-3) var(--sp-2);
+  overflow: hidden; text-indent: -999em;
+  background: var(--border);
+}
+
+.app[data-sidebar="collapsed"] .sidebar { padding-inline: var(--sp-2); }
+/* Only the mark remains, centred — and it is the way back out. */
+.app[data-sidebar="collapsed"] .sidebar-head { justify-content: center; padding-inline: 0; }
+.app[data-sidebar="collapsed"] .nav-item { justify-content: center; padding-inline: 0; }
+
+/* ── Tooltips (collapsed rail) ──────────────────────────────────────────── */
+
+[data-tooltip] { position: relative; }
+[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute; left: calc(100% + 10px); top: 50%;
+  transform: translateY(-50%) translateX(-4px);
+  z-index: 70;
+  padding: 0.3rem 0.55rem;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-2); color: var(--text);
+  font-size: var(--fs-xs); font-weight: 550; white-space: nowrap;
+  box-shadow: var(--shadow-md);
+  opacity: 0; pointer-events: none;
+  transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+/* Only when there is no label to read - an expanded item explains itself. */
+.app[data-sidebar="collapsed"] [data-tooltip]:hover::after,
+.app[data-sidebar="collapsed"] [data-tooltip]:focus-visible::after {
+  opacity: 1; transform: translateY(-50%) translateX(0);
+}
+
+/* `overflow-y: auto` alone would compute overflow-x to auto as well, and any
+   item a few pixels too wide surfaces a horizontal scrollbar above the footer. */
+.nav { display: flex; flex-direction: column; gap: var(--sp-1); flex: 1; overflow-y: auto; overflow-x: hidden; }
 .nav-section-title {
   padding: var(--sp-4) var(--sp-3) var(--sp-2);
-  font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.08em;
+  font-size: var(--fs-2xs); font-weight: 600; letter-spacing: 0.08em;
   text-transform: uppercase; color: var(--text-subtle);
 }
 .nav-item {
   display: flex; align-items: center; gap: var(--sp-3);
+  width: 100%;
   padding: 0.55rem var(--sp-3);
   min-height: 40px;
   border-radius: var(--radius);
   color: var(--text-muted); font-weight: 500;
   transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+  /* Some nav items are <button>: strip the user-agent chrome so they are
+     indistinguishable from the <a> items beside them. */
+  background: none; border: 0; font: inherit; text-align: left;
+  font-weight: 500; cursor: pointer;
+  appearance: none;
 }
 .nav-item:hover { background: var(--surface-2); color: var(--text); text-decoration: none; }
 .nav-item[aria-current="page"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 .nav-count {
   margin-left: auto; padding: 0 0.4rem; min-width: 22px;
   border-radius: var(--radius-full); background: var(--surface-sunken);
-  color: var(--text-muted); font-size: 0.75rem; font-weight: 600; text-align: center;
+  color: var(--text-muted); font-size: var(--fs-xs); font-weight: 600; text-align: center;
 }
 .nav-item[aria-current="page"] .nav-count { background: var(--accent); color: var(--accent-contrast); }
 
 .sidebar-footer { padding-top: var(--sp-3); border-top: 1px solid var(--border); }
 
-.main { display: flex; flex-direction: column; min-width: 0; }
+.main { display: flex; flex-direction: column; min-width: 0; max-width: 100%; }
 
 .topbar {
   position: sticky; top: 0; z-index: 30;
@@ -223,18 +395,42 @@ a:hover { text-decoration: underline; }
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border);
 }
-.topbar-title { font-size: 0.95rem; font-weight: 620; letter-spacing: -0.01em; }
-.topbar-actions { margin-left: auto; display: flex; align-items: center; gap: var(--sp-2); }
+.topbar-title { font-size: var(--fs-md); font-weight: 620; letter-spacing: -0.01em; white-space: nowrap; }
+.topbar-actions { margin-left: auto; display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
 
-.content { padding: var(--sp-6) var(--sp-5) var(--sp-8); }
-.content-narrow { max-width: 900px; margin-inline: auto; }
-.content-wide { max-width: 1320px; margin-inline: auto; }
+/* The sidebar is permanent above this breakpoint; its trigger must not linger.
+   Scoped to .topbar so it outranks the `display: inline-flex` that .btn sets
+   later in this file. */
+.topbar .menu-trigger { display: none; }
+
+.content { padding: var(--sp-6) var(--sp-5) var(--sp-8); min-width: 0; }
+/*
+  `width: 100%` is load-bearing. `.content` is a flex item of `.main`, and on
+  a flex item the auto inline margins win over `align-items: stretch`: without
+  an explicit width the element shrinks to its content and centres, which left
+  the dashboard using 788px of a 1220px column with empty bars either side.
+  With the width set, the auto margins only centre once max-width actually
+  bites on a very wide screen.
+*/
+.content-narrow { width: 100%; max-width: 900px; margin-inline: auto; }
+.content-wide { width: 100%; max-width: 1320px; margin-inline: auto; }
 
 /* ── Page header ────────────────────────────────────────────────────────── */
 
 .page-head { margin-bottom: var(--sp-6); }
-.page-title { font-size: 1.75rem; letter-spacing: -0.028em; }
-.page-subtitle { margin-top: var(--sp-2); color: var(--text-muted); }
+/* Editorial scale: large, tightly tracked, one clear entry point per screen. */
+.page-title {
+  font-size: var(--fs-3xl);
+  font-weight: 680;
+  letter-spacing: -0.035em;
+  line-height: 1.1;
+}
+.page-subtitle {
+  margin-top: var(--sp-3);
+  max-width: 62ch;
+  color: var(--text-muted);
+  font-size: var(--fs-md);
+}
 .page-head-row { display: flex; align-items: flex-start; gap: var(--sp-4); flex-wrap: wrap; }
 .page-head-row .page-head-actions { margin-left: auto; display: flex; gap: var(--sp-2); flex-wrap: wrap; }
 
@@ -245,7 +441,7 @@ a:hover { text-decoration: underline; }
   min-height: 38px; padding: 0 var(--sp-4);
   border: 1px solid var(--border); border-radius: var(--radius);
   background: var(--surface); color: var(--text);
-  font-size: 0.875rem; font-weight: 560; white-space: nowrap;
+  font-size: var(--fs-md); font-weight: 560; white-space: nowrap;
   cursor: pointer;
   transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease),
               transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
@@ -266,8 +462,8 @@ a:hover { text-decoration: underline; }
 .btn-danger { color: var(--danger); border-color: var(--border); }
 .btn-danger:hover { background: var(--danger-soft); border-color: var(--danger); }
 
-.btn-sm { min-height: 32px; padding: 0 var(--sp-3); font-size: 0.8125rem; }
-.btn-lg { min-height: 44px; padding: 0 var(--sp-5); font-size: 0.9375rem; }
+.btn-sm { min-height: 32px; padding: 0 var(--sp-3); font-size: var(--fs-sm); }
+.btn-lg { min-height: 44px; padding: 0 var(--sp-5); font-size: var(--fs-md); }
 .btn-block { width: 100%; }
 
 /* Icon-only buttons keep a 38px hit area regardless of the glyph size. */
@@ -293,24 +489,53 @@ a:hover { text-decoration: underline; }
   padding: var(--sp-4) var(--sp-5);
   border-bottom: 1px solid var(--border);
 }
-.card-title { font-size: 0.95rem; font-weight: 620; }
+.card-title { font-size: var(--fs-md); font-weight: 620; }
 .card-head-actions { margin-left: auto; }
 
 .grid { display: grid; gap: var(--sp-4); }
 .section-gap { margin-top: var(--sp-5); }
-.grid-stats { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
-.grid-cards { grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); }
-.grid-2 { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
-
-.stat {
-  padding: var(--sp-5);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+/* Wider gutters: with the boxes gone, the space between columns is the only
+   thing keeping the figures from reading as one run of numbers. */
+.grid-stats {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--sp-4) var(--sp-7);
+  margin-bottom: var(--sp-7);
 }
-.stat-label { display: flex; align-items: center; gap: var(--sp-2); color: var(--text-muted); font-size: 0.8125rem; font-weight: 550; }
-.stat-value { margin-top: var(--sp-3); font-size: 1.875rem; font-weight: 660; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
-.stat-hint { margin-top: var(--sp-1); color: var(--text-subtle); font-size: 0.8125rem; }
+/* Cards have a reserved excerpt and chip height, so stretching them back to a
+   shared baseline no longer creates voids - it just squares the row up. */
+.grid-cards { grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); align-items: stretch; }
+.grid-2 { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); align-items: start; }
+
+/*
+  Statistics carry no border, background or radius. Separation comes from the
+  typographic jump between label and figure and from the space around them —
+  the boxes were doing work the type can do better, and they made the
+  dashboard's opening read like a control panel instead of a summary.
+*/
+.stat { padding: var(--sp-1) 0; }
+
+.stat-label {
+  display: flex; align-items: center; gap: var(--sp-2);
+  color: var(--text-muted);
+  font-size: var(--fs-md); font-weight: 560; letter-spacing: 0.01em;
+}
+.stat-label .icon { opacity: 0.75; }
+
+/* The figure is the anchor of each column, so it gets the scale. */
+.stat-value {
+  margin-top: var(--sp-3);
+  font-size: var(--fs-4xl);
+  font-weight: 640;
+  letter-spacing: -0.045em;
+  line-height: 0.95;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-hint {
+  margin-top: var(--sp-2);
+  color: var(--text-muted);
+  font-size: var(--fs-md);
+}
 
 /* ── Document cards & rows ──────────────────────────────────────────────── */
 
@@ -325,17 +550,31 @@ a:hover { text-decoration: underline; }
 }
 .doc-card:hover { border-color: var(--border-strong); box-shadow: var(--shadow-md); transform: translateY(-2px); }
 .doc-card-top { display: flex; align-items: flex-start; gap: var(--sp-3); }
-.doc-card-title { font-size: 1rem; font-weight: 620; letter-spacing: -0.015em; color: var(--text); }
+.doc-card-title { font-size: var(--fs-base); font-weight: 620; letter-spacing: -0.015em; color: var(--text); }
 .doc-card-title:hover { color: var(--accent); text-decoration: none; }
+/*
+  Fixed two lines, always. Letting the excerpt run to its natural height made
+  every card in a row a different size: `stretch` then left voids under the
+  short ones, `start` left the row visibly ragged. Reserving the space is what
+  makes the grid line up without either compromise.
+*/
 .doc-card-excerpt {
-  color: var(--text-muted); font-size: 0.875rem; line-height: 1.65;
-  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+  color: var(--text-muted); font-size: var(--fs-md); line-height: 1.65;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: calc(2 * 1.65em);
+}
+
+/* One row of chips, for the same reason. */
+.doc-card > .chip-list {
+  max-height: 32px;
+  overflow: hidden;
 }
 .doc-card-meta {
   display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap;
   margin-top: auto; padding-top: var(--sp-3);
   border-top: 1px solid var(--border);
-  color: var(--text-subtle); font-size: 0.8125rem;
+  color: var(--text-subtle); font-size: var(--fs-sm);
 }
 .doc-card-actions { display: flex; gap: var(--sp-1); margin-left: auto; }
 
@@ -351,8 +590,61 @@ a:hover { text-decoration: underline; }
 .doc-row-main { min-width: 0; }
 .doc-row-title { font-weight: 590; color: var(--text); }
 .doc-row-title:hover { color: var(--accent); text-decoration: none; }
-.doc-row-sub { margin-top: var(--sp-1); color: var(--text-subtle); font-size: 0.8125rem; display: flex; gap: var(--sp-3); flex-wrap: wrap; }
+.doc-row-sub { margin-top: var(--sp-1); color: var(--text-subtle); font-size: var(--fs-sm); display: flex; gap: var(--sp-3); flex-wrap: wrap; }
 .doc-row-actions { display: flex; gap: var(--sp-1); }
+
+/* ── Overflow menu ──────────────────────────────────────────────────────── */
+
+.menu { position: relative; }
+.menu > summary { list-style: none; }
+.menu > summary::-webkit-details-marker { display: none; }
+.menu > summary::marker { content: ""; }
+.menu[open] > summary { background: var(--surface-2); color: var(--text); }
+
+/*
+  Opens upward. The trigger sits in the card's footer, so downward pushed the
+  panel past the end of the page — and an absolutely positioned box still adds
+  to the document's scroll area, so the whole page grew each time a menu was
+  opened.
+
+  The height is capped and scrolls internally, so a long menu near the top of
+  the viewport cannot run off the other edge either.
+*/
+.menu-panel {
+  position: absolute; right: 0; bottom: calc(100% + 6px); z-index: 40;
+  min-width: 220px; padding: var(--sp-2);
+  display: flex; flex-direction: column; gap: 2px;
+  max-height: min(60vh, 420px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  animation: menu-in 140ms var(--ease);
+}
+@keyframes menu-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.menu-item {
+  display: flex; align-items: center; gap: var(--sp-3);
+  width: 100%; min-height: 36px; padding: 0 var(--sp-3);
+  border: 0; border-radius: var(--radius-sm);
+  background: none; color: var(--text-muted);
+  font: inherit; font-size: var(--fs-sm); text-align: left; white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.menu-item:hover { background: var(--surface-2); color: var(--text); text-decoration: none; }
+/* Destructive intent reads on approach, not from across the page. */
+.menu-item-danger:hover { background: var(--danger-soft); color: var(--danger); }
+.menu-separator { height: 1px; margin: var(--sp-2) 0; border: 0; background: var(--border); }
+.menu-note {
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3); margin: 0;
+  color: var(--text-subtle); font-size: var(--fs-sm);
+}
 
 /* ── Badges, chips, pills ───────────────────────────────────────────────── */
 
@@ -361,7 +653,7 @@ a:hover { text-decoration: underline; }
   padding: 0.15rem 0.55rem;
   border-radius: var(--radius-full);
   background: var(--surface-sunken); color: var(--text-muted);
-  font-size: 0.75rem; font-weight: 560; white-space: nowrap;
+  font-size: var(--fs-xs); font-weight: 560; white-space: nowrap;
 }
 .badge-accent { background: var(--accent-soft); color: var(--accent); }
 .badge-success { background: var(--success-soft); color: var(--success); }
@@ -374,7 +666,7 @@ a:hover { text-decoration: underline; }
   min-height: 32px; padding: 0 var(--sp-3);
   border: 1px solid var(--border); border-radius: var(--radius-full);
   background: var(--surface); color: var(--text-muted);
-  font-size: 0.8125rem; font-weight: 540; cursor: pointer;
+  font-size: var(--fs-sm); font-weight: 540; cursor: pointer;
 }
 .chip:hover { border-color: var(--border-strong); color: var(--text); text-decoration: none; }
 .chip[aria-pressed="true"], .chip.is-active {
@@ -383,8 +675,12 @@ a:hover { text-decoration: underline; }
 .chip-list { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
 
 .star-on { color: var(--warning); fill: currentColor; }
+/* An indicator, not an alert: it must not compete with the favourite star
+   sitting beside it. Meaning comes from the padlock shape and its <title>. */
+.locked-on { color: var(--text-muted); }
 
-/* Theme toggle shows the icon for the theme you would switch *to*. */
+/* The toggle shows the theme currently in effect: it reads as state first,
+   control second. (The comment used to claim the opposite of the code.) */
 .theme-icon-dark { display: none; }
 :root[data-theme="dark"] .theme-icon-light { display: none; }
 :root[data-theme="dark"] .theme-icon-dark { display: block; }
@@ -394,9 +690,9 @@ a:hover { text-decoration: underline; }
 /* ── Forms ──────────────────────────────────────────────────────────────── */
 
 .field { display: flex; flex-direction: column; gap: var(--sp-2); margin-bottom: var(--sp-4); }
-.field-label { font-size: 0.8125rem; font-weight: 580; color: var(--text); }
-.field-hint { color: var(--text-subtle); font-size: 0.8125rem; }
-.field-error { display: flex; align-items: center; gap: var(--sp-2); color: var(--danger); font-size: 0.8125rem; font-weight: 540; }
+.field-label { font-size: var(--fs-sm); font-weight: 580; color: var(--text); }
+.field-hint { color: var(--text-subtle); font-size: var(--fs-sm); }
+.field-error { display: flex; align-items: center; gap: var(--sp-2); color: var(--danger); font-size: var(--fs-sm); font-weight: 540; }
 
 .input, .select, .textarea {
   width: 100%; min-height: 38px; padding: 0.45rem var(--sp-3);
@@ -442,9 +738,9 @@ a:hover { text-decoration: underline; }
 /* ── Tables ─────────────────────────────────────────────────────────────── */
 
 .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
-.table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+.table { width: 100%; border-collapse: collapse; font-size: var(--fs-md); }
 .table th, .table td { padding: var(--sp-3) var(--sp-4); text-align: left; border-bottom: 1px solid var(--border); }
-.table th { font-weight: 600; color: var(--text-muted); font-size: 0.8125rem; background: var(--surface-2); }
+.table th { font-weight: 600; color: var(--text-muted); font-size: var(--fs-sm); background: var(--surface-2); }
 .table tr:last-child td { border-bottom: 0; }
 
 /* ── Empty states ───────────────────────────────────────────────────────── */
@@ -455,7 +751,7 @@ a:hover { text-decoration: underline; }
   background: var(--surface); border: 1px dashed var(--border-strong); border-radius: var(--radius-lg);
 }
 .empty-icon { display: grid; place-items: center; width: 56px; height: 56px; border-radius: var(--radius-lg); background: var(--surface-sunken); color: var(--text-subtle); }
-.empty-title { font-size: 1.0625rem; font-weight: 620; }
+.empty-title { font-size: var(--fs-lg); font-weight: 620; }
 .empty-text { color: var(--text-muted); max-width: 44ch; }
 
 /* ── Toasts ─────────────────────────────────────────────────────────────── */
@@ -480,7 +776,7 @@ a:hover { text-decoration: underline; }
 .toast-warning { border-left-color: var(--warning); }
 .toast-warning .toast-icon { color: var(--warning); }
 .toast-info .toast-icon { color: var(--accent); }
-.toast-body { flex: 1; font-size: 0.875rem; }
+.toast-body { flex: 1; font-size: var(--fs-md); }
 .toast-close { margin: -2px -4px 0 0; }
 
 @keyframes toast-in {
@@ -497,12 +793,95 @@ dialog.modal {
 }
 dialog.modal::backdrop { background: rgba(15, 23, 42, 0.55); backdrop-filter: blur(3px); }
 .modal-head { padding: var(--sp-5) var(--sp-5) var(--sp-3); }
-.modal-title { font-size: 1.0625rem; font-weight: 640; }
+.modal-title { font-size: var(--fs-lg); font-weight: 640; }
 .modal-body { padding: 0 var(--sp-5) var(--sp-4); color: var(--text-muted); }
 .modal-foot { display: flex; justify-content: flex-end; gap: var(--sp-2); padding: var(--sp-4) var(--sp-5); border-top: 1px solid var(--border); background: var(--surface-2); border-radius: 0 0 var(--radius-lg) var(--radius-lg); }
 
 dialog.modal.modal-wide { width: min(900px, calc(100vw - 2rem)); }
-dialog.modal.modal-wide .modal-body { max-height: 60vh; overflow-y: auto; }
+dialog.modal.modal-wide .modal-body {
+  max-height: 60vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+}
+
+/* ── Reading comfort ────────────────────────────────────────────────────── */
+
+/* Bold emphasis: one step up, applied to text weights only. */
+html.a11y-bold-text body { font-weight: 500; }
+html.a11y-bold-text .nav-item,
+html.a11y-bold-text .muted,
+html.a11y-bold-text .small,
+html.a11y-bold-text .field-hint,
+html.a11y-bold-text .doc-card-excerpt,
+html.a11y-bold-text .stat-hint { font-weight: 600; }
+html.a11y-bold-text h1, html.a11y-bold-text h2, html.a11y-bold-text h3,
+html.a11y-bold-text .card-title, html.a11y-bold-text .page-title { font-weight: 720; }
+/* Low-contrast greys get darker too, or the extra weight buys nothing. */
+html.a11y-bold-text { --text-subtle: var(--text-muted); }
+
+.a11y-subtitle { margin-top: var(--sp-2); }
+
+.a11y-sizes {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--sp-2);
+}
+
+.a11y-size {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: var(--sp-1);
+  min-height: 76px; padding: var(--sp-2);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface); color: var(--text-muted);
+  cursor: pointer;
+  transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease),
+              color var(--dur) var(--ease);
+}
+.a11y-size:hover { border-color: var(--border-strong); color: var(--text); }
+.a11y-size.is-active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* The samples are deliberately fixed sizes: they preview the steps rather
+   than participating in the scale they control. */
+.a11y-size-sample { line-height: 1; }
+.a11y-sample-1 { font-size: 13px; }
+.a11y-sample-2 { font-size: 15px; }
+.a11y-sample-3 { font-size: 18px; }
+.a11y-sample-4 { font-size: 21px; }
+
+.a11y-size-name { font-size: var(--fs-2xs); font-weight: 550; }
+
+.a11y-status {
+  margin-top: var(--sp-3);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.a11y-inline-hint { display: block; margin-top: 2px; }
+
+.a11y-preview {
+  padding: var(--sp-4);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.a11y-preview > p + p { margin-top: var(--sp-2); }
+.a11y-preview-title {
+  margin-bottom: var(--sp-2);
+  color: var(--text-subtle);
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 560px) {
+  .a11y-sizes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 
 /* ── Dropzone ───────────────────────────────────────────────────────────── */
 
@@ -513,7 +892,14 @@ dialog.modal.modal-wide .modal-body { max-height: 60vh; overflow-y: auto; }
   background: var(--surface-2); cursor: pointer;
   transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
 }
-.dropzone:hover, .dropzone:focus-visible { border-color: var(--accent); background: var(--accent-soft); }
+.dropzone:hover { border-color: var(--accent); background: var(--accent-soft); }
+/* The real focus target is the visually-hidden input inside. */
+.dropzone:focus-within {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 .dropzone[data-dragover="true"] { border-color: var(--accent); background: var(--accent-soft); }
 .dropzone-filename { font-weight: 600; color: var(--accent); }
 .dropzone-filename[hidden] { display: none; }
@@ -521,12 +907,12 @@ dialog.modal.modal-wide .modal-body { max-height: 60vh; overflow-y: auto; }
 /* ── Error page ─────────────────────────────────────────────────────────── */
 
 .error-page { padding-block: var(--sp-8); }
-.error-code { font-size: 3rem; font-weight: 700; letter-spacing: -0.04em; color: var(--text-subtle); line-height: 1; }
+.error-code { font-size: var(--fs-5xl); font-weight: 700; letter-spacing: -0.04em; color: var(--text-subtle); line-height: 1; }
 
 /* ── Pagination ─────────────────────────────────────────────────────────── */
 
 .pagination { display: flex; align-items: center; justify-content: center; gap: var(--sp-2); margin-top: var(--sp-6); }
-.pagination-info { color: var(--text-muted); font-size: 0.875rem; }
+.pagination-info { color: var(--text-muted); font-size: var(--fs-md); }
 
 /* ── Search results ─────────────────────────────────────────────────────── */
 
@@ -543,7 +929,7 @@ mark { background: var(--warning-soft); color: inherit; padding: 0 0.15em; borde
 .push { margin-left: auto; }
 .muted { color: var(--text-muted); }
 .subtle { color: var(--text-subtle); }
-.small { font-size: 0.8125rem; }
+.small { font-size: var(--fs-sm); }
 .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tabular { font-variant-numeric: tabular-nums; }
 .text-danger { color: var(--danger); }
@@ -557,6 +943,39 @@ mark { background: var(--warning-soft); color: inherit; padding: 0 0.15em; borde
 
 @media (max-width: 960px) {
   .app { grid-template-columns: minmax(0, 1fr); }
+  .topbar .menu-trigger { display: inline-flex; }
+
+  /*
+    The collapsed rail is a desktop affordance. Its state persists in
+    localStorage, so a user who collapsed the sidebar on a laptop and then
+    opened the app on a phone got the off-canvas panel rendered as a 72px
+    strip of unlabelled icons — with no way to widen it, because the collapse
+    toggle only exists on desktop. On this breakpoint the panel is always the
+    full, labelled version.
+  */
+  .app[data-sidebar="collapsed"] { --sidebar-width: 280px; }
+  .app[data-sidebar="collapsed"] .sidebar { padding-inline: var(--sp-3); }
+  .app[data-sidebar="collapsed"] .sidebar-head {
+    justify-content: flex-start;
+    padding-inline: var(--sp-2);
+  }
+  .app[data-sidebar="collapsed"] .brand-name,
+  .app[data-sidebar="collapsed"] .nav-label { display: block; }
+  .app[data-sidebar="collapsed"] .nav-count { display: inline-block; }
+  .app[data-sidebar="collapsed"] .nav-item {
+    justify-content: flex-start;
+    padding-inline: var(--sp-3);
+  }
+  .app[data-sidebar="collapsed"] .nav-section-title {
+    height: auto; margin: 0; padding: var(--sp-4) var(--sp-3) var(--sp-2);
+    text-indent: 0; background: none;
+  }
+  /* Collapsing makes no sense for a panel that is already off-canvas: the
+     mark goes back to being purely the brand. */
+  .brand-mark { cursor: default; pointer-events: none; }
+  .brand-mark .brand-icon-action { display: none; }
+  /* Tooltips would fire on touch with no way to dismiss them. */
+  [data-tooltip]::after { content: none; }
 
   .sidebar {
     position: fixed; inset: 0 auto 0 0; z-index: 60;
@@ -573,7 +992,7 @@ mark { background: var(--warning-soft); color: inherit; padding: 0 0.15em; borde
 
   .content { padding: var(--sp-5) var(--sp-4) 5.5rem; }
   .topbar { padding: 0 var(--sp-4); }
-  .page-title { font-size: 1.4rem; }
+  .page-title { font-size: var(--fs-2xl); }
 
   /* Bottom navigation replaces the sidebar on phones. */
   .mobile-nav {
@@ -587,7 +1006,7 @@ mark { background: var(--warning-soft); color: inherit; padding: 0 0.15em; borde
   .mobile-nav-item {
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     gap: 2px; min-height: 52px; border-radius: var(--radius);
-    color: var(--text-muted); font-size: 0.6875rem; font-weight: 550;
+    color: var(--text-muted); font-size: var(--fs-2xs); font-weight: 550;
   }
   .mobile-nav-item[aria-current="page"] { color: var(--accent); }
   .mobile-nav-item:hover { text-decoration: none; }
@@ -603,7 +1022,27 @@ mark { background: var(--warning-soft); color: inherit; padding: 0 0.15em; borde
   .toolbar-group + .toolbar-group { margin-left: 0; }
   .card-pad { padding: var(--sp-4); }
   .hide-sm { display: none; }
-  .topbar .search-field { max-width: 180px; flex-basis: auto; }
+
+  /* The header cannot hold five controls at this width. Search lives on the
+     documents screen, one tap away in the bottom bar, so it steps aside here
+     rather than being squeezed into an unusable sliver. */
+  .topbar .search-field { display: none; }
+  .topbar { gap: var(--sp-2); }
+  .topbar-title { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+
+  /* 180px minimums forced a 408px row into a 390px screen, which pushed the
+     top-bar controls off the right edge. One column below 480px. */
+  .grid-stats { grid-template-columns: minmax(0, 1fr); }
+  .grid-cards, .grid-2 { grid-template-columns: minmax(0, 1fr); }
+
+  .page-head-row { flex-direction: column; align-items: stretch; }
+  .page-head-row .page-head-actions { margin-left: 0; }
+  .page-head-actions .btn { flex: 1; }
+
+  /* Stacked on a phone, the figures need a rhythm of their own rather than
+     the wide gutters that separate them on a desktop row. */
+  .grid-stats { gap: var(--sp-5); margin-bottom: var(--sp-6); }
+  .stat-value { font-size: var(--fs-3xl); }
 }
 
 @media print {

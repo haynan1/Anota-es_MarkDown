@@ -3,6 +3,7 @@
 <div class="doc-row">
   <div class="doc-row-main">
     <a class="doc-row-title" href="{{ url_for('editor.edit', public_uuid=document.uuid) }}">
+      {% if document.is_locked %}{{ icon('lock', 'icon icon-sm locked-on', 'Protegido contra exclusão') }} {% endif %}
       {% if document.is_favorite %}{{ icon('star', 'icon icon-sm star-on', 'Favorito') }} {% endif %}
       {{ document.display_title }}
     </a>

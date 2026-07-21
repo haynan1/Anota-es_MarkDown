@@ -7,7 +7,12 @@ from flask import Response, flash, redirect, request, send_file, url_for
 from app.blueprints.exports import exports_bp
 from app.models import PAGE_SIZES, PDF_THEMES
 from app.services.document_service import DocumentService
-from app.services.pdf_service import PdfGenerationError, render_document_pdf
+from app.services.pdf_service import (
+    VARIANT_RENDERED,
+    VARIANTS,
+    PdfGenerationError,
+    render_document_pdf,
+)
 from app.utils.files import safe_filename
 
 
@@ -34,9 +39,12 @@ def download_pdf(public_uuid: str):
         "theme": source.get("tema") if source.get("tema") in PDF_THEMES else None,
         "page_size": source.get("tamanho") if source.get("tamanho") in PAGE_SIZES else None,
     }
+    variant = source.get("formato")
+    if variant not in VARIANTS:
+        variant = VARIANT_RENDERED
 
     try:
-        pdf_bytes, filename = render_document_pdf(document, overrides)
+        pdf_bytes, filename = render_document_pdf(document, overrides, variant=variant)
     except PdfGenerationError as error:
         flash(str(error), "error")
         return redirect(url_for("editor.edit", public_uuid=document.uuid))

@@ -6,12 +6,14 @@ CSRF protection stays enabled: the browser sends the token in an
 
 from __future__ import annotations
 
-from flask import jsonify, request
+from flask import jsonify, request, url_for
 
 from app.blueprints.api import api_bp
-from app.repositories.document_repository import DocumentRepository
+from app.extensions import db
+from app.repositories.document_repository import DocumentQuery
 from app.services.document_service import DocumentService
 from app.services.exceptions import ValidationError
+from app.services.listing_service import list_documents
 from app.services.markdown_service import render_markdown
 from app.utils.text import (
     build_excerpt,
@@ -86,8 +88,6 @@ def autosave(public_uuid: str):
 @api_bp.post("/documentos/<public_uuid>/metadados")
 def update_metadata(public_uuid: str):
     """Update category, tags, favourite flag and PDF preferences."""
-    from app.extensions import db
-
     document = DocumentService.require(public_uuid)
     payload = request.get_json(silent=True) or {}
 
@@ -125,10 +125,8 @@ def search_suggestions():
     if len(term) < 2:
         return jsonify({"ok": True, "results": []})
 
-    from app.repositories.document_repository import DocumentQuery
-
     query = DocumentQuery(search=term, per_page=8, page=1, sort="relevance")
-    pagination = DocumentRepository.paginate(query)
+    result = list_documents(query, with_snippets=False)
 
     return jsonify(
         {
@@ -138,9 +136,9 @@ def search_suggestions():
                     "uuid": document.uuid,
                     "title": document.title,
                     "excerpt": document.excerpt,
-                    "url": f"/editor/{document.uuid}",
+                    "url": url_for("editor.edit", public_uuid=document.uuid),
                 }
-                for document in pagination.items
+                for document in result.items
             ],
         }
     )

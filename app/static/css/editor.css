@@ -19,7 +19,7 @@
   flex: 1; min-width: 0;
   padding: var(--sp-2) var(--sp-3);
   background: transparent; border: 1px solid transparent; border-radius: var(--radius);
-  font-size: 1.0625rem; font-weight: 620; letter-spacing: -0.02em;
+  font-size: var(--fs-lg); font-weight: 620; letter-spacing: -0.02em;
   transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
 }
 .editor-title-field::placeholder { color: var(--text-subtle); font-weight: 500; }
@@ -36,7 +36,7 @@
   min-height: 32px; padding: 0 var(--sp-3);
   border-radius: var(--radius-full);
   background: var(--surface-sunken); color: var(--text-muted);
-  font-size: 0.8125rem; font-weight: 550; white-space: nowrap;
+  font-size: var(--fs-sm); font-weight: 550; white-space: nowrap;
 }
 .save-status[data-state="saving"]  { background: var(--accent-soft); color: var(--accent); }
 .save-status[data-state="saved"]   { background: var(--success-soft); color: var(--success); }
@@ -75,6 +75,21 @@
 .md-tool:hover { background: var(--surface-2); color: var(--text); border-color: var(--border); }
 .md-toolbar-modes { margin-left: auto; }
 
+/* The upload control is a <label>; it must behave like the buttons beside it. */
+label.md-tool { cursor: pointer; }
+label.md-tool:focus-within {
+  background: var(--surface-2); color: var(--text);
+  border-color: var(--accent);
+  outline: 2px solid var(--accent); outline-offset: 1px;
+}
+
+/* Drop target feedback while dragging a file over the writing pane. */
+.editor-source[data-dropping="true"] {
+  outline: 2px dashed var(--accent);
+  outline-offset: -6px;
+  background: var(--accent-soft);
+}
+
 /* ── Panes ──────────────────────────────────────────────────────────────── */
 
 .editor { flex: 1; display: grid; min-height: 0; }
@@ -84,7 +99,14 @@
 .editor[data-mode="write"] .editor-preview { display: none; }
 .editor[data-mode="read"] .editor-source { display: none; }
 
-.editor-source, .editor-preview { min-width: 0; min-height: 0; overflow-y: auto; }
+/* Vertical only: horizontal overflow belongs to the code blocks and tables
+   inside the preview, which scroll within their own box. */
+.editor-source, .editor-preview {
+  min-width: 0; min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+}
 .editor-source { border-right: 1px solid var(--border); background: var(--surface); }
 .editor[data-mode="write"] .editor-source { border-right: 0; }
 
@@ -92,14 +114,14 @@
   display: block; width: 100%; height: 100%; min-height: 100%;
   padding: var(--sp-6) var(--sp-6) 40vh;
   border: 0; background: transparent; color: var(--text);
-  font-family: var(--font-mono); font-size: 0.9375rem; line-height: 1.75;
+  font-family: var(--font-mono); font-size: var(--fs-md); line-height: 1.75;
   resize: none; tab-size: 4;
 }
 .editor-textarea:focus { outline: none; }
 .editor-textarea::placeholder { color: var(--text-subtle); }
 
 .editor-preview { background: var(--bg); }
-.editor-preview-inner { padding: var(--sp-6) var(--sp-6) 40vh; max-width: 860px; margin-inline: auto; }
+.editor-preview-inner { padding: var(--sp-6) var(--sp-7) 40vh; margin-inline: auto; }
 .editor-preview[data-loading="true"] .editor-preview-inner { opacity: 0.55; transition: opacity var(--dur) var(--ease); }
 
 .editor[data-mode="read"] .editor-preview-inner { max-width: 780px; }
@@ -110,12 +132,20 @@
   display: flex; align-items: center; gap: var(--sp-4); flex-wrap: wrap;
   padding: var(--sp-2) var(--sp-4);
   background: var(--surface); border-top: 1px solid var(--border);
-  color: var(--text-muted); font-size: 0.8125rem;
+  color: var(--text-muted); font-size: var(--fs-sm);
   flex: none;
 }
 .editor-metric { display: inline-flex; align-items: center; gap: var(--sp-2); font-variant-numeric: tabular-nums; }
 
 /* ── Metadata drawer ────────────────────────────────────────────────────── */
+
+.drawer-backdrop {
+  position: fixed; inset: 0; z-index: 75;
+  background: rgba(15, 23, 42, 0.35);
+  opacity: 0; pointer-events: none;
+  transition: opacity var(--dur) var(--ease);
+}
+.drawer-backdrop[data-visible="true"] { opacity: 1; pointer-events: auto; }
 
 .meta-drawer {
   position: fixed; inset: 0 0 0 auto; z-index: 80;
@@ -129,7 +159,14 @@
 .meta-drawer[data-open="true"] { transform: none; }
 .meta-drawer-head { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--border); }
 .meta-drawer-form { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-.meta-drawer-body { flex: 1; overflow-y: auto; padding: var(--sp-5); }
+.meta-drawer-body {
+  flex: 1;
+  min-height: 0;
+  padding: var(--sp-5);
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+}
 .meta-drawer-foot { padding: var(--sp-4) var(--sp-5); border-top: 1px solid var(--border); background: var(--surface-2); }
 
 /* ── Fullscreen ─────────────────────────────────────────────────────────── */
@@ -145,7 +182,7 @@
   padding: var(--sp-3) var(--sp-4);
   background: var(--warning-soft); color: var(--text);
   border-bottom: 1px solid var(--border);
-  font-size: 0.875rem;
+  font-size: var(--fs-md);
   flex: none;
 }
 .draft-banner .icon { color: var(--warning); }
@@ -157,7 +194,7 @@
 .diff {
   border: 1px solid var(--border); border-radius: var(--radius-lg);
   background: var(--surface); overflow: hidden;
-  font-family: var(--font-mono); font-size: 0.8125rem; line-height: 1.7;
+  font-family: var(--font-mono); font-size: var(--fs-sm); line-height: 1.7;
 }
 .diff-row { display: grid; grid-template-columns: 52px 1fr; border-bottom: 1px solid var(--border); }
 .diff-row:last-child { border-bottom: 0; }
@@ -181,11 +218,11 @@
 .diff-row[data-tag="skip"] { background: var(--surface-sunken); }
 .diff-row[data-tag="skip"] .diff-text {
   color: var(--text-subtle); font-style: italic; text-align: center;
-  font-family: var(--font-ui); font-size: 0.75rem;
+  font-family: var(--font-ui); font-size: var(--fs-xs);
 }
 .diff-row[data-tag="skip"] .diff-text::before { content: ""; }
 
-.diff-legend { display: flex; gap: var(--sp-4); flex-wrap: wrap; margin-bottom: var(--sp-4); font-size: 0.8125rem; color: var(--text-muted); }
+.diff-legend { display: flex; gap: var(--sp-4); flex-wrap: wrap; margin-bottom: var(--sp-4); font-size: var(--fs-sm); color: var(--text-muted); }
 
 /* ── Version timeline ───────────────────────────────────────────────────── */
 

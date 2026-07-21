@@ -14,6 +14,7 @@ from pathlib import PurePath
 from flask import current_app
 from werkzeug.datastructures import FileStorage
 
+from app.services.document_service import DocumentService
 from app.services.exceptions import ValidationError
 from app.utils.text import build_excerpt, count_words
 
@@ -131,8 +132,6 @@ def build_preview(storage: FileStorage) -> ImportPreview:
 
 def import_document(storage: FileStorage, category_id: int | None = None):
     """Validate an upload and create the document."""
-    from app.services.document_service import DocumentService
-
     preview = build_preview(storage)
     return DocumentService.create(
         title=preview.title,

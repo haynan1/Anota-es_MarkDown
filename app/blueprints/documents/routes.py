@@ -30,7 +30,8 @@ from app.repositories.taxonomy_repository import CategoryRepository, TagReposito
 from app.services.document_service import DocumentService
 from app.services.exceptions import ServiceError
 from app.services.import_service import build_preview, import_document
-from app.services.search_service import search_index
+from app.services.listing_service import list_documents
+from app.services.media_service import enforce_content_length
 
 VALID_SCOPES = {SCOPE_ACTIVE, SCOPE_ARCHIVED, SCOPE_ALL}
 VALID_VIEWS = {"cards", "list"}
@@ -63,25 +64,19 @@ def _build_query() -> DocumentQuery:
 @documents_bp.route("/")
 def index():
     query = _build_query()
-    pagination = DocumentRepository.paginate(query)
+    result = list_documents(query)
 
     view = request.args.get("visual") or session.get("documents_view") or "cards"
     if view not in VALID_VIEWS:
         view = "cards"
     session["documents_view"] = view
 
-    snippets = {}
-    if query.is_searching and query.matched_ids:
-        snippets = search_index.snippets(
-            query.search, [document.id for document in pagination.items]
-        )
-
     return render_template(
         "documents/index.html",
-        pagination=pagination,
+        pagination=result.pagination,
         query=query,
         view=view,
-        snippets=snippets,
+        snippets=result.snippets,
         categories=CategoryRepository.all(),
         tag_usage=TagRepository.usage(limit=30),
         sort_options=SORT_OPTIONS,
@@ -128,6 +123,48 @@ def toggle_favorite(public_uuid: str):
     return redirect(_back_to(url_for("documents.index")))
 
 
+@documents_bp.route("/novo-por-titulo", methods=["GET", "POST"])
+def create_from_title():
+    """Target of a wiki link whose document does not exist yet.
+
+    A broken ``[[link]]`` is not a dead end: it offers to create the document
+    with that title and drops you into the editor.
+
+    The GET only *asks*; the POST creates. Creating on GET meant a browser
+    prefetching the link, a restored tab or a back-navigation silently wrote a
+    document, and CSRF protection does not cover GET. It also reads better:
+    following a broken link now says what it is about to do.
+    """
+    title = (request.args.get("titulo") or request.form.get("titulo") or "").strip()[:200]
+    form = ConfirmForm()
+
+    if form.validate_on_submit():
+        document = DocumentService.create(
+            title=title,
+            content_markdown="",
+            change_summary="Criado a partir de um link",
+        )
+        return redirect(url_for("editor.edit", public_uuid=document.uuid))
+
+    return render_template("documents/create_from_title.html", title=title, form=form)
+
+
+@documents_bp.post("/<public_uuid>/cadeado")
+def toggle_lock(public_uuid: str):
+    document = DocumentService.require(public_uuid, include_deleted=True)
+    if not ConfirmForm().validate_on_submit():
+        flash("Sessão expirada. Tente novamente.", "error")
+        return redirect(_back_to(url_for("documents.index")))
+
+    locked = DocumentService.toggle_lock(document)
+    flash(
+        "Documento protegido contra exclusão." if locked
+        else "Proteção removida. O documento pode ser excluído.",
+        "success",
+    )
+    return redirect(_back_to(url_for("documents.index")))
+
+
 @documents_bp.post("/<public_uuid>/duplicar")
 def duplicate(public_uuid: str):
     document = DocumentService.require(public_uuid)
@@ -162,7 +199,12 @@ def move_to_trash(public_uuid: str):
         flash("Sessão expirada. Tente novamente.", "error")
         return redirect(_back_to(url_for("documents.index")))
 
-    DocumentService.move_to_trash(document)
+    try:
+        DocumentService.move_to_trash(document)
+    except ServiceError as error:
+        flash(error.message, "error")
+        return redirect(_back_to(url_for("documents.index")))
+
     flash("Documento movido para a lixeira.", "success")
     return redirect(url_for("documents.index"))
 
@@ -172,6 +214,11 @@ def move_to_trash(public_uuid: str):
 
 @documents_bp.route("/importar", methods=["GET", "POST"])
 def import_markdown():
+    if request.method == "POST":
+        # The global ceiling is sized for video uploads; a markdown import
+        # must not be allowed to ride on it.
+        enforce_content_length(current_app.config["MAX_DOCUMENT_UPLOAD_BYTES"])
+
     form = ImportForm()
     form.category_id.choices = _category_choices()
     preview = None

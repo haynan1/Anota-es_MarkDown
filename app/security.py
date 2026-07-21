@@ -23,6 +23,8 @@ CSP_DIRECTIVES: dict[str, str] = {
     "font-src": "'self'",
     "connect-src": "'self'",
     "manifest-src": "'self'",
+    # Uploaded audio/video is served from this origin only.
+    "media-src": "'self'",
     # Remote images render in the browser (a client-side fetch, same risk as
     # any web page). They are still blocked during PDF generation, where the
     # fetch would happen server-side and become an SSRF vector.
@@ -54,6 +56,10 @@ def register_security(app: Flask) -> None:
         for header, value in SECURITY_HEADERS.items():
             response.headers.setdefault(header, value)
         response.headers.setdefault("Content-Security-Policy", csp_value)
+
+        # Werkzeug advertises its own and Python's exact version, which just
+        # hands an attacker a version to look up advisories against.
+        response.headers["Server"] = "Markdown Studio"
 
         # Documents and exports must never be cached. Assigned rather than
         # defaulted: send_file already sets "no-cache", which is weaker.

@@ -8,6 +8,7 @@
  */
 
 import { $, $$, debounce, openDialog, closeDialog } from './modules/dom.js';
+import { initAccessibilityPanel } from './modules/a11y.js';
 import { initToasts } from './modules/toasts.js';
 
 const THEME_KEY = 'markdown-studio:theme';
@@ -47,13 +48,29 @@ function watchSystemTheme() {
 
 /* ── Sidebar ──────────────────────────────────────────────────────────── */
 
+/** Applies the state and keeps the toggle's accessible name truthful. */
+function setSidebar(shell, state) {
+  const collapsed = state === 'collapsed';
+  shell.setAttribute('data-sidebar', state);
+
+  const toggle = $('[data-action="toggle-sidebar"]');
+  if (!toggle) return;
+
+  const label = collapsed ? 'Expandir barra lateral' : 'Recolher barra lateral';
+  toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+  // Name only through aria-label/title — a rendered tooltip does not fit the
+  // collapsed rail.
+  toggle.setAttribute('aria-label', label);
+  toggle.setAttribute('title', label);
+}
+
 function initSidebar() {
   const shell = $('#app-shell');
   if (!shell) return;
 
   try {
     if (window.localStorage.getItem(SIDEBAR_KEY) === 'collapsed') {
-      shell.setAttribute('data-sidebar', 'collapsed');
+      setSidebar(shell, 'collapsed');
     }
   } catch (error) {
     /* ignore */
@@ -62,7 +79,7 @@ function initSidebar() {
   document.addEventListener('click', (event) => {
     if (event.target.closest('[data-action="toggle-sidebar"]')) {
       const collapsed = shell.getAttribute('data-sidebar') === 'collapsed';
-      shell.setAttribute('data-sidebar', collapsed ? 'expanded' : 'collapsed');
+      setSidebar(shell, collapsed ? 'expanded' : 'collapsed');
       try {
         window.localStorage.setItem(SIDEBAR_KEY, collapsed ? 'expanded' : 'collapsed');
       } catch (error) {
@@ -216,14 +233,8 @@ function initDropzone() {
     nameLabel.hidden = !file;
   };
 
-  zone.addEventListener('click', () => input.click());
-  zone.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      input.click();
-    }
-  });
-
+  // No click/keydown handlers: the element is a <label for="…">, so opening
+  // the picker by mouse or keyboard is native browser behaviour.
   input.addEventListener('change', showName);
 
   ['dragenter', 'dragover'].forEach((type) =>
@@ -276,10 +287,28 @@ function initEscape() {
   document.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape') return;
 
+    const openMenu = $('details.menu[open]');
+    if (openMenu) {
+      openMenu.removeAttribute('open');
+      const summary = openMenu.querySelector('summary');
+      if (summary) summary.focus();
+      return;
+    }
+
     const shell = $('#app-shell');
     if (shell && shell.getAttribute('data-mobile-nav') === 'open') {
       closeMobileNav(shell);
     }
+  });
+}
+
+/** Only one overflow menu open at a time, and clicking away closes it. */
+function initMenus() {
+  document.addEventListener('click', (event) => {
+    const clicked = event.target.closest('details.menu');
+    $$('details.menu[open]').forEach((menu) => {
+      if (menu !== clicked) menu.removeAttribute('open');
+    });
   });
 }
 
@@ -300,6 +329,8 @@ function boot() {
   initDropzone();
   initRestoreForm();
   initEscape();
+  initMenus();
+  initAccessibilityPanel();
   applyCategoryColors();
 }
 

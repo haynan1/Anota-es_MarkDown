@@ -64,6 +64,12 @@ class Document(TimestampMixin, db.Model):
     is_favorite: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, index=True
     )
+    # Guard against accidental loss: a locked document cannot be sent to the
+    # trash, purged, or swept up by "empty trash". Editing stays unrestricted -
+    # the lock protects existence, not content.
+    is_locked: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
     is_archived: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, index=True
     )

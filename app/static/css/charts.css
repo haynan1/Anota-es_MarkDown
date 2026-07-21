@@ -1,0 +1,399 @@
+/* ==========================================================================
+   Report charts.
+
+   Palette: categorical slots 1–2 from the validated reference set, re-checked
+   against this app's own surfaces (#FFFFFF light, #111827 dark) —
+   all six checks PASS in both modes, worst adjacent CVD ΔE 24.7 light /
+   26.8 dark against an ≥8 target.
+
+   Colour lives here, never in a style attribute: the CSP forbids inline
+   styles, so the SVG carries classes and the values come from custom
+   properties, which is also what makes the charts theme-aware.
+   ========================================================================== */
+
+:root {
+  --viz-series-1: #2a78d6;
+  --viz-series-2: #eb6834;
+  --viz-surface: var(--surface);
+  --viz-grid: var(--border);
+  --viz-ink-muted: var(--text-subtle);
+  --viz-ink: var(--text-muted);
+}
+
+:root[data-theme="dark"] {
+  /* The same two hues re-stepped for the dark surface — not an automatic
+     flip, and validated as its own set. */
+  --viz-series-1: #3987e5;
+  --viz-series-2: #d95926;
+}
+
+.viz { margin: 0; }
+
+/* ── Line chart: SVG plot, HTML axes ────────────────────────────────────── */
+
+.viz-plot {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: var(--sp-3);
+}
+
+.viz-canvas {
+  grid-column: 2;
+  position: relative;
+  min-width: 0;
+}
+
+.viz-svg {
+  display: block;
+  width: 100%;
+  /* Fixed height: the viewBox is stretched horizontally only, so vertical
+     proportions — and therefore the value each pixel represents — stay put. */
+  height: 240px;
+  overflow: visible;
+}
+
+/* Three ticks, at the top, middle and baseline of the plot. The negative
+   block margin lifts the first and last label by half a line so their centres
+   land on the gridlines rather than below them. */
+.viz-yaxis {
+  grid-column: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-end;
+  height: 240px;
+  margin-block: -0.65em;
+}
+
+/* One cell per bucket: a label is centred over its own band, so it cannot
+   drift away from the point it names. */
+.viz-xaxis {
+  grid-column: 2;
+  display: grid;
+  margin-top: var(--sp-2);
+}
+/* A label may be wider than the band it names — "nov/25" over a 36px month on
+   a phone. It overflows into the neighbouring cells rather than being clipped,
+   which is safe because the axis is thinned first: every cell next to a
+   labelled one is blank. Clipping produced "nov/2", a different date. */
+.viz-xaxis > .viz-tick {
+  text-align: center;
+  overflow: visible;
+  white-space: nowrap;
+}
+
+.viz-cols-7  { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.viz-cols-6  { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.viz-cols-12 { grid-template-columns: repeat(12, minmax(0, 1fr)); }
+.viz-cols-30 { grid-template-columns: repeat(30, minmax(0, 1fr)); }
+
+/* ── Chrome ─────────────────────────────────────────────────────────────── */
+
+.viz-grid {
+  stroke: var(--viz-grid);
+  stroke-width: 1;          /* hairline, solid — never dashed */
+}
+
+/* Real HTML text now, so it holds one readable size at any card width and
+   follows the accessibility font scale like the rest of the product. */
+.viz-tick {
+  color: var(--text-subtle);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;   /* ticks align vertically */
+  line-height: 1.3;
+}
+
+/* ── Marks ──────────────────────────────────────────────────────────────── */
+
+.viz-line {
+  fill: none;
+  stroke-width: 4;
+  stroke-linejoin: round;
+  stroke-linecap: butt;   /* round caps would close the dash gaps */
+}
+
+.viz-area { stroke: none; opacity: 0.1; }   /* a wash, never a block */
+
+/* Invisible, generous hit target — the mark itself is far too small to aim at. */
+.viz-hit { fill: transparent; }
+.viz-hit:hover { fill: var(--viz-grid); opacity: 0.35; }
+
+/* ── Bar chart (HTML, not SVG — see the macro for why) ──────────────────── */
+
+.viz-bars {
+  display: grid;
+  gap: var(--sp-2);
+  margin: 0; padding: 0;
+  list-style: none;
+}
+
+.viz-bar-row {
+  display: grid;
+  /* label | track | value. The label column sizes to its content up to a cap,
+     so a chart of short category names gives the track more room while long
+     document titles stay readable instead of all rows truncating to the
+     shortest common width. */
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.viz-track {
+  display: block;
+  min-width: 0;
+  height: 18px;
+  border-radius: var(--radius-sm);
+  background: var(--viz-grid);
+}
+
+.viz-bar {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-sm);
+  background: var(--viz-series-1);
+  transition: opacity var(--dur) var(--ease);
+}
+.viz-bar:hover { opacity: 0.78; }
+
+/* Width by class: the Content-Security-Policy forbids inline styles, so a
+   computed percentage cannot ride on a style attribute. Generated 0–100. */
+.viz-w-0 { width: 0%; }
+.viz-w-1 { width: 1%; }
+.viz-w-2 { width: 2%; }
+.viz-w-3 { width: 3%; }
+.viz-w-4 { width: 4%; }
+.viz-w-5 { width: 5%; }
+.viz-w-6 { width: 6%; }
+.viz-w-7 { width: 7%; }
+.viz-w-8 { width: 8%; }
+.viz-w-9 { width: 9%; }
+.viz-w-10 { width: 10%; }
+.viz-w-11 { width: 11%; }
+.viz-w-12 { width: 12%; }
+.viz-w-13 { width: 13%; }
+.viz-w-14 { width: 14%; }
+.viz-w-15 { width: 15%; }
+.viz-w-16 { width: 16%; }
+.viz-w-17 { width: 17%; }
+.viz-w-18 { width: 18%; }
+.viz-w-19 { width: 19%; }
+.viz-w-20 { width: 20%; }
+.viz-w-21 { width: 21%; }
+.viz-w-22 { width: 22%; }
+.viz-w-23 { width: 23%; }
+.viz-w-24 { width: 24%; }
+.viz-w-25 { width: 25%; }
+.viz-w-26 { width: 26%; }
+.viz-w-27 { width: 27%; }
+.viz-w-28 { width: 28%; }
+.viz-w-29 { width: 29%; }
+.viz-w-30 { width: 30%; }
+.viz-w-31 { width: 31%; }
+.viz-w-32 { width: 32%; }
+.viz-w-33 { width: 33%; }
+.viz-w-34 { width: 34%; }
+.viz-w-35 { width: 35%; }
+.viz-w-36 { width: 36%; }
+.viz-w-37 { width: 37%; }
+.viz-w-38 { width: 38%; }
+.viz-w-39 { width: 39%; }
+.viz-w-40 { width: 40%; }
+.viz-w-41 { width: 41%; }
+.viz-w-42 { width: 42%; }
+.viz-w-43 { width: 43%; }
+.viz-w-44 { width: 44%; }
+.viz-w-45 { width: 45%; }
+.viz-w-46 { width: 46%; }
+.viz-w-47 { width: 47%; }
+.viz-w-48 { width: 48%; }
+.viz-w-49 { width: 49%; }
+.viz-w-50 { width: 50%; }
+.viz-w-51 { width: 51%; }
+.viz-w-52 { width: 52%; }
+.viz-w-53 { width: 53%; }
+.viz-w-54 { width: 54%; }
+.viz-w-55 { width: 55%; }
+.viz-w-56 { width: 56%; }
+.viz-w-57 { width: 57%; }
+.viz-w-58 { width: 58%; }
+.viz-w-59 { width: 59%; }
+.viz-w-60 { width: 60%; }
+.viz-w-61 { width: 61%; }
+.viz-w-62 { width: 62%; }
+.viz-w-63 { width: 63%; }
+.viz-w-64 { width: 64%; }
+.viz-w-65 { width: 65%; }
+.viz-w-66 { width: 66%; }
+.viz-w-67 { width: 67%; }
+.viz-w-68 { width: 68%; }
+.viz-w-69 { width: 69%; }
+.viz-w-70 { width: 70%; }
+.viz-w-71 { width: 71%; }
+.viz-w-72 { width: 72%; }
+.viz-w-73 { width: 73%; }
+.viz-w-74 { width: 74%; }
+.viz-w-75 { width: 75%; }
+.viz-w-76 { width: 76%; }
+.viz-w-77 { width: 77%; }
+.viz-w-78 { width: 78%; }
+.viz-w-79 { width: 79%; }
+.viz-w-80 { width: 80%; }
+.viz-w-81 { width: 81%; }
+.viz-w-82 { width: 82%; }
+.viz-w-83 { width: 83%; }
+.viz-w-84 { width: 84%; }
+.viz-w-85 { width: 85%; }
+.viz-w-86 { width: 86%; }
+.viz-w-87 { width: 87%; }
+.viz-w-88 { width: 88%; }
+.viz-w-89 { width: 89%; }
+.viz-w-90 { width: 90%; }
+.viz-w-91 { width: 91%; }
+.viz-w-92 { width: 92%; }
+.viz-w-93 { width: 93%; }
+.viz-w-94 { width: 94%; }
+.viz-w-95 { width: 95%; }
+.viz-w-96 { width: 96%; }
+.viz-w-97 { width: 97%; }
+.viz-w-98 { width: 98%; }
+.viz-w-99 { width: 99%; }
+.viz-w-100 { width: 100%; }
+
+/* ── Series colours ─────────────────────────────────────────────────────── */
+
+.viz-stroke-1 { stroke: var(--viz-series-1); }
+
+/* Series 2 is dashed as well as coloured. Two reasons, both load-bearing:
+   identity stops resting on colour alone (colour-blind and print readers get
+   the same information), and when two series hold the same value their lines
+   land on the identical pixels — a solid upper line then erases the lower one
+   entirely and the chart silently reports one series where there are two.
+   The gaps let the line underneath read through. */
+.viz-stroke-2 {
+  stroke: var(--viz-series-2);
+  /* Gap wider than the dash, so where the two lines run together the one
+     underneath is plainly visible rather than merely hinted at. */
+  stroke-dasharray: 6 7;
+}
+.viz-fill-1 { fill: var(--viz-series-1); }
+.viz-fill-2 { fill: var(--viz-series-2); }
+.viz-fill-solid-1 { fill: var(--viz-series-1); }
+.viz-fill-solid-2 { fill: var(--viz-series-2); }
+
+/* ── Text on charts ─────────────────────────────────────────────────────── */
+
+/* Text wears text tokens, never the series colour — identity comes from the
+   coloured key beside it.
+
+   The bar chart's text is HTML, so it takes real typography tokens and scales
+   with the accessibility setting like every other word in the product. */
+.viz-barvalue {
+  color: var(--text);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  justify-self: start;
+}
+
+.viz-barlabel {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  text-align: right;
+  /* The cap is what stops one long title from starving the track. */
+  max-width: 22ch;
+  /* A long title truncates rather than wrapping the row to two lines; the
+     full string stays available as the native tooltip and in the table. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Legend ─────────────────────────────────────────────────────────────── */
+
+.viz-legend {
+  display: flex; flex-wrap: wrap; gap: var(--sp-4);
+  margin: 0 0 var(--sp-4); padding: 0;
+  list-style: none;
+}
+.viz-legend-item {
+  display: flex; align-items: baseline; gap: var(--sp-2);
+  color: var(--text-muted); font-size: var(--fs-sm); font-weight: 550;
+}
+
+/* The direct label: the series' latest value, sitting against the name it
+   belongs to rather than floating in the plot. */
+.viz-legend-value {
+  color: var(--text);
+  font-weight: 650;
+}
+.viz-key {
+  width: 14px; height: 3px; border-radius: var(--radius-full); flex: none;
+}
+.viz-key.viz-series-1 { background: var(--viz-series-1); }
+
+/* The key mirrors the dash on the line — a legend that shows a solid swatch
+   for a dashed series is a legend that lies. */
+.viz-key.viz-series-2 {
+  background: repeating-linear-gradient(
+    to right,
+    var(--viz-series-2) 0 5px,
+    transparent 5px 8px
+  );
+}
+
+/* ── Table view & empty state ───────────────────────────────────────────── */
+
+.viz-table { margin-top: var(--sp-4); }
+.viz-table > summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+.viz-table > summary:hover { color: var(--text); }
+.viz-table .table-wrap { margin-top: var(--sp-3); }
+
+.viz-empty {
+  padding: var(--sp-6) var(--sp-4);
+  color: var(--text-subtle);
+  font-size: var(--fs-md);
+  text-align: center;
+}
+
+/* ── Layout ─────────────────────────────────────────────────────────────── */
+
+.section-title {
+  font-size: var(--fs-xl);
+  font-weight: 650;
+  letter-spacing: -0.024em;
+}
+.reports-head { margin-bottom: var(--sp-4); }
+
+.period-filter {
+  display: flex; flex-wrap: wrap; gap: var(--sp-2);
+  margin-left: auto;
+}
+.period-filter .chip.is-active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.viz-subtitle { margin-bottom: var(--sp-5); }
+
+.reports-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: var(--sp-4);
+  align-items: start;
+}
+
+@media (max-width: 560px) {
+  .reports-grid { grid-template-columns: minmax(0, 1fr); }
+  /* The label gutter narrows on a phone; the type size does not shrink —
+     truncation with a tooltip beats unreadable text. */
+  .viz-barlabel { max-width: 11ch; }
+}
+
+@media print, (forced-colors: active) {
+  /* Hue cannot be relied on here; the table view is the readable channel. */
+  .viz-table[open] > summary { display: none; }
+  .viz-table { display: block; }
+}

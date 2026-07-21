@@ -13,6 +13,7 @@ from app.models.document import (
     Document,
 )
 from app.models.document_version import DocumentVersion
+from app.models.media_asset import MediaAsset
 from app.models.setting import Setting
 from app.models.tag import Tag, document_tags
 
@@ -20,6 +21,7 @@ __all__ = [
     "Category",
     "Document",
     "DocumentVersion",
+    "MediaAsset",
     "Setting",
     "Tag",
     "document_tags",

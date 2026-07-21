@@ -15,6 +15,7 @@
 import { $, $$, debounce, formatNumber, openDialog, closeDialog, postJSON } from './modules/dom.js';
 import { toast } from './modules/toasts.js';
 import { initToolbar, applyAction, handleTab } from './modules/toolbar.js';
+import { initUploads } from './modules/uploads.js';
 import { saveDraft, readDraft, clearDraft, pruneDrafts, diffLines } from './modules/drafts.js';
 
 const MODE_KEY = 'markdown-studio:editor-mode';
@@ -247,15 +248,31 @@ function boot() {
   function toggleDrawer(force) {
     const drawer = $('#meta-drawer');
     if (!drawer) return;
+
     const next = force !== undefined ? force : drawer.dataset.open !== 'true';
     drawer.dataset.open = next ? 'true' : 'false';
-    const trigger = $('[data-action="toggle-meta"]');
+
+    const backdrop = $('.drawer-backdrop');
+    if (backdrop) backdrop.dataset.visible = next ? 'true' : 'false';
+
+    // The header trigger is underneath the open panel, so its state has to be
+    // announced even while it cannot be reached.
+    const trigger = $('.editor-header [data-action="toggle-meta"]');
     if (trigger) trigger.setAttribute('aria-expanded', next ? 'true' : 'false');
+
+    // Focus follows the panel, and returns to the trigger when it closes.
+    if (next) {
+      const first = drawer.querySelector('select, input, button');
+      if (first) first.focus();
+    } else if (trigger) {
+      trigger.focus();
+    }
   }
 
   document.addEventListener('click', (event) => {
     if (event.target.closest('[data-action="toggle-fullscreen"]')) toggleFullscreen();
     if (event.target.closest('[data-action="toggle-meta"]')) toggleDrawer();
+    if (event.target.closest('[data-action="close-meta"]')) toggleDrawer(false);
     if (event.target.closest('[data-action="save-now"]')) {
       autosave.cancel();
       save({ silent: false });
@@ -417,6 +434,13 @@ function boot() {
   /* ── Start ──────────────────────────────────────────────────────────── */
 
   initToolbar(textarea, document);
+  initUploads({
+    textarea,
+    pane: $('.editor-source'),
+    documentUuid: uuid,
+    input: $('[data-media-input]'),
+    onStatus: (message, kind) => toast(message, kind, { timeout: kind === 'info' ? 0 : 5000 }),
+  });
   initDraftRecovery();
   pruneDrafts();
   syncMirrors();

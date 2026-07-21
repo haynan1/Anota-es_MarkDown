@@ -48,6 +48,17 @@
     </output>
 
     <div class="editor-header-actions">
+      <form method="post" action="{{ url_for('documents.toggle_lock', public_uuid=document.uuid) }}" class="inline-form">
+        {{ confirm_form.hidden_tag() }}
+        <input type="hidden" name="next" value="{{ url_for('editor.edit', public_uuid=document.uuid) }}">
+        <button type="submit" class="btn btn-ghost btn-icon"
+                aria-pressed="{{ 'true' if document.is_locked else 'false' }}"
+                title="{{ 'Remover proteção contra exclusão' if document.is_locked else 'Proteger contra exclusão' }}"
+                aria-label="{{ 'Remover proteção contra exclusão' if document.is_locked else 'Proteger contra exclusão' }}">
+          {{ icon('lock' if document.is_locked else 'unlock', 'icon locked-on' if document.is_locked else 'icon') }}
+        </button>
+      </form>
+
       <button type="button" class="btn btn-ghost btn-icon" data-action="toggle-meta"
               aria-label="Abrir painel de organização" aria-expanded="false" aria-controls="meta-drawer">
         {{ icon('tag') }}
@@ -81,7 +92,16 @@
     <span class="md-toolbar-sep" aria-hidden="true"></span>
     <button type="button" class="md-tool" data-md="quote" aria-label="Citação" title="Citação">{{ icon('quote') }}</button>
     <button type="button" class="md-tool" data-md="link" aria-label="Link (Ctrl+K)" title="Link · Ctrl+K">{{ icon('link') }}</button>
-    <button type="button" class="md-tool" data-md="image" aria-label="Imagem" title="Imagem">{{ icon('image') }}</button>
+    <button type="button" class="md-tool" data-md="image" aria-label="Imagem por URL" title="Imagem por URL">{{ icon('image') }}</button>
+
+    {# Enviar mídia: a label is the whole control, so mouse and keyboard both
+       open the picker natively and the hidden input keeps its accessible name. #}
+    <label class="md-tool" data-tooltip="Enviar imagem, GIF ou vídeo">
+      {{ icon('upload') }}
+      <span class="visually-hidden">Enviar imagem, GIF ou vídeo</span>
+      <input type="file" class="visually-hidden" data-media-input multiple
+             accept="{{ media_accept }}">
+    </label>
     <span class="md-toolbar-sep" aria-hidden="true"></span>
     <button type="button" class="md-tool" data-md="list" aria-label="Lista" title="Lista">{{ icon('list') }}</button>
     <button type="button" class="md-tool" data-md="checklist" aria-label="Checklist" title="Checklist">{{ icon('checklist') }}</button>
@@ -127,6 +147,11 @@
 </div>
 
 {# ── Metadata drawer ─────────────────────────────────────────────────── #}
+{# Clicking anywhere outside closes the panel. Without it the only way out is
+   the small × inside, and while the panel is open it covers the header
+   buttons — including the one that opened it. #}
+<div class="drawer-backdrop" data-action="close-meta" aria-hidden="true"></div>
+
 <aside class="meta-drawer" id="meta-drawer" data-open="false" aria-label="Organização do documento">
   <div class="meta-drawer-head">
     <h2 class="card-title">Organização</h2>
@@ -179,6 +204,19 @@
     </div>
     <div class="modal-body stack stack-3">
       <p class="small">Salve o documento antes de exportar para incluir as últimas alterações.</p>
+
+      <div class="field">
+        <span class="field-label">O que exportar</span>
+        <label class="checkbox">
+          <input type="radio" name="formato" value="rendered" checked>
+          <span>Documento formatado <span class="subtle small">— títulos, tabelas e código renderizados</span></span>
+        </label>
+        <label class="checkbox">
+          <input type="radio" name="formato" value="source">
+          <span>Código-fonte Markdown <span class="subtle small">— listagem numerada do texto original</span></span>
+        </label>
+      </div>
+
       <div class="field">
         <label class="field-label" for="pdf-theme-select">Tema</label>
         <div class="select-wrap">

@@ -5,7 +5,7 @@
 
 .markdown-body {
   color: var(--text);
-  font-size: 1rem;
+  font-size: var(--fs-base);
   line-height: 1.75;
   overflow-wrap: break-word;
 }
@@ -36,6 +36,39 @@
 
 .markdown-body a { color: var(--accent); text-decoration: underline; text-underline-offset: 0.16em; text-decoration-thickness: 1px; }
 .markdown-body a:hover { text-decoration-thickness: 2px; }
+
+/* Wiki links read as connections between documents, not as outbound links. */
+.markdown-body .wikilink {
+  padding: 0.05em 0.28em;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 560;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+.markdown-body .wikilink:hover {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  text-decoration: none;
+}
+/* A target that does not exist yet: visibly provisional, still followable,
+   and marked with a dashed underline so it is not colour alone. */
+.markdown-body .wikilink-missing {
+  /* No pill, so no horizontal padding either - it read as a stray space
+     before the following punctuation. */
+  padding-inline: 0;
+  background: none;
+  color: var(--text-subtle);
+  text-decoration: underline dashed;
+  text-underline-offset: 0.2em;
+}
+.markdown-body .wikilink-missing:hover {
+  background: var(--warning-soft);
+  color: var(--warning);
+  text-decoration: underline dashed;
+}
 
 .markdown-body strong { font-weight: 680; }
 .markdown-body em { font-style: italic; }
@@ -103,6 +136,13 @@
 .markdown-body .md-align-justify { text-align: justify; }
 
 .markdown-body img { max-width: 100%; height: auto; border-radius: var(--radius); }
+.markdown-body video {
+  display: block;
+  max-width: 100%;
+  margin: 0 0 1.15em;
+  border-radius: var(--radius);
+  background: #000;
+}
 .markdown-body figure { margin: 0 0 1.15em; }
 .markdown-body figcaption { color: var(--text-subtle); font-size: 0.875em; text-align: center; margin-top: 0.5em; }
 
@@ -121,6 +161,19 @@
 .markdown-body .footnote hr { display: none; }
 .markdown-body .footnote-ref { text-decoration: none; font-weight: 600; }
 
+/* Shown when a document is too deeply nested for the parser (see
+   markdown_service._plain_text_fallback). */
+.markdown-body .md-render-warning {
+  margin: 0 0 1.15em;
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--warning);
+  border-left-width: 3px;
+  border-radius: var(--radius);
+  background: var(--warning-soft);
+  color: var(--text);
+  font-size: 0.875em;
+}
+
 .markdown-body dl { margin: 0 0 1.15em; }
 .markdown-body dt { font-weight: 620; margin-top: 0.75em; }
 .markdown-body dd { margin: 0.2em 0 0 1.25em; color: var(--text-muted); }
@@ -132,14 +185,11 @@
 }
 .markdown-body summary { cursor: pointer; font-weight: 590; }
 
-/* Reading measure: long prose stays comfortable, tables/code can go wider. */
-.markdown-body.measured > p,
-.markdown-body.measured > ul,
-.markdown-body.measured > ol,
-.markdown-body.measured > blockquote,
-.markdown-body.measured > h1,
-.markdown-body.measured > h2,
-.markdown-body.measured > h3 { max-width: 72ch; }
+/* Reading measure.
+   Set on the container in rem, not per element in ch: `ch` scales with each
+   element's own font-size, so headings resolved to a wider measure than the
+   paragraphs beneath them and their underlines overshot the text by ~150px. */
+.markdown-body.measured { max-width: 44rem; }
 
 /* ── Pygments (light) ───────────────────────────────────────────────────── */
 

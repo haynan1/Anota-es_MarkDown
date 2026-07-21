@@ -40,7 +40,13 @@ ALLOWED_TAGS: set[str] = {
     "details", "summary",
     # Rendered by the task-list extension; attributes are locked down below.
     "input",
+    # Uploaded video. `src` is restricted to our own delivery route by
+    # InternalMediaFilter below — no remote or scripted source can survive.
+    "video", "source",
 }
+
+# Uploaded media is served from exactly one path prefix.
+MEDIA_URL_PREFIX = "/midia/"
 
 _GLOBAL_ATTRS = ["class", "id", "title", "dir", "lang"]
 
@@ -58,6 +64,9 @@ ALLOWED_ATTRIBUTES: dict[str, list[str]] = {
     "details": [*_GLOBAL_ATTRS, "open"],
     "time": [*_GLOBAL_ATTRS, "datetime"],
     "abbr": [*_GLOBAL_ATTRS],
+    "video": [*_GLOBAL_ATTRS, "src", "controls", "poster", "width", "height",
+              "muted", "loop", "playsinline", "preload"],
+    "source": ["src", "type"],
 }
 
 ALLOWED_PROTOCOLS: list[str] = ["http", "https", "mailto", "tel"]
@@ -137,13 +146,48 @@ class CheckboxOnlyInputFilter(Filter):
             yield token
 
 
+class InternalMediaFilter(Filter):
+    """Drop any ``<video>``/``<source>`` that does not point at our own media.
+
+    Allowing ``video`` at all is only safe while its ``src`` cannot be aimed
+    elsewhere: a remote source would leak the reader's IP on every open, and
+    ``autoplay`` is withheld so a document can never make noise by itself.
+    """
+
+    MEDIA_TAGS = {"video", "source"}
+
+    def __iter__(self):
+        skipping = False
+        for token in Filter.__iter__(self):
+            name = token.get("name")
+            kind = token.get("type")
+
+            if kind in {"StartTag", "EmptyTag"} and name in self.MEDIA_TAGS:
+                attrs = token.get("data") or {}
+                src = (attrs.get((None, "src")) or "").strip()
+                if not src.startswith(MEDIA_URL_PREFIX) or src.startswith("//"):
+                    if name == "video":
+                        skipping = True
+                    continue
+                attrs[(None, "controls")] = ""
+                attrs[(None, "preload")] = "metadata"
+                attrs.pop((None, "autoplay"), None)
+                token["data"] = attrs
+
+            elif kind == "EndTag" and name == "video" and skipping:
+                skipping = False
+                continue
+
+            yield token
+
+
 _cleaner = bleach.Cleaner(
     tags=ALLOWED_TAGS,
     attributes=ALLOWED_ATTRIBUTES,
     protocols=ALLOWED_PROTOCOLS,
     strip=True,
     strip_comments=True,
-    filters=[ExternalLinkFilter, CheckboxOnlyInputFilter],
+    filters=[ExternalLinkFilter, CheckboxOnlyInputFilter, InternalMediaFilter],
 )
 
 

@@ -47,11 +47,26 @@ depender de internet para funcionar.
 - Controle de concorrência otimista: uma resposta atrasada nunca sobrescreve
   uma edição mais recente
 
+**Mídia**
+- Enviar imagens, GIFs e vídeos arrastando, colando ou pelo botão da barra
+- Formatos: PNG, JPG, GIF, WebP, MP4 e WebM
+- Tipo determinado pelo conteúdo do arquivo, nunca pela extensão
+- Imagens entram no PDF; vídeos viram uma nota impressa
+
+**Ligações entre documentos**
+- Sintaxe `[[Título do documento]]`, como no Obsidian
+- `[[Título|texto alternativo]]` para personalizar o texto do link
+- Busca sem diferenciar acentos, maiúsculas ou pontuação
+- Link para documento inexistente fica destacado e, ao ser clicado, cria o documento
+
 **Organização**
 - Categorias com cor e etiquetas livres
 - Busca por título, conteúdo, categoria e etiqueta
 - Filtros, ordenação, paginação, visualização em cards ou lista
 - Favoritos e arquivamento
+- **Cadeado**: protege um documento contra exclusão acidental, inclusive ao
+  esvaziar a lixeira. A edição continua livre — o cadeado protege a existência,
+  não o conteúdo.
 
 **Histórico**
 - Versão criada apenas quando o conteúdo realmente muda (deduplicação por hash)
@@ -300,6 +315,12 @@ toca nos seus documentos reais.
 Pelo editor: botão da impressora, ou `Ctrl+P` (que abre o diálogo de exportação
 em vez da impressão do navegador).
 
+Dois formatos, escolhidos no diálogo de exportação:
+
+- **Documento formatado** — títulos, tabelas, listas e código renderizados
+- **Código-fonte Markdown** — listagem numerada do texto original, útil para
+  revisar a sintaxe ou arquivar o fonte
+
 - **Tamanhos:** A4 e Carta (Letter)
 - **Temas:** Clássico, Minimalista, Acadêmico e Moderno
 - **Configurável:** margens, fonte, cabeçalho, rodapé, numeração de página e
@@ -403,7 +424,10 @@ Mesmo sem login, a aplicação trata o conteúdo dos documentos como não confi�
 | **SQL** | Exclusivamente pelo ORM com parâmetros vinculados; a expressão FTS é reconstruída a partir de tokens |
 | **Upload** | Extensão, tamanho, codificação UTF-8 e detecção de binário disfarçado |
 | **Arquivos** | Nomes de download reconstruídos a partir do slug; membros de ZIP validados contra path traversal |
-| **SSRF** | A geração de PDF **nunca** faz requisições de rede. Um único ponto de resolução restringe recursos a arquivos dentro de `static/` |
+| **SSRF** | A geração de PDF **nunca** faz requisições de rede. Um único ponto de resolução restringe recursos a `static/` e a imagens enviadas, resolvidas pelo banco |
+| **Upload** | Tipo decidido por assinatura de bytes, não por extensão nem pelo MIME do cliente. SVG é recusado (formato que carrega script). Nome de arquivo gerado; nada da requisição toca o sistema de arquivos |
+| **Entrega de mídia** | Caminho lido do banco, `Content-Type` reproduzido da nossa allowlist, `nosniff` e CSP `sandbox` na resposta |
+| **Vídeo no conteúdo** | Só sobrevive apontando para `/midia/`; `autoplay` é removido e `controls` é forçado |
 | **Erros** | Página amigável para o usuário, stack trace apenas no log |
 | **Logs** | Registram estrutura, nunca conteúdo de documentos |
 

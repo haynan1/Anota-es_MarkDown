@@ -5,9 +5,14 @@
     <a class="doc-card-title" href="{{ url_for('editor.edit', public_uuid=document.uuid) }}">
       {{ document.display_title }}
     </a>
-    {% if document.is_favorite %}
-      <span class="push">{{ icon('star', 'icon icon-sm star-on', 'Favorito') }}</span>
-    {% endif %}
+    <span class="push row row-tight">
+      {% if document.is_locked %}
+        {{ icon('lock', 'icon icon-sm locked-on', 'Protegido contra exclusão') }}
+      {% endif %}
+      {% if document.is_favorite %}
+        {{ icon('star', 'icon icon-sm star-on', 'Favorito') }}
+      {% endif %}
+    </span>
   </div>
 
   {% set hits = snippets|default({}, true) %}

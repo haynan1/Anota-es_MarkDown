@@ -9,9 +9,13 @@
      {% if request.endpoint == 'documents.index' %}aria-current="page"{% endif %}>
     {{ icon('file') }}<span>Documentos</span>
   </a>
-  <a class="mobile-nav-item" href="{{ url_for('editor.create_and_edit') }}">
-    {{ icon('file-plus') }}<span>Novo</span>
-  </a>
+  {# See topbar.html: creating a document is a POST, never a followed link. #}
+  <form method="post" action="{{ url_for('editor.create_and_edit') }}" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit" class="mobile-nav-item">
+      {{ icon('file-plus') }}<span>Novo</span>
+    </button>
+  </form>
   <a class="mobile-nav-item" href="{{ url_for('trash.index') }}"
      {% if request.endpoint == 'trash.index' %}aria-current="page"{% endif %}>
     {{ icon('trash') }}<span>Lixeira</span>
