@@ -72,6 +72,25 @@ class DocumentRepository:
         return db.session.scalars(stmt).unique().one_or_none()
 
     @staticmethod
+    def get_many_by_uuids(
+        uuids: list[str], include_deleted: bool = False
+    ) -> list[Document]:
+        """Resolve a selection of documents from their public UUIDs.
+
+        Order is not guaranteed to match ``uuids``: a bulk action treats the
+        set as a whole, so it never depends on it. Unknown or filtered-out
+        UUIDs are silently dropped rather than raising - a stale checkbox left
+        over from a document deleted in another tab must not fail the whole
+        batch.
+        """
+        if not uuids:
+            return []
+        stmt = select(Document).where(Document.uuid.in_(uuids))
+        if not include_deleted:
+            stmt = stmt.where(Document.is_deleted.is_(False))
+        return list(db.session.scalars(stmt).unique().all())
+
+    @staticmethod
     def slug_exists(slug: str, exclude_id: int | None = None) -> bool:
         stmt = select(Document.id).where(Document.slug == slug)
         if exclude_id is not None:

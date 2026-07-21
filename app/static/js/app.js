@@ -10,6 +10,7 @@
 import { $, $$, debounce, openDialog, closeDialog } from './modules/dom.js';
 import { initAccessibilityPanel } from './modules/a11y.js';
 import { initToasts } from './modules/toasts.js';
+import { initBulkSelect } from './modules/bulk-select.js';
 
 const THEME_KEY = 'markdown-studio:theme';
 const SIDEBAR_KEY = 'markdown-studio:sidebar';
@@ -331,6 +332,7 @@ function boot() {
   initEscape();
   initMenus();
   initAccessibilityPanel();
+  initBulkSelect();
   applyCategoryColors();
 }
 

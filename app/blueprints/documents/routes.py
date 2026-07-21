@@ -209,6 +209,78 @@ def move_to_trash(public_uuid: str):
     return redirect(url_for("documents.index"))
 
 
+# Ceiling on a single bulk request: enough for "select every document on a
+# 100-item page", small enough that a crafted POST cannot ask the server to
+# load an unbounded set into memory.
+MAX_BULK_SELECTION = 200
+
+# Success line per action, as (singular, plural). The count is prefixed only
+# to the plural, so a one-document action reads "Documento arquivado." rather
+# than "1 documento arquivado.".
+_BULK_MESSAGES = {
+    "trash": ("Documento movido para a lixeira.", "documentos movidos para a lixeira."),
+    "archive": ("Documento arquivado.", "documentos arquivados."),
+    "unarchive": ("Documento desarquivado.", "documentos desarquivados."),
+    "lock": ("Documento protegido contra exclusão.", "documentos protegidos contra exclusão."),
+    "unlock": ("Proteção removida.", "proteções removidas."),
+}
+
+
+@documents_bp.post("/acoes-em-massa")
+def bulk_action():
+    """Apply one action to several selected documents at once.
+
+    The listing checkboxes are plain HTML with no <form> of their own (nesting
+    them inside the per-document action forms would be invalid markup), so the
+    client gathers the selected UUIDs into this form on submit. Everything is
+    still validated here: the action name, the selection size and, for trash,
+    the per-document lock.
+    """
+    if not ConfirmForm().validate_on_submit():
+        flash("Sessão expirada. Tente novamente.", "error")
+        return redirect(_back_to(url_for("documents.index")))
+
+    action = request.form.get("acao", "")
+    if action not in DocumentService.BULK_ACTIONS:
+        flash("Ação inválida.", "error")
+        return redirect(_back_to(url_for("documents.index")))
+
+    uuids = [uuid for uuid in request.form.getlist("uuids") if uuid][:MAX_BULK_SELECTION]
+    if not uuids:
+        flash("Selecione ao menos um documento.", "error")
+        return redirect(_back_to(url_for("documents.index")))
+
+    # Lock and unlock reach documents in any state; the other actions operate
+    # only on live ones, matching what the listing can show.
+    include_deleted = action in {"lock", "unlock"}
+    documents = DocumentRepository.get_many_by_uuids(uuids, include_deleted=include_deleted)
+    if not documents:
+        flash("Nenhum documento encontrado para a seleção.", "error")
+        return redirect(_back_to(url_for("documents.index")))
+
+    affected, skipped = DocumentService.bulk_apply(documents, action)
+
+    if affected:
+        singular, plural = _BULK_MESSAGES[action]
+        flash(singular if affected == 1 else f"{affected} {plural}", "success")
+    if skipped:
+        plural = skipped != 1
+        flash(
+            f"{skipped} documento{'s' if plural else ''} protegido{'s' if plural else ''} "
+            f"por cadeado {'foram ignorados' if plural else 'foi ignorado'}. "
+            "Remova a proteção antes de excluir.",
+            "warning" if affected else "error",
+        )
+    elif not affected:
+        flash("Nenhum documento foi alterado.", "error")
+
+    # Trashing removes rows from the current listing; return to a clean page 1
+    # rather than a filtered URL that may now point past the last page.
+    if action == "trash":
+        return redirect(url_for("documents.index"))
+    return redirect(_back_to(url_for("documents.index")))
+
+
 # ── Import ──────────────────────────────────────────────────────────────────
 
 

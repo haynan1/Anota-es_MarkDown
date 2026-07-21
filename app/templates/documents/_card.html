@@ -2,6 +2,10 @@
 
 <article class="doc-card">
   <div class="doc-card-top">
+    <label class="doc-select-box">
+      <input type="checkbox" class="doc-select" data-uuid="{{ document.uuid }}"
+             aria-label="Selecionar “{{ document.display_title }}”">
+    </label>
     <a class="doc-card-title" href="{{ url_for('editor.edit', public_uuid=document.uuid) }}">
       {{ document.display_title }}
     </a>

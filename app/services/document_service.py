@@ -287,6 +287,47 @@ class DocumentService:
         db.session.commit()
         return document
 
+    # ── Bulk actions ────────────────────────────────────────────────────────
+
+    #: Actions the listing screen can apply to a selection at once.
+    BULK_ACTIONS = frozenset({"trash", "archive", "unarchive", "lock", "unlock"})
+
+    @staticmethod
+    def bulk_apply(documents: list[Document], action: str) -> tuple[int, int]:
+        """Apply one action to a whole selection in a single transaction.
+
+        Returns ``(affected, skipped)``. Only "trash" ever skips: a locked
+        document is protected against deletion, and - exactly like
+        :meth:`empty_trash` - a bulk action must never be the one path that
+        bypasses that protection. Every other action commits once for the
+        whole batch instead of once per document.
+        """
+        if action not in DocumentService.BULK_ACTIONS:
+            raise ValidationError("Ação em massa desconhecida.")
+
+        affected = 0
+        skipped = 0
+        for document in documents:
+            if action == "trash":
+                if document.is_locked:
+                    skipped += 1
+                    continue
+                document.is_deleted = True
+                document.deleted_at = utcnow()
+                search_index.remove_document(document.id)
+            elif action == "archive":
+                document.is_archived = True
+            elif action == "unarchive":
+                document.is_archived = False
+            elif action == "lock":
+                document.is_locked = True
+            elif action == "unlock":
+                document.is_locked = False
+            affected += 1
+
+        db.session.commit()
+        return affected, skipped
+
     @staticmethod
     def duplicate(document: Document) -> Document:
         copy = Document(

@@ -1,6 +1,10 @@
 {% from 'components/macros.html' import icon, category_badge %}
 
 <div class="doc-row">
+  <label class="doc-select-box">
+    <input type="checkbox" class="doc-select" data-uuid="{{ document.uuid }}"
+           aria-label="Selecionar “{{ document.display_title }}”">
+  </label>
   <div class="doc-row-main">
     <a class="doc-row-title" href="{{ url_for('editor.edit', public_uuid=document.uuid) }}">
       {% if document.is_locked %}{{ icon('lock', 'icon icon-sm locked-on', 'Protegido contra exclusão') }} {% endif %}

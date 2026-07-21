@@ -106,14 +106,23 @@
 {% endif %}
 
 {% if pagination.items %}
+  {# Revealed by JS: without scripting there is no bulk UI, and every
+     single-document action keeps working. #}
+  <div class="bulk-select-all" data-bulk-only hidden>
+    <label class="checkbox-inline">
+      <input type="checkbox" data-bulk-select-all>
+      Selecionar todos nesta página
+    </label>
+  </div>
+
   {% if view == 'cards' %}
-    <div class="grid grid-cards">
+    <div class="grid grid-cards" data-doc-list>
       {% for document in pagination.items %}
         {% include 'documents/_card.html' %}
       {% endfor %}
     </div>
   {% else %}
-    <div class="card">
+    <div class="card" data-doc-list>
       {% for document in pagination.items %}
         {% include 'documents/_row.html' %}
       {% endfor %}
@@ -139,6 +148,46 @@
     {{ empty_state('file-plus', 'Nenhum documento por aqui',
                    'Crie um documento do zero ou importe um arquivo .md que você já tenha escrito.') }}
   {% endif %}
+{% endif %}
+
+{% if pagination.items %}
+  {% set here = request.full_path if request.query_string else request.path %}
+  <form class="bulk-bar" method="post" action="{{ url_for('documents.bulk_action') }}"
+        aria-label="Ações para os documentos selecionados" data-bulk-bar hidden>
+    {{ confirm_form.hidden_tag() }}
+    <input type="hidden" name="next" value="{{ here }}">
+
+    <div class="bulk-bar-count" aria-live="polite">
+      <strong data-bulk-count>0</strong>
+      selecionado<span data-bulk-plural hidden>s</span>
+    </div>
+
+    <div class="bulk-bar-actions">
+      {% if query.scope == 'archived' %}
+        <button type="submit" name="acao" value="unarchive" class="btn btn-sm">
+          {{ icon('archive', 'icon icon-sm') }} Desarquivar
+        </button>
+      {% else %}
+        <button type="submit" name="acao" value="archive" class="btn btn-sm">
+          {{ icon('archive', 'icon icon-sm') }} Arquivar
+        </button>
+      {% endif %}
+      <button type="submit" name="acao" value="lock" class="btn btn-sm">
+        {{ icon('lock', 'icon icon-sm') }} Proteger
+      </button>
+      <button type="submit" name="acao" value="unlock" class="btn btn-sm">
+        {{ icon('unlock', 'icon icon-sm') }} Remover proteção
+      </button>
+      <button type="submit" name="acao" value="trash" class="btn btn-sm btn-danger">
+        {{ icon('trash', 'icon icon-sm') }} Mover para a lixeira
+      </button>
+    </div>
+
+    <button type="button" class="btn btn-ghost btn-icon btn-sm" data-bulk-clear
+            title="Limpar seleção" aria-label="Limpar seleção">
+      {{ icon('close', 'icon icon-sm') }}
+    </button>
+  </form>
 {% endif %}
 
 {% include 'documents/_rename_dialog.html' %}

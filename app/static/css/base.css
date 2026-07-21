@@ -593,6 +593,56 @@ a:hover { text-decoration: underline; }
 .doc-row-sub { margin-top: var(--sp-1); color: var(--text-subtle); font-size: var(--fs-sm); display: flex; gap: var(--sp-3); flex-wrap: wrap; }
 .doc-row-actions { display: flex; gap: var(--sp-1); }
 
+/* ── Bulk selection ─────────────────────────────────────────────────────────
+   The selection column is dormant until JavaScript marks a list
+   `.is-selectable`. Until then the checkboxes are display:none, so the grid
+   row keeps its two-column shape and the cards keep their layout.
+   -------------------------------------------------------------------------- */
+.doc-select-box { display: none; align-items: center; justify-content: center; }
+.is-selectable .doc-select-box { display: inline-flex; }
+/* Make room for the checkbox as the grid's leading column. */
+.is-selectable .doc-row { grid-template-columns: auto minmax(0, 1fr) auto; }
+
+/* Selected state reads at a glance without a second control. */
+.doc-card:has(.doc-select:checked) {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.doc-row:has(.doc-select:checked) { background: var(--accent-soft); }
+
+.bulk-select-all { margin-bottom: var(--sp-4); }
+.checkbox-inline {
+  display: inline-flex; align-items: center; gap: var(--sp-2);
+  color: var(--text-muted); font-size: var(--fs-sm); font-weight: 560; cursor: pointer;
+}
+.checkbox-inline:hover { color: var(--text); }
+
+/* Floating action bar: appears only while a selection exists (JS toggles the
+   `hidden` attribute), centred above everything the listing can open. */
+.bulk-bar {
+  position: fixed; z-index: 60;
+  left: 50%; bottom: var(--sp-5); transform: translateX(-50%);
+  display: flex; align-items: center; gap: var(--sp-4);
+  max-width: calc(100vw - 2 * var(--sp-4));
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-full);
+  box-shadow: var(--shadow-lg);
+  animation: bulk-bar-in var(--dur) var(--ease);
+}
+.bulk-bar[hidden] { display: none; }
+.bulk-bar-count { font-size: var(--fs-sm); color: var(--text-muted); white-space: nowrap; }
+.bulk-bar-count strong { color: var(--text); font-variant-numeric: tabular-nums; }
+.bulk-bar-actions { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+
+@keyframes bulk-bar-in {
+  from { opacity: 0; transform: translate(-50%, var(--sp-4)); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bulk-bar { animation: none; }
+}
+
 /* ── Overflow menu ──────────────────────────────────────────────────────── */
 
 .menu { position: relative; }
@@ -716,13 +766,52 @@ a:hover { text-decoration: underline; }
 .color-input { width: 46px; min-height: 38px; padding: 3px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); cursor: pointer; }
 
 .checkbox { display: flex; align-items: center; gap: var(--sp-3); cursor: pointer; min-height: 38px; }
-.checkbox input { width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer; }
+
+:is(.checkbox, .checkbox-inline, .doc-select-box) input[type="checkbox"] {
+  appearance: none;
+  display: grid; place-content: center; flex: none;
+  width: 1.25rem; height: 1.25rem; margin: 0;
+  border: 1px solid var(--border-strong); border-radius: 0.3rem;
+  background: var(--surface); cursor: pointer;
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+:is(.checkbox, .checkbox-inline, .doc-select-box) input[type="checkbox"]::before {
+  content: "";
+  width: 0.62rem; height: 0.35rem;
+  border: solid var(--accent-contrast); border-width: 0 0 2px 2px;
+  transform: translateY(-0.08rem) rotate(-45deg) scale(0);
+  transition: transform var(--dur) var(--ease);
+}
+:is(.checkbox, .checkbox-inline, .doc-select-box) input[type="checkbox"]:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+:is(.checkbox, .checkbox-inline, .doc-select-box) input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+:is(.checkbox, .checkbox-inline, .doc-select-box) input[type="checkbox"]:checked,
+:is(.checkbox, .checkbox-inline, .doc-select-box) input[type="checkbox"]:indeterminate {
+  background: var(--accent); border-color: var(--accent);
+}
+:is(.checkbox, .checkbox-inline, .doc-select-box) input[type="checkbox"]:checked::before {
+  transform: translateY(-0.08rem) rotate(-45deg) scale(1);
+}
+:is(.checkbox, .checkbox-inline, .doc-select-box) input[type="checkbox"]:indeterminate::before {
+  width: 0.62rem; height: 2px;
+  border: 0; background: var(--accent-contrast);
+  transform: none;
+}
+:is(.checkbox, .checkbox-inline, .doc-select-box) input[type="checkbox"]:disabled {
+  opacity: 0.55; cursor: not-allowed;
+}
 
 .search-field { position: relative; flex: 1; min-width: 0; max-width: 460px; }
 .search-field .icon { position: absolute; left: var(--sp-3); top: 50%; transform: translateY(-50%); color: var(--text-subtle); pointer-events: none; }
 .search-field .input { padding-left: 2.375rem; }
 
 .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0 var(--sp-4); }
+.backup-directory { min-width: 0; }
+.backup-path { overflow-wrap: anywhere; word-break: break-word; }
 .form-actions { display: flex; gap: var(--sp-3); flex-wrap: wrap; padding-top: var(--sp-4); border-top: 1px solid var(--border); margin-top: var(--sp-2); }
 
 /* ── Toolbar / filters ──────────────────────────────────────────────────── */

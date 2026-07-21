@@ -64,9 +64,9 @@
     <hr class="divider">
     <div class="form-grid">
       {{ field(form.backup_keep_last, type='number') }}
-      <div class="field">
+      <div class="field backup-directory">
         <span class="field-label">Diretório dos backups</span>
-        <p class="small muted">
+        <p class="small muted backup-path">
           <code>{{ config.BACKUP_DIR }}</code>
         </p>
         <span class="field-hint">Configurável pela variável <code>BACKUP_DIR</code> no arquivo <code>.env</code>.</span>
