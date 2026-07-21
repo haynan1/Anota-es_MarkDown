@@ -1,0 +1,21 @@
+{% from 'components/macros.html' import icon %}
+
+{#
+  Flash messages are rendered server-side and announced through an aria-live
+  region; app.js reuses the same markup for client-side notifications.
+#}
+<div class="toasts" id="toasts" role="status" aria-live="polite" aria-atomic="false">
+  {% for category, message in get_flashed_messages(with_categories=true) %}
+    {% set kind = category if category in ['success', 'error', 'warning', 'info'] else 'info' %}
+    <div class="toast toast-{{ kind }}" data-toast>
+      <span class="toast-icon">
+        {{ icon('check' if kind == 'success' else ('alert' if kind in ['error', 'warning'] else 'info')) }}
+      </span>
+      <p class="toast-body">{{ message }}</p>
+      <button type="button" class="btn btn-ghost btn-icon btn-sm toast-close"
+              data-action="dismiss-toast" aria-label="Fechar aviso">
+        {{ icon('close', 'icon icon-sm') }}
+      </button>
+    </div>
+  {% endfor %}
+</div>

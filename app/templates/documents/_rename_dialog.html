@@ -1,0 +1,23 @@
+{#
+  Rename dialog. app.js points the form at the right document and prefills the
+  title when a rename button is pressed.
+#}
+<dialog class="modal" id="rename-dialog" aria-labelledby="rename-dialog-title">
+  <form method="post" id="rename-form">
+    {{ rename_form.hidden_tag() }}
+    <input type="hidden" name="next" value="{{ request.full_path if request.query_string else request.path }}">
+    <div class="modal-head">
+      <h2 class="modal-title" id="rename-dialog-title">Renomear documento</h2>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label class="field-label" for="rename-title">Novo título</label>
+        <input class="input" type="text" id="rename-title" name="title" maxlength="200" required>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="btn" data-action="close-dialog">Cancelar</button>
+      <button type="submit" class="btn btn-primary">Salvar</button>
+    </div>
+  </form>
+</dialog>

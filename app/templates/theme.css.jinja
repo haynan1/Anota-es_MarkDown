@@ -1,0 +1,19 @@
+{#
+  Generated stylesheet carrying the user's accent colour.
+
+  Served from /assets/theme.css instead of an inline <style> block so the
+  Content-Security-Policy can stay free of 'unsafe-inline'.
+#}
+:root {
+  --accent: {{ accent }};
+  --accent-strong: color-mix(in srgb, {{ accent }} 82%, #000);
+  --accent-soft: color-mix(in srgb, {{ accent }} 12%, transparent);
+  --accent-contrast: #FFFFFF;
+}
+
+:root[data-theme="dark"] {
+  --accent: color-mix(in srgb, {{ accent }} 78%, #FFFFFF);
+  --accent-strong: color-mix(in srgb, {{ accent }} 60%, #FFFFFF);
+  --accent-soft: color-mix(in srgb, {{ accent }} 22%, transparent);
+  --accent-contrast: #0F172A;
+}

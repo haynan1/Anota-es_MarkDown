@@ -1,0 +1,148 @@
+{% extends 'base.html' %}
+{% from 'components/macros.html' import icon, category_badge, empty_state, pager %}
+
+{% set topbar_title = 'Documentos' %}
+{% block title %}Documentos · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="page-head-row">
+    <div>
+      <h1 class="page-title">
+        {% if query.scope == 'archived' %}Arquivados
+        {% elif query.only_favorites %}Favoritos
+        {% else %}Documentos{% endif %}
+      </h1>
+      <p class="page-subtitle">
+        {% if query.is_searching %}
+          {{ pagination.total }} resultado{{ 's' if pagination.total != 1 }} para “{{ query.search }}”
+        {% else %}
+          {{ pagination.total }} documento{{ 's' if pagination.total != 1 }}
+        {% endif %}
+      </p>
+    </div>
+    <div class="page-head-actions">
+      <a class="btn" href="{{ url_for('documents.import_markdown') }}">
+        {{ icon('upload', 'icon icon-sm') }} Importar
+      </a>
+      <a class="btn btn-primary" href="{{ url_for('editor.create_and_edit') }}">
+        {{ icon('plus', 'icon icon-sm') }} Novo documento
+      </a>
+    </div>
+  </div>
+</div>
+
+<form class="toolbar" method="get" action="{{ url_for('documents.index') }}" id="filters-form">
+  <div class="search-field">
+    {{ icon('search', 'icon icon-sm') }}
+    <label class="visually-hidden" for="doc-search">Pesquisar</label>
+    <input class="input" type="search" id="doc-search" name="q" value="{{ query.search }}"
+           placeholder="Pesquisar por título, conteúdo, categoria ou etiqueta…"
+           data-autosubmit autocomplete="off">
+  </div>
+
+  <div class="toolbar-group">
+    <label class="visually-hidden" for="filter-category">Categoria</label>
+    <div class="select-wrap">
+      <select class="select" id="filter-category" name="categoria" data-autosubmit>
+        <option value="">Todas as categorias</option>
+        {% for category in categories %}
+          <option value="{{ category.id }}" {{ 'selected' if query.category_id == category.id }}>
+            {{ category.name }}
+          </option>
+        {% endfor %}
+      </select>
+      {{ icon('chevron-down', 'icon icon-sm') }}
+    </div>
+
+    <label class="visually-hidden" for="filter-sort">Ordenação</label>
+    <div class="select-wrap">
+      <select class="select" id="filter-sort" name="ordem" data-autosubmit>
+        {% for value, label in sort_options.items() %}
+          <option value="{{ value }}" {{ 'selected' if query.sort == value }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      {{ icon('chevron-down', 'icon icon-sm') }}
+    </div>
+  </div>
+
+  <div class="toolbar-group">
+    <button type="submit" name="favoritos" value="{{ '' if query.only_favorites else '1' }}"
+            class="chip" aria-pressed="{{ 'true' if query.only_favorites else 'false' }}">
+      {{ icon('star', 'icon icon-sm') }} Favoritos
+    </button>
+    <button type="submit" name="escopo" value="{{ 'active' if query.scope == 'archived' else 'archived' }}"
+            class="chip" aria-pressed="{{ 'true' if query.scope == 'archived' else 'false' }}">
+      {{ icon('archive', 'icon icon-sm') }} Arquivados
+    </button>
+
+    <div class="btn-group" role="group" aria-label="Modo de visualização">
+      <button type="submit" name="visual" value="cards" class="btn btn-icon"
+              aria-pressed="{{ 'true' if view == 'cards' else 'false' }}" aria-label="Visualizar em cards">
+        {{ icon('dashboard', 'icon icon-sm') }}
+      </button>
+      <button type="submit" name="visual" value="list" class="btn btn-icon"
+              aria-pressed="{{ 'true' if view == 'list' else 'false' }}" aria-label="Visualizar em lista">
+        {{ icon('list', 'icon icon-sm') }}
+      </button>
+    </div>
+  </div>
+
+  {% if query.scope == 'archived' and not request.args.get('escopo') %}
+    <input type="hidden" name="escopo" value="archived">
+  {% endif %}
+  {% for slug in query.tag_slugs %}<input type="hidden" name="etiqueta" value="{{ slug }}">{% endfor %}
+  <noscript><button type="submit" class="btn btn-sm">Aplicar filtros</button></noscript>
+</form>
+
+{% if query.tag_slugs %}
+  <div class="chip-list section-gap" aria-label="Etiquetas filtradas">
+    {% for slug in query.tag_slugs %}
+      <span class="chip is-active">
+        {{ icon('tag', 'icon icon-sm') }}{{ slug }}
+        <a href="{{ url_for('documents.index', q=query.search or None, categoria=query.category_id or None,
+                            etiqueta=query.tag_slugs|reject('equalto', slug)|list) }}"
+           aria-label="Remover filtro {{ slug }}">{{ icon('close', 'icon icon-sm') }}</a>
+      </span>
+    {% endfor %}
+  </div>
+{% endif %}
+
+{% if pagination.items %}
+  {% if view == 'cards' %}
+    <div class="grid grid-cards">
+      {% for document in pagination.items %}
+        {% include 'documents/_card.html' %}
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="card">
+      {% for document in pagination.items %}
+        {% include 'documents/_row.html' %}
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  {{ pager(pagination, 'documents.index', {
+       'q': query.search or None,
+       'categoria': query.category_id or None,
+       'ordem': query.sort,
+       'favoritos': '1' if query.only_favorites else None,
+       'escopo': query.scope if query.scope != 'active' else None,
+       'visual': view,
+     }) }}
+{% else %}
+  {% if query.has_filters %}
+    {{ empty_state('search', 'Nada encontrado',
+                   'Nenhum documento corresponde a esses filtros. Tente outros termos ou limpe a busca.') }}
+    <div class="row section-gap center-row">
+      <a class="btn" href="{{ url_for('documents.index') }}">Limpar filtros</a>
+    </div>
+  {% else %}
+    {{ empty_state('file-plus', 'Nenhum documento por aqui',
+                   'Crie um documento do zero ou importe um arquivo .md que você já tenha escrito.') }}
+  {% endif %}
+{% endif %}
+
+{% include 'documents/_rename_dialog.html' %}
+{% endblock %}

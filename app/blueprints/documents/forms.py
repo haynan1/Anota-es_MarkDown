@@ -1,0 +1,125 @@
+"""Forms for document and taxonomy management.
+
+Flask-WTF supplies CSRF protection; the validators here are the server-side
+half of every constraint the UI advertises.
+"""
+
+from __future__ import annotations
+
+from flask_wtf import FlaskForm
+from flask_wtf.file import FileAllowed, FileField, FileRequired
+from wtforms import BooleanField, HiddenField, SelectField, StringField, TextAreaField
+from wtforms.validators import (
+    DataRequired,
+    Length,
+    Optional,
+    Regexp,
+    ValidationError,
+)
+
+CATEGORY_CHOICE_EMPTY = ("", "Sem categoria")
+
+
+class DocumentMetadataForm(FlaskForm):
+    """Title, taxonomy and PDF preferences, submitted from the editor."""
+
+    title = StringField(
+        "Título",
+        validators=[Length(max=200, message="O título deve ter no máximo 200 caracteres.")],
+    )
+    content_markdown = TextAreaField("Conteúdo")
+    category_id = SelectField("Categoria", validators=[Optional()], validate_choice=False)
+    tags = StringField(
+        "Etiquetas",
+        validators=[Length(max=400, message="Lista de etiquetas longa demais.")],
+        description="Separe por vírgula",
+    )
+    is_favorite = BooleanField("Favorito")
+    page_size = SelectField(
+        "Tamanho da página",
+        choices=[("A4", "A4"), ("Letter", "Carta (Letter)")],
+        validate_choice=False,
+    )
+    pdf_theme = SelectField(
+        "Tema do PDF",
+        choices=[
+            ("classic", "Clássico"),
+            ("minimal", "Minimalista"),
+            ("academic", "Acadêmico"),
+            ("modern", "Moderno"),
+        ],
+        validate_choice=False,
+    )
+    expected_revision = HiddenField()
+
+    def tag_names(self) -> list[str]:
+        raw = self.tags.data or ""
+        return [part.strip() for part in raw.split(",") if part.strip()][:20]
+
+    def selected_category_id(self) -> int | None:
+        raw = (self.category_id.data or "").strip()
+        return int(raw) if raw.isdigit() else None
+
+
+class RenameForm(FlaskForm):
+    title = StringField(
+        "Título",
+        validators=[
+            DataRequired(message="Informe um título."),
+            Length(max=200, message="O título deve ter no máximo 200 caracteres."),
+        ],
+    )
+
+
+class CategoryForm(FlaskForm):
+    name = StringField(
+        "Nome",
+        validators=[
+            DataRequired(message="Informe o nome da categoria."),
+            Length(max=80),
+        ],
+    )
+    color = StringField(
+        "Cor",
+        validators=[
+            Optional(),
+            Regexp(
+                r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+                message="Use uma cor no formato #RRGGBB.",
+            ),
+        ],
+        default="#4F46E5",
+    )
+
+
+class ImportForm(FlaskForm):
+    file = FileField(
+        "Arquivo Markdown",
+        validators=[
+            FileRequired(message="Selecione um arquivo."),
+            FileAllowed(
+                ["md", "markdown", "mdown", "txt"],
+                message="Envie um arquivo .md, .markdown, .mdown ou .txt.",
+            ),
+        ],
+    )
+    category_id = SelectField("Categoria", validators=[Optional()], validate_choice=False)
+
+    def selected_category_id(self) -> int | None:
+        raw = (self.category_id.data or "").strip()
+        return int(raw) if raw.isdigit() else None
+
+
+class ConfirmForm(FlaskForm):
+    """Bare CSRF-carrying form for destructive POST actions."""
+
+
+class EmptyTrashForm(FlaskForm):
+    confirmation = StringField(
+        "Confirmação",
+        validators=[DataRequired(message="Digite EXCLUIR para confirmar.")],
+    )
+
+    def validate_confirmation(self, field) -> None:
+        if (field.data or "").strip().upper() != "EXCLUIR":
+            raise ValidationError("Digite EXCLUIR para confirmar.")

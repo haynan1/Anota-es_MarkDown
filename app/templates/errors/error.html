@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+{% from 'components/macros.html' import icon %}
+
+{% set topbar_title = title %}
+{% block title %}{{ title }} · {{ app_name }}{% endblock %}
+{% block content_class %}content-narrow{% endblock %}
+
+{% block content %}
+<div class="empty error-page">
+  <span class="empty-icon">{{ icon('alert', 'icon icon-xl') }}</span>
+  <p class="error-code tabular">{{ code }}</p>
+  <h1 class="empty-title">{{ title }}</h1>
+  <p class="empty-text">{{ message }}</p>
+  <div class="row row-tight center-row">
+    <a class="btn btn-primary" href="{{ url_for('documents.index') }}">
+      {{ icon('file', 'icon icon-sm') }} Ir para os documentos
+    </a>
+    <a class="btn" href="{{ url_for('dashboard.index') }}">Voltar ao painel</a>
+  </div>
+</div>
+{% endblock %}

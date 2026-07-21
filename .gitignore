@@ -1,0 +1,50 @@
+# ── Segredos e configuração local ───────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Dados da aplicação ──────────────────────────────────────────────────────
+instance/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# ── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# ── Ambientes virtuais ──────────────────────────────────────────────────────
+venv/
+.venv/
+env/
+ENV/
+
+# ── Testes e cobertura ──────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.tox/
+
+# ── Ferramentas ─────────────────────────────────────────────────────────────
+.mypy_cache/
+.ruff_cache/
+.idea/
+.vscode/
+*.swp
+
+# ── Sistema operacional ─────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -1,0 +1,32 @@
+# ── Core ────────────────────────────────────────────────────────────────────
+Flask==3.1.0
+Flask-SQLAlchemy==3.1.1
+Flask-Migrate==4.0.7
+Flask-WTF==1.2.2
+WTForms==3.2.1
+SQLAlchemy==2.0.36
+alembic==1.14.0
+python-dotenv==1.0.1
+
+# ── Markdown pipeline ───────────────────────────────────────────────────────
+Markdown==3.7
+pymdown-extensions==10.12
+Pygments==2.18.0
+bleach==6.2.0
+python-slugify==8.0.4
+
+# Windows has no system IANA timezone database; zoneinfo needs this.
+tzdata==2024.2
+
+# ── PDF (primary engine) ────────────────────────────────────────────────────
+# WeasyPrint needs native GTK/Pango/Cairo libraries.
+# On Windows those are NOT bundled - see README "Dependencias do WeasyPrint".
+# If unavailable, the app transparently falls back to the xhtml2pdf engine.
+weasyprint==63.1
+
+# ── PDF (fallback engine, pure Python - no native dependencies) ─────────────
+xhtml2pdf==0.2.16
+
+# ── Tests ───────────────────────────────────────────────────────────────────
+pytest==8.3.4
+pytest-cov==6.0.0

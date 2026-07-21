@@ -1,0 +1,75 @@
+{% extends 'base.html' %}
+{% from 'components/macros.html' import icon, select_field %}
+
+{% set topbar_title = 'Importar Markdown' %}
+{% block title %}Importar Markdown · {{ app_name }}{% endblock %}
+{% block content_class %}content-narrow{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1 class="page-title">Importar um arquivo Markdown</h1>
+  <p class="page-subtitle">
+    Aceita arquivos <code>.md</code>, <code>.markdown</code>, <code>.mdown</code> e <code>.txt</code>
+    codificados em UTF-8, com até {{ (config.MAX_MARKDOWN_BYTES // 1048576) }} MB.
+  </p>
+</div>
+
+<form method="post" enctype="multipart/form-data" class="card card-pad stack stack-4" id="import-form">
+  {{ form.hidden_tag() }}
+
+  <div class="dropzone" data-dropzone tabindex="0" role="button"
+       aria-label="Selecionar arquivo Markdown ou arrastar até aqui">
+    <span class="empty-icon">{{ icon('upload', 'icon icon-xl') }}</span>
+    <p class="empty-title">Arraste o arquivo até aqui</p>
+    <p class="empty-text">ou clique para escolher no computador</p>
+    <p class="dropzone-filename" data-dropzone-name hidden></p>
+    {{ form.file(class='visually-hidden', id='import-file', accept='.md,.markdown,.mdown,.txt') }}
+  </div>
+
+  {% for error in form.file.errors %}
+    <p class="field-error">{{ icon('alert', 'icon icon-sm') }}{{ error }}</p>
+  {% endfor %}
+
+  {{ select_field(form.category_id) }}
+
+  <div class="form-actions">
+    <button type="submit" name="action" value="preview" class="btn">
+      {{ icon('eye', 'icon icon-sm') }} Pré-visualizar
+    </button>
+    <button type="submit" name="action" value="import" class="btn btn-primary">
+      {{ icon('upload', 'icon icon-sm') }} Importar documento
+    </button>
+  </div>
+</form>
+
+{% if preview %}
+  <section class="card section-gap" aria-labelledby="preview-title">
+    <div class="card-head">
+      {{ icon('eye', 'icon icon-sm') }}
+      <h2 class="card-title" id="preview-title">Prévia da importação</h2>
+    </div>
+    <div class="card-pad stack stack-3">
+      <div class="row">
+        <span class="badge badge-accent">{{ preview.filename }}</span>
+        <span class="badge tabular">{{ preview.word_count|number_br }} palavras</span>
+        <span class="badge tabular">{{ (preview.size_bytes / 1024)|round(1) }} KB</span>
+        {% for tag in preview.tags %}<span class="badge">{{ icon('tag', 'icon icon-sm') }}{{ tag }}</span>{% endfor %}
+      </div>
+
+      <div class="field">
+        <span class="field-label">Título detectado</span>
+        <p>{{ preview.title }}</p>
+      </div>
+
+      <div class="field">
+        <span class="field-label">Trecho inicial</span>
+        <p class="muted">{{ preview.excerpt }}</p>
+      </div>
+
+      <p class="small subtle">
+        Envie o arquivo novamente e escolha “Importar documento” para salvar.
+      </p>
+    </div>
+  </section>
+{% endif %}
+{% endblock %}

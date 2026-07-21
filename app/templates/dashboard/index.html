@@ -1,0 +1,174 @@
+{% extends 'base.html' %}
+{% from 'components/macros.html' import icon, category_badge, empty_state %}
+
+{% set topbar_title = 'Painel' %}
+{% block title %}Painel · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="page-head-row">
+    <div>
+      <h1 class="page-title">Seu espaço de escrita</h1>
+      <p class="page-subtitle">
+        {% if stats.total %}
+          {{ stats.total|number_br }} documento{{ 's' if stats.total != 1 }} ·
+          {{ stats.words|number_br }} palavra{{ 's' if stats.words != 1 }} escrita{{ 's' if stats.words != 1 }}
+        {% else %}
+          Comece criando ou importando o primeiro documento.
+        {% endif %}
+      </p>
+    </div>
+    <div class="page-head-actions">
+      <a class="btn" href="{{ url_for('documents.import_markdown') }}">
+        {{ icon('upload', 'icon icon-sm') }} Importar Markdown
+      </a>
+      <a class="btn btn-primary" href="{{ url_for('editor.create_and_edit') }}">
+        {{ icon('plus', 'icon icon-sm') }} Novo documento
+      </a>
+    </div>
+  </div>
+</div>
+
+<section class="grid grid-stats" aria-label="Resumo">
+  <div class="stat">
+    <span class="stat-label">{{ icon('file', 'icon icon-sm') }} Documentos ativos</span>
+    <p class="stat-value">{{ stats.active|number_br }}</p>
+    <p class="stat-hint">
+      {% if stats.created_this_week %}+{{ stats.created_this_week }} nos últimos 7 dias{% else %}Nenhum criado esta semana{% endif %}
+    </p>
+  </div>
+  <div class="stat">
+    <span class="stat-label">{{ icon('word', 'icon icon-sm') }} Palavras escritas</span>
+    <p class="stat-value">{{ stats.words|number_br }}</p>
+    <p class="stat-hint">Somando todos os documentos</p>
+  </div>
+  <div class="stat">
+    <span class="stat-label">{{ icon('star', 'icon icon-sm') }} Favoritos</span>
+    <p class="stat-value">{{ stats.favorites|number_br }}</p>
+    <p class="stat-hint">
+      <a href="{{ url_for('documents.index', favoritos=1) }}">Ver favoritos</a>
+    </p>
+  </div>
+  <div class="stat">
+    <span class="stat-label">{{ icon('archive', 'icon icon-sm') }} Arquivados</span>
+    <p class="stat-value">{{ stats.archived|number_br }}</p>
+    <p class="stat-hint">
+      {% if stats.trashed %}
+        {{ stats.trashed }} na <a href="{{ url_for('trash.index') }}">lixeira</a>
+      {% else %}
+        Lixeira vazia
+      {% endif %}
+    </p>
+  </div>
+</section>
+
+<div class="grid grid-2 section-gap">
+  <section class="card" aria-labelledby="recent-title">
+    <div class="card-head">
+      {{ icon('clock', 'icon icon-sm') }}
+      <h2 class="card-title" id="recent-title">Modificados recentemente</h2>
+      <span class="card-head-actions">
+        <a class="btn btn-ghost btn-sm" href="{{ url_for('documents.index') }}">Ver todos</a>
+      </span>
+    </div>
+
+    {% if recent %}
+      <div>
+        {% for document in recent %}
+          <div class="doc-row">
+            <div class="doc-row-main">
+              <a class="doc-row-title truncate" href="{{ url_for('editor.edit', public_uuid=document.uuid) }}">
+                {{ document.display_title }}
+              </a>
+              <div class="doc-row-sub">
+                <span>{{ document.updated_at|since }}</span>
+                <span>{{ document.word_count|number_br }} palavras</span>
+                {% if document.category %}{{ category_badge(document.category) }}{% endif %}
+                {% if document.is_favorite %}
+                  <span class="badge badge-warning">{{ icon('star', 'icon icon-sm') }} Favorito</span>
+                {% endif %}
+              </div>
+            </div>
+            <div class="doc-row-actions">
+              <a class="btn btn-ghost btn-icon btn-sm" href="{{ url_for('editor.edit', public_uuid=document.uuid) }}"
+                 aria-label="Abrir {{ document.display_title }}">{{ icon('edit', 'icon icon-sm') }}</a>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="card-pad">
+        {{ empty_state('file-plus', 'Nenhum documento ainda',
+                       'Crie o primeiro documento ou importe um arquivo .md que você já tenha.') }}
+      </div>
+    {% endif %}
+  </section>
+
+  <div class="stack stack-4">
+    <section class="card" aria-labelledby="favorites-title">
+      <div class="card-head">
+        {{ icon('star', 'icon icon-sm') }}
+        <h2 class="card-title" id="favorites-title">Favoritos</h2>
+      </div>
+      {% if favorites %}
+        <div>
+          {% for document in favorites %}
+            <div class="doc-row">
+              <div class="doc-row-main">
+                <a class="doc-row-title truncate" href="{{ url_for('editor.edit', public_uuid=document.uuid) }}">
+                  {{ document.display_title }}
+                </a>
+                <div class="doc-row-sub"><span>{{ document.updated_at|since }}</span></div>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="card-pad">
+          <p class="muted small">Marque documentos com a estrela para encontrá-los rápido aqui.</p>
+        </div>
+      {% endif %}
+    </section>
+
+    <section class="card" aria-labelledby="categories-title">
+      <div class="card-head">
+        {{ icon('folder', 'icon icon-sm') }}
+        <h2 class="card-title" id="categories-title">Categorias mais usadas</h2>
+        <span class="card-head-actions">
+          <a class="btn btn-ghost btn-sm" href="{{ url_for('documents.categories') }}">Gerenciar</a>
+        </span>
+      </div>
+      <div class="card-pad">
+        {% if category_usage %}
+          <div class="chip-list">
+            {% for category, total in category_usage %}
+              <a class="chip" href="{{ url_for('documents.index', categoria=category.id) }}">
+                <span class="badge-dot" data-color="{{ category.color }}"></span>
+                {{ category.name }}
+                <span class="badge tabular">{{ total }}</span>
+              </a>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p class="muted small">Nenhuma categoria criada ainda.</p>
+        {% endif %}
+
+        {% if tag_usage %}
+          <hr class="divider">
+          <p class="field-label">Etiquetas</p>
+          <div class="chip-list">
+            {% for tag, total in tag_usage %}
+              {% if total %}
+                <a class="chip" href="{{ url_for('documents.index', etiqueta=tag.slug) }}">
+                  {{ icon('tag', 'icon icon-sm') }}{{ tag.name }}
+                  <span class="badge tabular">{{ total }}</span>
+                </a>
+              {% endif %}
+            {% endfor %}
+          </div>
+        {% endif %}
+      </div>
+    </section>
+  </div>
+</div>
+{% endblock %}

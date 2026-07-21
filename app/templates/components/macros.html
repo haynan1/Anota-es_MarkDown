@@ -1,0 +1,101 @@
+{# Reusable template pieces. #}
+
+{% macro icon(name, cls='icon', title=None) -%}
+<svg class="{{ cls }}" aria-hidden="{{ 'false' if title else 'true' }}" {% if title %}role="img"{% else %}focusable="false"{% endif %}>
+  {%- if title %}<title>{{ title }}</title>{% endif -%}
+  <use href="#i-{{ name }}"></use>
+</svg>
+{%- endmacro %}
+
+{# A POST button carrying CSRF plus the current URL, so the action returns here. #}
+{% macro action_button(action_url, form, icon_name, label, cls='btn btn-ghost btn-icon btn-sm', confirm=None, danger=false) -%}
+<form method="post" action="{{ action_url }}" class="inline-form"
+      {% if confirm %}data-confirm="{{ confirm }}"{% endif %}>
+  {{ form.hidden_tag() }}
+  <input type="hidden" name="next" value="{{ request.full_path if request.query_string else request.path }}">
+  <button type="submit" class="{{ cls }}{{ ' btn-danger' if danger else '' }}" title="{{ label }}" aria-label="{{ label }}">
+    {{ icon(icon_name) }}
+  </button>
+</form>
+{%- endmacro %}
+
+{% macro field(form_field, placeholder='', input_cls='input', autofocus=false, type=None) -%}
+<div class="field">
+  {{ form_field.label(class='field-label') }}
+  {{ form_field(class=input_cls,
+                placeholder=placeholder,
+                autofocus=autofocus,
+                type=type,
+                **{'aria-invalid': 'true' if form_field.errors else 'false',
+                   'aria-describedby': form_field.id ~ '-error' if form_field.errors else ''}) }}
+  {% if form_field.description %}<span class="field-hint">{{ form_field.description }}</span>{% endif %}
+  {% for error in form_field.errors %}
+    <span class="field-error" id="{{ form_field.id }}-error">{{ icon('alert', 'icon icon-sm') }}{{ error }}</span>
+  {% endfor %}
+</div>
+{%- endmacro %}
+
+{% macro select_field(form_field) -%}
+<div class="field">
+  {{ form_field.label(class='field-label') }}
+  <div class="select-wrap">
+    {{ form_field(class='select') }}
+    {{ icon('chevron-down', 'icon icon-sm') }}
+  </div>
+  {% for error in form_field.errors %}
+    <span class="field-error">{{ icon('alert', 'icon icon-sm') }}{{ error }}</span>
+  {% endfor %}
+</div>
+{%- endmacro %}
+
+{% macro checkbox_field(form_field) -%}
+<label class="checkbox">
+  {{ form_field() }}
+  <span>{{ form_field.label.text }}</span>
+</label>
+{%- endmacro %}
+
+{% macro category_badge(category) -%}
+{% if category %}
+<span class="badge" data-color="{{ category.color }}">
+  <span class="badge-dot" data-color="{{ category.color }}"></span>{{ category.name }}
+</span>
+{% endif %}
+{%- endmacro %}
+
+{% macro empty_state(icon_name, title, text, action_html=None) -%}
+<div class="empty">
+  <span class="empty-icon">{{ icon(icon_name, 'icon icon-xl') }}</span>
+  <p class="empty-title">{{ title }}</p>
+  <p class="empty-text">{{ text }}</p>
+  {% if action_html %}<div class="row row-tight">{{ action_html }}</div>{% endif %}
+</div>
+{%- endmacro %}
+
+{#
+  Jinja macros cannot declare **kwargs, so extra query-string values are passed
+  as a `params` dict and expanded at the call to url_for.
+#}
+{% macro pager(page_obj, endpoint, params={}) -%}
+{% if page_obj.pages > 1 %}
+<nav class="pagination" aria-label="Paginação">
+  {% if page_obj.has_prev %}
+    <a class="btn btn-sm" href="{{ url_for(endpoint, pagina=page_obj.prev_num, **params) }}" rel="prev">
+      {{ icon('chevron-left', 'icon icon-sm') }} Anterior
+    </a>
+  {% else %}
+    <span class="btn btn-sm" aria-disabled="true">{{ icon('chevron-left', 'icon icon-sm') }} Anterior</span>
+  {% endif %}
+
+  <span class="pagination-info tabular">Página {{ page_obj.page }} de {{ page_obj.pages }}</span>
+
+  {% if page_obj.has_next %}
+    <a class="btn btn-sm" href="{{ url_for(endpoint, pagina=page_obj.next_num, **params) }}" rel="next">
+      Próxima {{ icon('chevron-right', 'icon icon-sm') }}
+    </a>
+  {% else %}
+    <span class="btn btn-sm" aria-disabled="true">Próxima {{ icon('chevron-right', 'icon icon-sm') }}</span>
+  {% endif %}
+</nav>
+{% endif %}
+{%- endmacro %}

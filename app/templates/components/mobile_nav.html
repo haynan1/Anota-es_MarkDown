@@ -1,0 +1,23 @@
+{% from 'components/macros.html' import icon %}
+
+<nav class="mobile-nav" aria-label="Navegação rápida">
+  <a class="mobile-nav-item" href="{{ url_for('dashboard.index') }}"
+     {% if request.endpoint == 'dashboard.index' %}aria-current="page"{% endif %}>
+    {{ icon('dashboard') }}<span>Painel</span>
+  </a>
+  <a class="mobile-nav-item" href="{{ url_for('documents.index') }}"
+     {% if request.endpoint == 'documents.index' %}aria-current="page"{% endif %}>
+    {{ icon('file') }}<span>Documentos</span>
+  </a>
+  <a class="mobile-nav-item" href="{{ url_for('editor.create_and_edit') }}">
+    {{ icon('file-plus') }}<span>Novo</span>
+  </a>
+  <a class="mobile-nav-item" href="{{ url_for('trash.index') }}"
+     {% if request.endpoint == 'trash.index' %}aria-current="page"{% endif %}>
+    {{ icon('trash') }}<span>Lixeira</span>
+  </a>
+  <a class="mobile-nav-item" href="{{ url_for('settings.index') }}"
+     {% if request.endpoint == 'settings.index' %}aria-current="page"{% endif %}>
+    {{ icon('settings') }}<span>Ajustes</span>
+  </a>
+</nav>

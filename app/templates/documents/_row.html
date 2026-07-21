@@ -1,0 +1,25 @@
+{% from 'components/macros.html' import icon, category_badge %}
+
+<div class="doc-row">
+  <div class="doc-row-main">
+    <a class="doc-row-title" href="{{ url_for('editor.edit', public_uuid=document.uuid) }}">
+      {% if document.is_favorite %}{{ icon('star', 'icon icon-sm star-on', 'Favorito') }} {% endif %}
+      {{ document.display_title }}
+    </a>
+    <div class="doc-row-sub">
+      <span>{{ document.updated_at|since }}</span>
+      <span class="tabular">{{ document.word_count|number_br }} palavras</span>
+      <span class="tabular">{{ document.estimated_reading_time }} min de leitura</span>
+      {{ category_badge(document.category) }}
+      {% for tag in document.tags[:2] %}
+        <span class="badge">{{ icon('tag', 'icon icon-sm') }}{{ tag.name }}</span>
+      {% endfor %}
+      {% if document.is_archived %}<span class="badge">Arquivado</span>{% endif %}
+    </div>
+    {% set hits = snippets|default({}, true) %}
+    {% if hits.get(document.id) %}
+      <p class="small muted">{{ hits[document.id] }}</p>
+    {% endif %}
+  </div>
+  <div class="doc-row-actions">{% include 'documents/_actions.html' %}</div>
+</div>

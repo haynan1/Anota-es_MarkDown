@@ -1,0 +1,180 @@
+{#
+  WeasyPrint template.
+
+  Uses real CSS paged media: @page margin boxes for the running header/footer,
+  `counter(page)` for numbering and `break-inside` for widow control.
+  The xhtml2pdf fallback lives in `pdf/document_fallback.html`.
+#}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>{{ document.display_title }}</title>
+<style>
+  @page {
+    size: {{ ctx.page_size }};
+    margin: {{ margin }};
+
+    @top-center {
+      content: "{{ ctx.header }}";
+      font-size: 8.5pt;
+      color: #6B7280;
+      padding-bottom: 6pt;
+    }
+
+    @bottom-left {
+      content: "{{ ctx.footer }}";
+      font-size: 8.5pt;
+      color: #6B7280;
+    }
+
+    @bottom-right {
+      {% if ctx.show_page_numbers %}
+      content: counter(page) " / " counter(pages);
+      {% else %}
+      content: "";
+      {% endif %}
+      font-size: 8.5pt;
+      color: #6B7280;
+    }
+  }
+
+  :root { --ink: #111827; --muted: #6B7280; --line: #D1D5DB; --accent: #4F46E5; }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    font-family: {{ font_stack }};
+    font-size: 10.5pt;
+    line-height: 1.6;
+    color: var(--ink);
+    hyphens: auto;
+  }
+
+  /* ── Document header ─────────────────────────────────────────────── */
+
+  .doc-header { margin-bottom: 22pt; }
+  .doc-title { font-size: 22pt; line-height: 1.2; margin: 0 0 6pt; font-weight: 700; }
+  .doc-meta { font-size: 8.5pt; color: var(--muted); }
+  .doc-meta span + span::before { content: " · "; }
+
+  /* ── Content ─────────────────────────────────────────────────────── */
+
+  h1, h2, h3, h4, h5, h6 {
+    line-height: 1.25;
+    margin: 16pt 0 6pt;
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+  h1 { font-size: 17pt; }
+  h2 { font-size: 14pt; }
+  h3 { font-size: 12pt; }
+  h4, h5, h6 { font-size: 10.5pt; }
+
+  p { margin: 0 0 8pt; orphans: 3; widows: 3; }
+
+  ul, ol { margin: 0 0 8pt; padding-left: 16pt; }
+  li { margin-bottom: 3pt; }
+  ul.task-list { list-style: none; padding-left: 4pt; }
+  .task-list-item input { margin-right: 4pt; }
+
+  blockquote {
+    margin: 0 0 8pt; padding: 2pt 0 2pt 10pt;
+    border-left: 2pt solid var(--accent);
+    color: var(--muted); font-style: italic;
+  }
+
+  a { color: var(--accent); text-decoration: none; }
+
+  code {
+    font-family: "Cascadia Mono", Consolas, "Courier New", monospace;
+    font-size: 9pt;
+    background: #F3F4F6;
+    padding: 1pt 3pt;
+    border-radius: 2pt;
+  }
+
+  /* Code blocks stay whole when they fit on one page. */
+  pre {
+    margin: 0 0 8pt; padding: 8pt;
+    background: #F9FAFB; border: 0.5pt solid var(--line); border-radius: 3pt;
+    font-size: 8.5pt; line-height: 1.45;
+    white-space: pre-wrap; word-wrap: break-word;
+    break-inside: avoid; page-break-inside: avoid;
+  }
+  pre code { background: none; padding: 0; font-size: inherit; }
+  .highlight { margin: 0 0 8pt; }
+  .highlight pre { margin: 0; }
+
+  table {
+    width: 100%; margin: 0 0 10pt;
+    border-collapse: collapse; font-size: 9pt;
+    break-inside: avoid; page-break-inside: avoid;
+  }
+  th, td { border: 0.5pt solid var(--line); padding: 4pt 6pt; text-align: left; vertical-align: top; }
+  th { background: #F3F4F6; font-weight: 700; }
+  thead { display: table-header-group; }
+
+  .md-align-left { text-align: left; }
+  .md-align-center { text-align: center; }
+  .md-align-right { text-align: right; }
+  .md-align-justify { text-align: justify; }
+
+  img { max-width: 100%; height: auto; }
+
+  hr { border: 0; border-top: 0.5pt solid var(--line); margin: 14pt 0; }
+
+  .footnote { margin-top: 18pt; padding-top: 8pt; border-top: 0.5pt solid var(--line); font-size: 8.5pt; color: var(--muted); }
+  .footnote hr { display: none; }
+
+  {# ── Themes ────────────────────────────────────────────────────────── #}
+
+  {% if ctx.theme == 'classic' %}
+  .doc-header { border-bottom: 1.5pt solid var(--ink); padding-bottom: 10pt; }
+  h2 { border-bottom: 0.5pt solid var(--line); padding-bottom: 3pt; }
+
+  {% elif ctx.theme == 'minimal' %}
+  .doc-title { font-size: 19pt; font-weight: 600; }
+  .doc-header { margin-bottom: 28pt; }
+  body { font-size: 10pt; line-height: 1.7; }
+  th, td { border: 0; border-bottom: 0.5pt solid var(--line); }
+  th { background: none; }
+  pre { background: none; border: 0; border-left: 1.5pt solid var(--line); border-radius: 0; }
+
+  {% elif ctx.theme == 'academic' %}
+  body { font-size: 11pt; line-height: 1.75; text-align: justify; }
+  .doc-header { text-align: center; margin-bottom: 26pt; }
+  .doc-title { font-size: 16pt; font-weight: 700; }
+  h1, h2, h3 { font-weight: 700; }
+  p { text-indent: 14pt; }
+  p:first-of-type, blockquote p, li p { text-indent: 0; }
+  blockquote { margin-left: 18pt; margin-right: 18pt; border-left: 0; font-size: 10pt; }
+
+  {% elif ctx.theme == 'modern' %}
+  .doc-header { border-left: 3pt solid var(--accent); padding-left: 12pt; }
+  .doc-title { font-size: 24pt; font-weight: 700; letter-spacing: -0.5pt; }
+  h1, h2, h3 { color: #1F2937; letter-spacing: -0.2pt; }
+  h2 { color: var(--accent); }
+  th { background: var(--accent); color: #FFFFFF; border-color: var(--accent); }
+  pre { background: #0F172A; color: #E2E8F0; border: 0; }
+  pre code, pre span { color: inherit !important; }
+  {% endif %}
+</style>
+</head>
+<body>
+  <header class="doc-header">
+    <h1 class="doc-title">{{ document.display_title }}</h1>
+    <p class="doc-meta">
+      {% if document.category %}<span>{{ document.category.name }}</span>{% endif %}
+      <span>{{ document.word_count }} palavras</span>
+      {% if ctx.show_generated_date %}<span>Gerado em {{ ctx.generated_at }}</span>{% endif %}
+      {% if document.tags %}<span>{{ document.tag_names | join(', ') }}</span>{% endif %}
+    </p>
+  </header>
+
+  <main>
+    {{ document.rendered_html | safe }}
+  </main>
+</body>
+</html>

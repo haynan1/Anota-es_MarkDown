@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+{% from 'components/macros.html' import icon %}
+
+{% set topbar_title = 'Versão ' ~ version.version_number %}
+{% block title %}Versão {{ version.version_number }} · {{ document.display_title }}{% endblock %}
+{% block content_class %}content-narrow{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <a class="btn btn-ghost btn-sm" href="{{ url_for('history.index', public_uuid=document.uuid) }}">
+    {{ icon('arrow-left', 'icon icon-sm') }} Voltar ao histórico
+  </a>
+
+  <div class="page-head-row section-gap">
+    <div>
+      <h1 class="page-title">{{ version.title }}</h1>
+      <p class="page-subtitle">
+        Versão {{ version.version_number }} · {{ version.created_at|datetime_br }} ·
+        {{ version.word_count|number_br }} palavras
+      </p>
+    </div>
+    <div class="page-head-actions">
+      <a class="btn" href="{{ url_for('history.compare', public_uuid=document.uuid, version_number=version.version_number) }}">
+        {{ icon('diff', 'icon icon-sm') }} Comparar
+      </a>
+      <form method="post" class="inline-form"
+            action="{{ url_for('history.restore', public_uuid=document.uuid, version_number=version.version_number) }}"
+            data-confirm="Restaurar a versão {{ version.version_number }}? O conteúdo atual será preservado no histórico.">
+        {{ confirm_form.hidden_tag() }}
+        <button type="submit" class="btn btn-primary">{{ icon('restore', 'icon icon-sm') }} Restaurar esta versão</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<article class="card card-pad">
+  <div class="markdown-body measured">{{ rendered_html|safe }}</div>
+</article>
+{% endblock %}

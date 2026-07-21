@@ -1,0 +1,54 @@
+{# Quick actions shared by the card and the list row. #}
+{% from 'components/macros.html' import icon %}
+
+{% set here = request.full_path if request.query_string else request.path %}
+
+<a class="btn btn-ghost btn-icon btn-sm" href="{{ url_for('editor.edit', public_uuid=document.uuid) }}"
+   title="Abrir" aria-label="Abrir {{ document.display_title }}">{{ icon('edit', 'icon icon-sm') }}</a>
+
+<button type="button" class="btn btn-ghost btn-icon btn-sm"
+        data-action="rename" data-uuid="{{ document.uuid }}" data-title="{{ document.title }}"
+        title="Renomear" aria-label="Renomear {{ document.display_title }}">
+  {{ icon('heading', 'icon icon-sm') }}
+</button>
+
+<form method="post" action="{{ url_for('documents.toggle_favorite', public_uuid=document.uuid) }}" class="inline-form">
+  {{ confirm_form.hidden_tag() }}
+  <input type="hidden" name="next" value="{{ here }}">
+  <button type="submit" class="btn btn-ghost btn-icon btn-sm"
+          title="{{ 'Remover dos favoritos' if document.is_favorite else 'Adicionar aos favoritos' }}"
+          aria-label="{{ 'Remover dos favoritos' if document.is_favorite else 'Adicionar aos favoritos' }}"
+          aria-pressed="{{ 'true' if document.is_favorite else 'false' }}">
+    {{ icon('star', 'icon icon-sm star-on' if document.is_favorite else 'icon icon-sm') }}
+  </button>
+</form>
+
+<form method="post" action="{{ url_for('documents.duplicate', public_uuid=document.uuid) }}" class="inline-form">
+  {{ confirm_form.hidden_tag() }}
+  <input type="hidden" name="next" value="{{ here }}">
+  <button type="submit" class="btn btn-ghost btn-icon btn-sm" title="Duplicar"
+          aria-label="Duplicar {{ document.display_title }}">{{ icon('copy', 'icon icon-sm') }}</button>
+</form>
+
+<form method="post" action="{{ url_for('documents.toggle_archive', public_uuid=document.uuid) }}" class="inline-form">
+  {{ confirm_form.hidden_tag() }}
+  <input type="hidden" name="next" value="{{ here }}">
+  <button type="submit" class="btn btn-ghost btn-icon btn-sm"
+          title="{{ 'Desarquivar' if document.is_archived else 'Arquivar' }}"
+          aria-label="{{ 'Desarquivar' if document.is_archived else 'Arquivar' }} {{ document.display_title }}">
+    {{ icon('archive', 'icon icon-sm') }}
+  </button>
+</form>
+
+<a class="btn btn-ghost btn-icon btn-sm" href="{{ url_for('exports.download_markdown', public_uuid=document.uuid) }}"
+   title="Baixar .md" aria-label="Baixar {{ document.display_title }} em Markdown">
+  {{ icon('download', 'icon icon-sm') }}
+</a>
+
+<form method="post" action="{{ url_for('documents.move_to_trash', public_uuid=document.uuid) }}"
+      class="inline-form" data-confirm="Mover “{{ document.display_title }}” para a lixeira? Você poderá restaurá-lo depois.">
+  {{ confirm_form.hidden_tag() }}
+  <input type="hidden" name="next" value="{{ here }}">
+  <button type="submit" class="btn btn-ghost btn-icon btn-sm btn-danger" title="Mover para a lixeira"
+          aria-label="Mover {{ document.display_title }} para a lixeira">{{ icon('trash', 'icon icon-sm') }}</button>
+</form>

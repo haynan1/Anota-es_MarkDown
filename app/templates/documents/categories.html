@@ -1,0 +1,109 @@
+{% extends 'base.html' %}
+{% from 'components/macros.html' import icon, field, empty_state %}
+
+{% set topbar_title = 'Categorias e etiquetas' %}
+{% block title %}Categorias e etiquetas · {{ app_name }}{% endblock %}
+{% block content_class %}content-narrow{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1 class="page-title">Categorias e etiquetas</h1>
+  <p class="page-subtitle">Categorias agrupam documentos; etiquetas cruzam assuntos entre eles.</p>
+</div>
+
+<section class="card card-pad section-gap" aria-labelledby="new-category">
+  <h2 class="card-title" id="new-category">Nova categoria</h2>
+  <form method="post" class="stack stack-3">
+    {{ form.hidden_tag() }}
+    <div class="form-grid">
+      {{ field(form.name, placeholder='Ex.: Guias, Rascunhos, Clientes') }}
+      <div class="field">
+        {{ form.color.label(class='field-label') }}
+        <div class="row row-tight">
+          {{ form.color(class='color-input', type='color') }}
+          <span class="field-hint">Usada nos indicadores coloridos.</span>
+        </div>
+        {% for error in form.color.errors %}
+          <span class="field-error">{{ icon('alert', 'icon icon-sm') }}{{ error }}</span>
+        {% endfor %}
+      </div>
+    </div>
+    <div>
+      <button type="submit" class="btn btn-primary">{{ icon('plus', 'icon icon-sm') }} Criar categoria</button>
+    </div>
+  </form>
+</section>
+
+<section class="card section-gap" aria-labelledby="categories-list">
+  <div class="card-head">
+    {{ icon('folder', 'icon icon-sm') }}
+    <h2 class="card-title" id="categories-list">Categorias</h2>
+  </div>
+  {% if usage %}
+    <div class="table-wrap">
+      <table class="table">
+        <thead>
+          <tr><th scope="col">Categoria</th><th scope="col">Documentos</th><th scope="col"><span class="visually-hidden">Ações</span></th></tr>
+        </thead>
+        <tbody>
+          {% for category, total in usage %}
+            <tr>
+              <th scope="row">
+                <span class="row row-tight">
+                  <span class="badge-dot" data-color="{{ category.color }}"></span>
+                  {{ category.name }}
+                </span>
+              </th>
+              <td class="tabular">
+                {% if total %}
+                  <a href="{{ url_for('documents.index', categoria=category.id) }}">{{ total }}</a>
+                {% else %}<span class="subtle">0</span>{% endif %}
+              </td>
+              <td>
+                <form method="post" action="{{ url_for('documents.delete_category', category_id=category.id) }}"
+                      data-confirm="Excluir a categoria “{{ category.name }}”? Os documentos continuam existindo, apenas ficam sem categoria.">
+                  {{ confirm_form.hidden_tag() }}
+                  <button type="submit" class="btn btn-ghost btn-icon btn-sm btn-danger"
+                          aria-label="Excluir categoria {{ category.name }}">{{ icon('trash', 'icon icon-sm') }}</button>
+                </form>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="card-pad">
+      {{ empty_state('folder', 'Nenhuma categoria', 'Crie a primeira categoria no formulário acima.') }}
+    </div>
+  {% endif %}
+</section>
+
+<section class="card section-gap" aria-labelledby="tags-list">
+  <div class="card-head">
+    {{ icon('tag', 'icon icon-sm') }}
+    <h2 class="card-title" id="tags-list">Etiquetas</h2>
+    <span class="card-head-actions small muted">Criadas automaticamente no editor</span>
+  </div>
+  <div class="card-pad">
+    {% if tag_usage %}
+      <div class="chip-list">
+        {% for tag, total in tag_usage %}
+          <span class="chip">
+            <a href="{{ url_for('documents.index', etiqueta=tag.slug) }}">{{ tag.name }}</a>
+            <span class="badge tabular">{{ total }}</span>
+            <form method="post" action="{{ url_for('documents.delete_tag', slug=tag.slug) }}"
+                  class="inline-form" data-confirm="Excluir a etiqueta “{{ tag.name }}”?">
+              {{ confirm_form.hidden_tag() }}
+              <button type="submit" class="btn btn-ghost btn-icon btn-sm"
+                      aria-label="Excluir etiqueta {{ tag.name }}">{{ icon('close', 'icon icon-sm') }}</button>
+            </form>
+          </span>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="muted small">Nenhuma etiqueta ainda. Adicione etiquetas pelo painel lateral do editor.</p>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,61 @@
+{% from 'components/macros.html' import icon %}
+
+<aside class="sidebar" aria-label="Navegação principal">
+  <a class="brand" href="{{ url_for('dashboard.index') }}">
+    <span class="brand-mark" aria-hidden="true">{{ icon('file', 'icon') }}</span>
+    <span class="brand-name">{{ app_name }}</span>
+  </a>
+
+  <nav class="nav">
+    <a class="nav-item" href="{{ url_for('dashboard.index') }}"
+       {% if request.endpoint == 'dashboard.index' %}aria-current="page"{% endif %}>
+      {{ icon('dashboard') }}<span class="nav-label">Painel</span>
+    </a>
+
+    <a class="nav-item" href="{{ url_for('documents.index') }}"
+       {% if request.endpoint == 'documents.index' %}aria-current="page"{% endif %}>
+      {{ icon('file') }}<span class="nav-label">Documentos</span>
+      {% if nav_counts.active %}<span class="nav-count tabular">{{ nav_counts.active }}</span>{% endif %}
+    </a>
+
+    <a class="nav-item" href="{{ url_for('documents.index', favoritos=1) }}"
+       {% if request.endpoint == 'documents.index' and request.args.get('favoritos') == '1' %}aria-current="page"{% endif %}>
+      {{ icon('star') }}<span class="nav-label">Favoritos</span>
+      {% if nav_counts.favorites %}<span class="nav-count tabular">{{ nav_counts.favorites }}</span>{% endif %}
+    </a>
+
+    <a class="nav-item" href="{{ url_for('documents.index', escopo='archived') }}"
+       {% if request.endpoint == 'documents.index' and request.args.get('escopo') == 'archived' %}aria-current="page"{% endif %}>
+      {{ icon('archive') }}<span class="nav-label">Arquivados</span>
+      {% if nav_counts.archived %}<span class="nav-count tabular">{{ nav_counts.archived }}</span>{% endif %}
+    </a>
+
+    <p class="nav-section-title">Organização</p>
+
+    <a class="nav-item" href="{{ url_for('documents.categories') }}"
+       {% if request.endpoint == 'documents.categories' %}aria-current="page"{% endif %}>
+      {{ icon('folder') }}<span class="nav-label">Categorias e etiquetas</span>
+    </a>
+
+    <a class="nav-item" href="{{ url_for('documents.import_markdown') }}"
+       {% if request.endpoint == 'documents.import_markdown' %}aria-current="page"{% endif %}>
+      {{ icon('upload') }}<span class="nav-label">Importar Markdown</span>
+    </a>
+
+    <a class="nav-item" href="{{ url_for('trash.index') }}"
+       {% if request.endpoint == 'trash.index' %}aria-current="page"{% endif %}>
+      {{ icon('trash') }}<span class="nav-label">Lixeira</span>
+      {% if nav_counts.trashed %}<span class="nav-count tabular">{{ nav_counts.trashed }}</span>{% endif %}
+    </a>
+  </nav>
+
+  <div class="sidebar-footer">
+    <a class="nav-item" href="{{ url_for('settings.index') }}"
+       {% if request.endpoint == 'settings.index' %}aria-current="page"{% endif %}>
+      {{ icon('settings') }}<span class="nav-label">Configurações</span>
+    </a>
+    <button type="button" class="nav-item" data-action="toggle-sidebar" aria-label="Recolher ou expandir a barra lateral">
+      {{ icon('chevron-left') }}<span class="nav-label sidebar-footer-text">Recolher</span>
+    </button>
+  </div>
+</aside>

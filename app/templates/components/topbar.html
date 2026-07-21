@@ -1,0 +1,32 @@
+{% from 'components/macros.html' import icon %}
+
+<header class="topbar">
+  <button type="button" class="btn btn-ghost btn-icon" data-action="open-mobile-nav"
+          aria-label="Abrir menu de navegação" aria-expanded="false" aria-controls="app-shell">
+    {{ icon('menu') }}
+  </button>
+
+  {# Set `topbar_title` at the top level of a page template; blocks declared
+     inside an include are not part of the inheritance chain. #}
+  <span class="topbar-title">{{ topbar_title|default(app_name, true) }}</span>
+
+  <div class="topbar-actions">
+    <form method="get" action="{{ url_for('documents.index') }}" class="search-field" role="search">
+      {{ icon('search', 'icon icon-sm') }}
+      <label class="visually-hidden" for="global-search">Pesquisar documentos</label>
+      <input class="input" type="search" id="global-search" name="q"
+             placeholder="Pesquisar documentos…" value="{{ request.args.get('q', '') }}"
+             autocomplete="off">
+    </form>
+
+    <button type="button" class="btn btn-ghost btn-icon" data-action="toggle-theme"
+            aria-label="Alternar entre tema claro e escuro">
+      {{ icon('sun', 'icon theme-icon-light') }}
+      {{ icon('moon', 'icon theme-icon-dark') }}
+    </button>
+
+    <a class="btn btn-primary btn-sm" href="{{ url_for('editor.create_and_edit') }}">
+      {{ icon('plus', 'icon icon-sm') }}<span class="hide-sm">Novo documento</span>
+    </a>
+  </div>
+</header>

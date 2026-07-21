@@ -1,0 +1,67 @@
+{% extends 'base.html' %}
+{% from 'components/macros.html' import icon %}
+
+{% set topbar_title = 'Comparar versões' %}
+{% block title %}Comparar versão {{ version.version_number }} · {{ document.display_title }}{% endblock %}
+{% block topbar_title %}Comparar versões{% endblock %}
+{% block styles %}<link rel="stylesheet" href="{{ url_for('static', filename='css/editor.css') }}">{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <a class="btn btn-ghost btn-sm" href="{{ url_for('history.index', public_uuid=document.uuid) }}">
+    {{ icon('arrow-left', 'icon icon-sm') }} Voltar ao histórico
+  </a>
+
+  <div class="page-head-row section-gap">
+    <div>
+      <h1 class="page-title">Versão {{ version.version_number }} → atual</h1>
+      <p class="page-subtitle">
+        Comparando o registro de {{ version.created_at|datetime_br }} com o conteúdo atual do documento.
+      </p>
+    </div>
+    <div class="page-head-actions">
+      <form method="post" class="inline-form"
+            action="{{ url_for('history.restore', public_uuid=document.uuid, version_number=version.version_number) }}"
+            data-confirm="Restaurar a versão {{ version.version_number }}? O conteúdo atual será preservado no histórico.">
+        {{ confirm_form.hidden_tag() }}
+        <button type="submit" class="btn btn-primary">{{ icon('restore', 'icon icon-sm') }} Restaurar versão {{ version.version_number }}</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% if diff.is_identical %}
+  <div class="card card-pad">
+    <p class="row">{{ icon('check') }} Esta versão é idêntica ao conteúdo atual do documento.</p>
+  </div>
+{% else %}
+  <div class="diff-legend" role="note">
+    <span>{{ icon('plus', 'icon icon-sm') }} {{ diff.added }} linha(s) adicionada(s)</span>
+    <span>{{ icon('minus', 'icon icon-sm') }} {{ diff.removed }} linha(s) removida(s)</span>
+    <span>{{ icon('edit', 'icon icon-sm') }} {{ diff.changed }} linha(s) alterada(s)</span>
+  </div>
+
+  <div class="diff">
+    {% for row in diff.rows %}
+      <div class="diff-row" data-tag="{{ row.tag }}">
+        <span class="diff-gutter">
+          {%- if row.tag == 'skip' -%}⋯{%- else -%}{{ row.new_number or row.old_number or '' }}{%- endif -%}
+        </span>
+        <span class="diff-text">
+          {%- if row.tag == 'skip' -%}
+            {{ row.old_text }}
+          {%- elif row.tag == 'delete' -%}
+            {{ row.old_text }}
+          {%- elif row.tag == 'insert' -%}
+            {{ row.new_text }}
+          {%- elif row.tag == 'replace' -%}
+            {{ row.new_text or row.old_text }}
+          {%- else -%}
+            {{ row.old_text }}
+          {%- endif -%}
+        </span>
+      </div>
+    {% endfor %}
+  </div>
+{% endif %}
+{% endblock %}

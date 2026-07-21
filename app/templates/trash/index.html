@@ -1,0 +1,89 @@
+{% extends 'base.html' %}
+{% from 'components/macros.html' import icon, empty_state, pager %}
+
+{% set topbar_title = 'Lixeira' %}
+{% block title %}Lixeira · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="page-head-row">
+    <div>
+      <h1 class="page-title">Lixeira</h1>
+      <p class="page-subtitle">
+        Documentos aqui não aparecem nas listas nem na busca, mas continuam salvos até você
+        excluí-los definitivamente.
+      </p>
+    </div>
+    {% if pagination.items %}
+      <div class="page-head-actions">
+        <button type="button" class="btn btn-danger" data-action="open-dialog" data-target="empty-trash-dialog">
+          {{ icon('trash', 'icon icon-sm') }} Esvaziar lixeira
+        </button>
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+{% if pagination.items %}
+  <div class="card">
+    {% for document in pagination.items %}
+      <div class="doc-row">
+        <div class="doc-row-main">
+          <span class="doc-row-title">{{ document.display_title }}</span>
+          <div class="doc-row-sub">
+            <span>Excluído {{ document.deleted_at|since }}</span>
+            <span class="tabular">{{ document.word_count|number_br }} palavras</span>
+          </div>
+        </div>
+        <div class="doc-row-actions">
+          <form method="post" action="{{ url_for('trash.restore', public_uuid=document.uuid) }}" class="inline-form">
+            {{ confirm_form.hidden_tag() }}
+            <button type="submit" class="btn btn-sm">
+              {{ icon('restore', 'icon icon-sm') }} Restaurar
+            </button>
+          </form>
+          <form method="post" action="{{ url_for('trash.purge', public_uuid=document.uuid) }}" class="inline-form"
+                data-confirm="Excluir “{{ document.display_title }}” definitivamente? Esta ação não pode ser desfeita.">
+            {{ confirm_form.hidden_tag() }}
+            <button type="submit" class="btn btn-sm btn-danger">
+              {{ icon('trash', 'icon icon-sm') }} Excluir para sempre
+            </button>
+          </form>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+
+  {{ pager(pagination, 'trash.index') }}
+{% else %}
+  {{ empty_state('inbox', 'A lixeira está vazia',
+                 'Documentos movidos para a lixeira aparecem aqui e podem ser restaurados a qualquer momento.') }}
+{% endif %}
+
+<dialog class="modal" id="empty-trash-dialog" aria-labelledby="empty-trash-title">
+  <form method="post" action="{{ url_for('trash.empty') }}">
+    {{ empty_form.hidden_tag() }}
+    <div class="modal-head">
+      <h2 class="modal-title" id="empty-trash-title">Esvaziar a lixeira?</h2>
+    </div>
+    <div class="modal-body stack stack-3">
+      <p>
+        Todos os {{ pagination.total }} documento{{ 's' if pagination.total != 1 }} da lixeira serão
+        <strong>excluídos permanentemente</strong>, junto com o histórico de versões.
+        Não há como desfazer.
+      </p>
+      <div class="field">
+        <label class="field-label" for="empty-confirmation">
+          Digite <strong>EXCLUIR</strong> para confirmar
+        </label>
+        <input class="input" type="text" id="empty-confirmation" name="confirmation"
+               autocomplete="off" required placeholder="EXCLUIR">
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="btn" data-action="close-dialog">Cancelar</button>
+      <button type="submit" class="btn btn-primary btn-danger">Excluir tudo</button>
+    </div>
+  </form>
+</dialog>
+{% endblock %}

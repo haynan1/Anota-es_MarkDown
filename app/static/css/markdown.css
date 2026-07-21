@@ -1,0 +1,200 @@
+/* ==========================================================================
+   Rendered markdown.
+   Scoped to .markdown-body so document content can never restyle the app.
+   ========================================================================== */
+
+.markdown-body {
+  color: var(--text);
+  font-size: 1rem;
+  line-height: 1.75;
+  overflow-wrap: break-word;
+}
+
+.markdown-body > *:first-child { margin-top: 0; }
+.markdown-body > *:last-child { margin-bottom: 0; }
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  margin: 2em 0 0.75em;
+  font-weight: 660;
+  letter-spacing: -0.022em;
+  line-height: 1.25;
+  scroll-margin-top: 5rem;
+}
+.markdown-body h1 { font-size: 1.9em; letter-spacing: -0.03em; }
+.markdown-body h2 { font-size: 1.45em; padding-bottom: 0.3em; border-bottom: 1px solid var(--border); }
+.markdown-body h3 { font-size: 1.2em; }
+.markdown-body h4 { font-size: 1.05em; }
+.markdown-body h5 { font-size: 0.95em; color: var(--text-muted); }
+.markdown-body h6 { font-size: 0.875em; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+
+.markdown-body p { margin: 0 0 1.15em; }
+
+.markdown-body a { color: var(--accent); text-decoration: underline; text-underline-offset: 0.16em; text-decoration-thickness: 1px; }
+.markdown-body a:hover { text-decoration-thickness: 2px; }
+
+.markdown-body strong { font-weight: 680; }
+.markdown-body em { font-style: italic; }
+.markdown-body del { color: var(--text-subtle); }
+.markdown-body mark { background: var(--warning-soft); }
+
+.markdown-body ul, .markdown-body ol { margin: 0 0 1.15em; padding-left: 1.5em; }
+.markdown-body ul { list-style: disc; }
+.markdown-body ol { list-style: decimal; }
+.markdown-body li { margin-bottom: 0.35em; }
+.markdown-body li > ul, .markdown-body li > ol { margin: 0.35em 0 0; }
+
+.markdown-body ul.task-list { list-style: none; padding-left: 0.25em; }
+.markdown-body .task-list-item { display: flex; align-items: baseline; gap: 0.6em; list-style: none; }
+.markdown-body .task-list-item input[type="checkbox"] {
+  width: 1em; height: 1em; margin: 0; flex: none;
+  accent-color: var(--accent); position: relative; top: 0.12em;
+}
+
+.markdown-body blockquote {
+  margin: 0 0 1.15em; padding: 0.15em 0 0.15em 1.15em;
+  border-left: 3px solid var(--accent);
+  color: var(--text-muted); font-style: italic;
+}
+.markdown-body blockquote > *:last-child { margin-bottom: 0; }
+
+.markdown-body hr { height: 1px; margin: 2.25em 0; border: 0; background: var(--border); }
+
+.markdown-body code {
+  padding: 0.15em 0.4em;
+  background: var(--surface-sunken);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+}
+
+.markdown-body pre {
+  margin: 0 0 1.15em; padding: var(--sp-4);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow-x: auto;
+  line-height: 1.6;
+}
+.markdown-body pre code { padding: 0; background: none; font-size: 0.8438em; }
+.markdown-body .highlight { margin: 0 0 1.15em; }
+.markdown-body .highlight pre { margin: 0; }
+
+.markdown-body table {
+  width: 100%; margin: 0 0 1.15em;
+  border-collapse: collapse;
+  font-size: 0.9375em;
+  display: block; overflow-x: auto;
+}
+.markdown-body th, .markdown-body td {
+  padding: 0.55em 0.85em;
+  border: 1px solid var(--border);
+}
+.markdown-body th { background: var(--surface-2); font-weight: 620; text-align: left; }
+.markdown-body tbody tr:nth-child(even) { background: var(--surface-2); }
+
+.markdown-body .md-align-left   { text-align: left; }
+.markdown-body .md-align-center { text-align: center; }
+.markdown-body .md-align-right  { text-align: right; }
+.markdown-body .md-align-justify { text-align: justify; }
+
+.markdown-body img { max-width: 100%; height: auto; border-radius: var(--radius); }
+.markdown-body figure { margin: 0 0 1.15em; }
+.markdown-body figcaption { color: var(--text-subtle); font-size: 0.875em; text-align: center; margin-top: 0.5em; }
+
+.markdown-body kbd {
+  padding: 0.15em 0.45em;
+  border: 1px solid var(--border-strong); border-bottom-width: 2px;
+  border-radius: var(--radius-sm);
+  background: var(--surface); font-family: var(--font-mono); font-size: 0.8125em;
+}
+
+.markdown-body .footnote {
+  margin-top: 2.5em; padding-top: var(--sp-4);
+  border-top: 1px solid var(--border);
+  font-size: 0.875em; color: var(--text-muted);
+}
+.markdown-body .footnote hr { display: none; }
+.markdown-body .footnote-ref { text-decoration: none; font-weight: 600; }
+
+.markdown-body dl { margin: 0 0 1.15em; }
+.markdown-body dt { font-weight: 620; margin-top: 0.75em; }
+.markdown-body dd { margin: 0.2em 0 0 1.25em; color: var(--text-muted); }
+
+.markdown-body details {
+  margin: 0 0 1.15em; padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.markdown-body summary { cursor: pointer; font-weight: 590; }
+
+/* Reading measure: long prose stays comfortable, tables/code can go wider. */
+.markdown-body.measured > p,
+.markdown-body.measured > ul,
+.markdown-body.measured > ol,
+.markdown-body.measured > blockquote,
+.markdown-body.measured > h1,
+.markdown-body.measured > h2,
+.markdown-body.measured > h3 { max-width: 72ch; }
+
+/* ── Pygments (light) ───────────────────────────────────────────────────── */
+
+.highlight .c, .highlight .c1, .highlight .cm, .highlight .cs { color: #6B7280; font-style: italic; }
+.highlight .k, .highlight .kd, .highlight .kn, .highlight .kr, .highlight .kt { color: #7C3AED; font-weight: 600; }
+.highlight .kc { color: #B45309; }
+.highlight .s, .highlight .s1, .highlight .s2, .highlight .sb, .highlight .sd, .highlight .se, .highlight .sh, .highlight .si, .highlight .sx, .highlight .sr { color: #047857; }
+.highlight .m, .highlight .mi, .highlight .mf, .highlight .mh, .highlight .mo { color: #B45309; }
+.highlight .nf, .highlight .fm { color: #2563EB; }
+.highlight .nc, .highlight .nn { color: #0E7490; font-weight: 600; }
+.highlight .nb, .highlight .bp { color: #7C3AED; }
+.highlight .nd { color: #BE185D; }
+.highlight .nv, .highlight .vi, .highlight .vg { color: #1F2937; }
+.highlight .o, .highlight .ow, .highlight .p { color: #475569; }
+.highlight .err { color: var(--danger); }
+.highlight .gd { color: var(--danger); background: var(--danger-soft); }
+.highlight .gi { color: var(--success); background: var(--success-soft); }
+
+/* ── Pygments (dark) ────────────────────────────────────────────────────── */
+
+:root[data-theme="dark"] .highlight .c,
+:root[data-theme="dark"] .highlight .c1,
+:root[data-theme="dark"] .highlight .cm,
+:root[data-theme="dark"] .highlight .cs { color: #7C8AA5; }
+:root[data-theme="dark"] .highlight .k,
+:root[data-theme="dark"] .highlight .kd,
+:root[data-theme="dark"] .highlight .kn,
+:root[data-theme="dark"] .highlight .kr,
+:root[data-theme="dark"] .highlight .kt { color: #C4B5FD; }
+:root[data-theme="dark"] .highlight .kc { color: #FCD34D; }
+:root[data-theme="dark"] .highlight .s,
+:root[data-theme="dark"] .highlight .s1,
+:root[data-theme="dark"] .highlight .s2,
+:root[data-theme="dark"] .highlight .sb,
+:root[data-theme="dark"] .highlight .sd,
+:root[data-theme="dark"] .highlight .se,
+:root[data-theme="dark"] .highlight .sh,
+:root[data-theme="dark"] .highlight .si,
+:root[data-theme="dark"] .highlight .sx,
+:root[data-theme="dark"] .highlight .sr { color: #6EE7B7; }
+:root[data-theme="dark"] .highlight .m,
+:root[data-theme="dark"] .highlight .mi,
+:root[data-theme="dark"] .highlight .mf,
+:root[data-theme="dark"] .highlight .mh,
+:root[data-theme="dark"] .highlight .mo { color: #FCD34D; }
+:root[data-theme="dark"] .highlight .nf,
+:root[data-theme="dark"] .highlight .fm { color: #93C5FD; }
+:root[data-theme="dark"] .highlight .nc,
+:root[data-theme="dark"] .highlight .nn { color: #67E8F9; }
+:root[data-theme="dark"] .highlight .nb,
+:root[data-theme="dark"] .highlight .bp { color: #C4B5FD; }
+:root[data-theme="dark"] .highlight .nd { color: #F9A8D4; }
+:root[data-theme="dark"] .highlight .nv,
+:root[data-theme="dark"] .highlight .vi,
+:root[data-theme="dark"] .highlight .vg { color: #E2E8F0; }
+:root[data-theme="dark"] .highlight .o,
+:root[data-theme="dark"] .highlight .ow,
+:root[data-theme="dark"] .highlight .p { color: #94A3B8; }

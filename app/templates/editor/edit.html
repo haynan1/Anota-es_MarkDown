@@ -1,0 +1,229 @@
+{% extends 'base.html' %}
+{% from 'components/macros.html' import icon, select_field %}
+
+{% block title %}{{ document.display_title }} · {{ app_name }}{% endblock %}
+{% block styles %}<link rel="stylesheet" href="{{ url_for('static', filename='css/editor.css') }}">{% endblock %}
+
+{#
+  The editor replaces the standard shell with a full-height layout: writing
+  space is the point of this screen, so the sidebar gives way to a back link.
+#}
+{% block layout %}
+<div class="editor-page" id="editor-page"
+     data-fullscreen="false"
+     data-uuid="{{ document.uuid }}"
+     data-revision="{{ document.revision }}"
+     data-autosave-url="{{ url_for('api.autosave', public_uuid=document.uuid) }}"
+     data-metadata-url="{{ url_for('api.update_metadata', public_uuid=document.uuid) }}"
+     data-preview-url="{{ url_for('api.preview') }}"
+     data-autosave-seconds="{{ autosave_seconds }}">
+
+  <div class="draft-banner" data-draft-banner hidden>
+    {{ icon('alert') }}
+    <span data-draft-message>Há um rascunho local mais recente que a versão salva no servidor.</span>
+    <span class="draft-banner-actions">
+      <button type="button" class="btn btn-sm" data-draft-action="compare">Ver diferenças</button>
+      <button type="button" class="btn btn-sm" data-draft-action="discard">Ignorar rascunho</button>
+      <button type="button" class="btn btn-sm btn-primary" data-draft-action="recover">Recuperar rascunho</button>
+    </span>
+  </div>
+
+  <header class="editor-header">
+    <a class="btn btn-ghost btn-icon" href="{{ url_for('documents.index') }}"
+       aria-label="Voltar para os documentos" title="Voltar para os documentos">
+      {{ icon('arrow-left') }}
+    </a>
+
+    <label class="visually-hidden" for="editor-title">Título do documento</label>
+    <input class="editor-title-field" type="text" id="editor-title" name="title"
+           value="{{ document.title }}" maxlength="200" placeholder="Documento sem título"
+           autocomplete="off" data-editor-title>
+
+    {# aria-live announces save state to screen readers as it changes. #}
+    <output class="save-status" data-save-status data-state="saved"
+            aria-live="polite" for="editor-content">
+      <span class="spinner" aria-hidden="true"></span>
+      {{ icon('check', 'icon icon-sm status-icon') }}
+      <span data-save-label>Salvo</span>
+    </output>
+
+    <div class="editor-header-actions">
+      <button type="button" class="btn btn-ghost btn-icon" data-action="toggle-meta"
+              aria-label="Abrir painel de organização" aria-expanded="false" aria-controls="meta-drawer">
+        {{ icon('tag') }}
+      </button>
+      <a class="btn btn-ghost btn-icon" href="{{ url_for('history.index', public_uuid=document.uuid) }}"
+         aria-label="Histórico de versões ({{ version_count }})" title="Histórico de versões">
+        {{ icon('history') }}
+      </a>
+      <a class="btn btn-ghost btn-icon" href="{{ url_for('exports.download_markdown', public_uuid=document.uuid) }}"
+         aria-label="Baixar arquivo .md" title="Baixar .md">
+        {{ icon('download') }}
+      </a>
+      <button type="button" class="btn btn-ghost btn-icon" data-action="open-dialog" data-target="pdf-dialog"
+              aria-label="Exportar em PDF" title="Exportar em PDF">
+        {{ icon('printer') }}
+      </button>
+      <button type="button" class="btn btn-ghost btn-icon" data-action="toggle-fullscreen"
+              aria-label="Alternar tela cheia" title="Tela cheia" aria-pressed="false">
+        {{ icon('expand') }}
+      </button>
+      <button type="button" class="btn btn-primary btn-sm" data-action="save-now">
+        {{ icon('save', 'icon icon-sm') }}<span class="hide-sm">Salvar</span>
+      </button>
+    </div>
+  </header>
+
+  <div class="md-toolbar" role="toolbar" aria-label="Formatação Markdown">
+    <button type="button" class="md-tool" data-md="heading" aria-label="Título" title="Título">{{ icon('heading') }}</button>
+    <button type="button" class="md-tool" data-md="bold" aria-label="Negrito (Ctrl+B)" title="Negrito · Ctrl+B">{{ icon('bold') }}</button>
+    <button type="button" class="md-tool" data-md="italic" aria-label="Itálico (Ctrl+I)" title="Itálico · Ctrl+I">{{ icon('italic') }}</button>
+    <span class="md-toolbar-sep" aria-hidden="true"></span>
+    <button type="button" class="md-tool" data-md="quote" aria-label="Citação" title="Citação">{{ icon('quote') }}</button>
+    <button type="button" class="md-tool" data-md="link" aria-label="Link (Ctrl+K)" title="Link · Ctrl+K">{{ icon('link') }}</button>
+    <button type="button" class="md-tool" data-md="image" aria-label="Imagem" title="Imagem">{{ icon('image') }}</button>
+    <span class="md-toolbar-sep" aria-hidden="true"></span>
+    <button type="button" class="md-tool" data-md="list" aria-label="Lista" title="Lista">{{ icon('list') }}</button>
+    <button type="button" class="md-tool" data-md="checklist" aria-label="Checklist" title="Checklist">{{ icon('checklist') }}</button>
+    <button type="button" class="md-tool" data-md="table" aria-label="Tabela" title="Tabela">{{ icon('table') }}</button>
+    <button type="button" class="md-tool" data-md="code" aria-label="Bloco de código" title="Bloco de código">{{ icon('code') }}</button>
+    <button type="button" class="md-tool" data-md="rule" aria-label="Linha horizontal" title="Linha horizontal">{{ icon('minus') }}</button>
+
+    <div class="btn-group md-toolbar-modes" role="group" aria-label="Modo de exibição">
+      <button type="button" class="btn btn-icon" data-mode="write" aria-pressed="false" aria-label="Somente editor" title="Somente editor">{{ icon('edit', 'icon icon-sm') }}</button>
+      <button type="button" class="btn btn-icon" data-mode="split" aria-pressed="true" aria-label="Editor e visualização" title="Dividido">{{ icon('split', 'icon icon-sm') }}</button>
+      <button type="button" class="btn btn-icon" data-mode="read" aria-pressed="false" aria-label="Somente visualização" title="Somente visualização">{{ icon('eye', 'icon icon-sm') }}</button>
+    </div>
+  </div>
+
+  <div class="editor" data-mode="split" data-editor>
+    <div class="editor-source">
+      <label class="visually-hidden" for="editor-content">Conteúdo em Markdown</label>
+      <textarea class="editor-textarea" id="editor-content" data-editor-content spellcheck="true"
+                placeholder="Escreva ou cole seu Markdown aqui…">{{ document.content_markdown }}</textarea>
+    </div>
+
+    <div class="editor-preview" data-preview-pane>
+      <div class="editor-preview-inner markdown-body measured" data-preview aria-live="off">
+        {{ document.rendered_html|safe }}
+      </div>
+    </div>
+  </div>
+
+  <footer class="editor-footer">
+    <span class="editor-metric">{{ icon('word', 'icon icon-sm') }}
+      <span data-metric-words>{{ document.word_count|number_br }}</span> palavras
+    </span>
+    <span class="editor-metric">
+      <span data-metric-chars>{{ document.character_count|number_br }}</span> caracteres
+    </span>
+    <span class="editor-metric">{{ icon('clock', 'icon icon-sm') }}
+      <span data-metric-time>{{ document.estimated_reading_time }}</span> min de leitura
+    </span>
+    <span class="editor-metric push subtle">
+      Versão {{ document.revision }} · {{ version_count }} no histórico
+    </span>
+  </footer>
+</div>
+
+{# ── Metadata drawer ─────────────────────────────────────────────────── #}
+<aside class="meta-drawer" id="meta-drawer" data-open="false" aria-label="Organização do documento">
+  <div class="meta-drawer-head">
+    <h2 class="card-title">Organização</h2>
+    <button type="button" class="btn btn-ghost btn-icon btn-sm push" data-action="toggle-meta"
+            aria-label="Fechar painel">{{ icon('close', 'icon icon-sm') }}</button>
+  </div>
+
+  <form method="post" action="{{ url_for('editor.edit', public_uuid=document.uuid) }}"
+        id="meta-form" class="meta-drawer-form">
+    {{ form.hidden_tag() }}
+    {# Mirrors of the live editor fields so this form still saves without JS. #}
+    <input type="hidden" name="title" data-mirror-title value="{{ document.title }}">
+    <textarea class="visually-hidden" name="content_markdown" data-mirror-content
+              aria-hidden="true" tabindex="-1">{{ document.content_markdown }}</textarea>
+    <input type="hidden" name="expected_revision" data-mirror-revision value="{{ document.revision }}">
+
+    <div class="meta-drawer-body">
+      {{ select_field(form.category_id) }}
+
+      <div class="field">
+        {{ form.tags.label(class='field-label') }}
+        {{ form.tags(class='input', placeholder='markdown, projeto, ideias') }}
+        <span class="field-hint">Separe por vírgula. Etiquetas novas são criadas automaticamente.</span>
+      </div>
+
+      <label class="checkbox">
+        {{ form.is_favorite() }}
+        <span>Marcar como favorito</span>
+      </label>
+
+      <hr class="divider">
+
+      <p class="field-label">Preferências de PDF deste documento</p>
+      {{ select_field(form.page_size) }}
+      {{ select_field(form.pdf_theme) }}
+    </div>
+
+    <div class="meta-drawer-foot">
+      <button type="submit" class="btn btn-primary btn-block">Salvar organização</button>
+    </div>
+  </form>
+</aside>
+
+{# ── PDF dialog ──────────────────────────────────────────────────────── #}
+<dialog class="modal" id="pdf-dialog" aria-labelledby="pdf-dialog-title">
+  <form method="post" action="{{ url_for('exports.download_pdf', public_uuid=document.uuid) }}">
+    {{ confirm_form.hidden_tag() }}
+    <div class="modal-head">
+      <h2 class="modal-title" id="pdf-dialog-title">Exportar em PDF</h2>
+    </div>
+    <div class="modal-body stack stack-3">
+      <p class="small">Salve o documento antes de exportar para incluir as últimas alterações.</p>
+      <div class="field">
+        <label class="field-label" for="pdf-theme-select">Tema</label>
+        <div class="select-wrap">
+          <select class="select" id="pdf-theme-select" name="tema">
+            <option value="classic" {{ 'selected' if document.pdf_theme == 'classic' }}>Clássico</option>
+            <option value="minimal" {{ 'selected' if document.pdf_theme == 'minimal' }}>Minimalista</option>
+            <option value="academic" {{ 'selected' if document.pdf_theme == 'academic' }}>Acadêmico</option>
+            <option value="modern" {{ 'selected' if document.pdf_theme == 'modern' }}>Moderno</option>
+          </select>
+          {{ icon('chevron-down', 'icon icon-sm') }}
+        </div>
+      </div>
+      <div class="field">
+        <label class="field-label" for="pdf-size-select">Tamanho da página</label>
+        <div class="select-wrap">
+          <select class="select" id="pdf-size-select" name="tamanho">
+            <option value="A4" {{ 'selected' if document.page_size == 'A4' }}>A4</option>
+            <option value="Letter" {{ 'selected' if document.page_size == 'Letter' }}>Carta (Letter)</option>
+          </select>
+          {{ icon('chevron-down', 'icon icon-sm') }}
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="btn" data-action="close-dialog">Cancelar</button>
+      <button type="submit" class="btn btn-primary">{{ icon('printer', 'icon icon-sm') }} Gerar PDF</button>
+    </div>
+  </form>
+</dialog>
+
+{# ── Draft comparison dialog ─────────────────────────────────────────── #}
+<dialog class="modal modal-wide" id="draft-dialog" aria-labelledby="draft-dialog-title">
+  <div class="modal-head">
+    <h2 class="modal-title" id="draft-dialog-title">Rascunho local × versão salva</h2>
+  </div>
+  <div class="modal-body">
+    <div class="diff" data-draft-diff></div>
+  </div>
+  <div class="modal-foot">
+    <button type="button" class="btn" data-action="close-dialog">Fechar</button>
+    <button type="button" class="btn btn-primary" data-draft-action="recover">Recuperar rascunho</button>
+  </div>
+</dialog>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/editor.js') }}" type="module"></script>
+{% endblock %}

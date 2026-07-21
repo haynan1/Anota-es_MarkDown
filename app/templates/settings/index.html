@@ -1,0 +1,209 @@
+{% extends 'base.html' %}
+{% from 'components/macros.html' import icon, field, select_field, checkbox_field, empty_state %}
+
+{% set topbar_title = 'Configurações' %}
+{% block title %}Configurações · {{ app_name }}{% endblock %}
+{% block content_class %}content-narrow{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1 class="page-title">Configurações</h1>
+  <p class="page-subtitle">Aparência, exportação em PDF e cópias de segurança.</p>
+</div>
+
+<form method="post" class="stack stack-4">
+  {{ form.hidden_tag() }}
+
+  <section class="card card-pad" aria-labelledby="s-general">
+    <h2 class="card-title" id="s-general">Geral</h2>
+    <hr class="divider">
+    <div class="form-grid">
+      {{ field(form.app_name) }}
+      {{ select_field(form.timezone) }}
+      {{ select_field(form.theme) }}
+      <div class="field">
+        {{ form.accent_color.label(class='field-label') }}
+        <div class="row row-tight">
+          {{ form.accent_color(class='color-input', type='color') }}
+          <span class="field-hint">Aplicada em botões, links e destaques.</span>
+        </div>
+        {% for error in form.accent_color.errors %}
+          <span class="field-error">{{ icon('alert', 'icon icon-sm') }}{{ error }}</span>
+        {% endfor %}
+      </div>
+      {{ field(form.autosave_seconds, type='number') }}
+    </div>
+  </section>
+
+  <section class="card card-pad" aria-labelledby="s-pdf">
+    <h2 class="card-title" id="s-pdf">Exportação em PDF</h2>
+    <p class="field-hint">
+      Motor ativo: <strong>{{ pdf_engine.active_label }}</strong>.
+      {% if not pdf_engine.weasyprint_available %}
+        O WeasyPrint não está disponível neste computador; a aplicação usa o motor alternativo
+        automaticamente. Veja a seção “Dependências do WeasyPrint” no README.
+      {% endif %}
+    </p>
+    <hr class="divider">
+    <div class="form-grid">
+      {{ select_field(form.pdf_page_size) }}
+      {{ select_field(form.pdf_theme) }}
+      {{ select_field(form.pdf_font) }}
+      {{ select_field(form.pdf_margin) }}
+      {{ field(form.pdf_header, placeholder='Ex.: Nome da empresa') }}
+      {{ field(form.pdf_footer, placeholder='Ex.: Documento interno') }}
+    </div>
+    <div class="row">
+      {{ checkbox_field(form.pdf_show_page_numbers) }}
+      {{ checkbox_field(form.pdf_show_generated_date) }}
+    </div>
+  </section>
+
+  <section class="card card-pad" aria-labelledby="s-backup-policy">
+    <h2 class="card-title" id="s-backup-policy">Política de backups</h2>
+    <hr class="divider">
+    <div class="form-grid">
+      {{ field(form.backup_keep_last, type='number') }}
+      <div class="field">
+        <span class="field-label">Diretório dos backups</span>
+        <p class="small muted">
+          <code>{{ config.BACKUP_DIR }}</code>
+        </p>
+        <span class="field-hint">Configurável pela variável <code>BACKUP_DIR</code> no arquivo <code>.env</code>.</span>
+      </div>
+    </div>
+  </section>
+
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary">{{ icon('save', 'icon icon-sm') }} Salvar configurações</button>
+  </div>
+</form>
+
+<section class="card section-gap" aria-labelledby="s-backups">
+  <div class="card-head">
+    {{ icon('database', 'icon icon-sm') }}
+    <h2 class="card-title" id="s-backups">Cópias de segurança</h2>
+    <span class="card-head-actions">
+      <form method="post" action="{{ url_for('settings.create_backup_route') }}" class="inline-form">
+        {{ confirm_form.hidden_tag() }}
+        <button type="submit" class="btn btn-sm">{{ icon('plus', 'icon icon-sm') }} Criar backup</button>
+      </form>
+    </span>
+  </div>
+
+  {% if backups %}
+    <div class="table-wrap">
+      <table class="table">
+        <thead>
+          <tr>
+            <th scope="col">Arquivo</th><th scope="col">Criado em</th>
+            <th scope="col">Documentos</th><th scope="col">Tamanho</th>
+            <th scope="col"><span class="visually-hidden">Ações</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for backup in backups %}
+            <tr>
+              <th scope="row" class="truncate">{{ backup.name }}</th>
+              <td>{{ backup.created_at|datetime_br }}</td>
+              <td class="tabular">{{ backup.document_count }}</td>
+              <td class="tabular">{{ backup.size_readable }}</td>
+              <td>
+                <div class="row row-tight">
+                  <a class="btn btn-ghost btn-icon btn-sm"
+                     href="{{ url_for('settings.download_backup', name=backup.name) }}"
+                     aria-label="Baixar {{ backup.name }}">{{ icon('download', 'icon icon-sm') }}</a>
+                  <form method="post" action="{{ url_for('settings.restore_stored_backup', name=backup.name) }}"
+                        class="inline-form"
+                        data-confirm="Restaurar este backup mesclando com os dados atuais? Nada será apagado.">
+                    {{ confirm_form.hidden_tag() }}
+                    <input type="hidden" name="mode" value="merge">
+                    <button type="submit" class="btn btn-ghost btn-icon btn-sm"
+                            aria-label="Restaurar {{ backup.name }} mesclando">{{ icon('restore', 'icon icon-sm') }}</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="card-pad">
+      {{ empty_state('database', 'Nenhum backup ainda',
+                     'Crie uma cópia de segurança antes de fazer mudanças grandes. O arquivo fica no seu computador.') }}
+    </div>
+  {% endif %}
+</section>
+
+<section class="card card-pad section-gap" aria-labelledby="s-restore">
+  <h2 class="card-title" id="s-restore">Restaurar a partir de um arquivo</h2>
+  <p class="field-hint">
+    Antes de qualquer substituição, a aplicação cria automaticamente um backup de segurança dos dados atuais.
+  </p>
+  <hr class="divider">
+  <form method="post" action="{{ url_for('settings.restore_uploaded_backup') }}"
+        enctype="multipart/form-data" class="stack stack-3" data-restore-form>
+    {{ restore_form.hidden_tag() }}
+    <div class="field">
+      {{ restore_form.file.label(class='field-label') }}
+      {{ restore_form.file(class='input', accept='.zip') }}
+      {% for error in restore_form.file.errors %}
+        <span class="field-error">{{ icon('alert', 'icon icon-sm') }}{{ error }}</span>
+      {% endfor %}
+    </div>
+    {{ select_field(restore_form.mode) }}
+    <div class="field" data-replace-confirmation hidden>
+      <label class="field-label" for="{{ restore_form.confirmation.id }}">
+        Digite <strong>SUBSTITUIR</strong> para confirmar a substituição total
+      </label>
+      {{ restore_form.confirmation(class='input', placeholder='SUBSTITUIR', autocomplete='off') }}
+      {% for error in restore_form.confirmation.errors %}
+        <span class="field-error">{{ icon('alert', 'icon icon-sm') }}{{ error }}</span>
+      {% endfor %}
+    </div>
+    <div>
+      <button type="submit" class="btn btn-primary">{{ icon('upload', 'icon icon-sm') }} Restaurar backup</button>
+    </div>
+  </form>
+</section>
+
+<section class="card card-pad section-gap" aria-labelledby="s-maintenance">
+  <h2 class="card-title" id="s-maintenance">Manutenção</h2>
+  <hr class="divider">
+  <div class="stack stack-3">
+    <div class="row">
+      <div>
+        <p class="field-label">Índice de busca</p>
+        <p class="small muted">
+          {% if search_available %}
+            Busca de texto completo ativa (SQLite FTS5, sem diferenciar acentos ou maiúsculas).
+          {% else %}
+            O índice FTS5 não está ativo; a busca usa consultas SQL simples.
+          {% endif %}
+        </p>
+      </div>
+      <form method="post" action="{{ url_for('settings.reindex') }}" class="push inline-form">
+        {{ confirm_form.hidden_tag() }}
+        <button type="submit" class="btn btn-sm">{{ icon('restore', 'icon icon-sm') }} Reconstruir índice</button>
+      </form>
+    </div>
+
+    <hr class="divider">
+
+    <div class="row">
+      <div>
+        <p class="field-label">Restaurar configurações padrão</p>
+        <p class="small muted">Volta todas as preferências aos valores originais. Documentos não são afetados.</p>
+      </div>
+      <form method="post" action="{{ url_for('settings.reset_defaults') }}" class="push"
+            data-confirm="Restaurar todas as configurações para os valores padrão?">
+        {{ confirm_form.hidden_tag() }}
+        <button type="submit" class="btn btn-sm btn-danger">Restaurar padrões</button>
+      </form>
+    </div>
+  </div>
+</section>
+
+<p class="small subtle section-gap">{{ app_name }} v{{ app_version }}</p>
+{% endblock %}

@@ -1,0 +1,43 @@
+{% from 'components/macros.html' import icon, category_badge %}
+
+<article class="doc-card">
+  <div class="doc-card-top">
+    <a class="doc-card-title" href="{{ url_for('editor.edit', public_uuid=document.uuid) }}">
+      {{ document.display_title }}
+    </a>
+    {% if document.is_favorite %}
+      <span class="push">{{ icon('star', 'icon icon-sm star-on', 'Favorito') }}</span>
+    {% endif %}
+  </div>
+
+  {% set hits = snippets|default({}, true) %}
+  <p class="doc-card-excerpt">
+    {%- if hits.get(document.id) -%}
+      {{ hits[document.id] }}
+    {%- elif document.excerpt -%}
+      {{ document.excerpt }}
+    {%- else -%}
+      <span class="subtle">Documento vazio.</span>
+    {%- endif -%}
+  </p>
+
+  {% if document.category or document.tags %}
+    <div class="chip-list">
+      {{ category_badge(document.category) }}
+      {% for tag in document.tags[:3] %}
+        <span class="badge">{{ icon('tag', 'icon icon-sm') }}{{ tag.name }}</span>
+      {% endfor %}
+      {% if document.tags|length > 3 %}
+        <span class="badge">+{{ document.tags|length - 3 }}</span>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  <div class="doc-card-meta">
+    <span class="tabular">{{ document.word_count|number_br }} palavras</span>
+    <span aria-hidden="true">·</span>
+    <span>{{ document.updated_at|since }}</span>
+    {% if document.is_archived %}<span class="badge">Arquivado</span>{% endif %}
+    <span class="doc-card-actions">{% include 'documents/_actions.html' %}</span>
+  </div>
+</article>

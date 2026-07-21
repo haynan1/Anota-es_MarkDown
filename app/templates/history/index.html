@@ -1,0 +1,74 @@
+{% extends 'base.html' %}
+{% from 'components/macros.html' import icon, empty_state, pager %}
+
+{% set topbar_title = 'Histórico' %}
+{% block title %}Histórico · {{ document.display_title }}{% endblock %}
+{% block content_class %}content-narrow{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <a class="btn btn-ghost btn-sm" href="{{ url_for('editor.edit', public_uuid=document.uuid) }}">
+    {{ icon('arrow-left', 'icon icon-sm') }} Voltar ao editor
+  </a>
+  <h1 class="page-title section-gap">Histórico de “{{ document.display_title }}”</h1>
+  <p class="page-subtitle">
+    {{ pagination.total }} versão{{ 'ões' if pagination.total != 1 else '' }} registrada{{ 's' if pagination.total != 1 }}.
+    Uma nova versão é criada apenas quando o conteúdo realmente muda.
+  </p>
+</div>
+
+{% if pagination.items %}
+  <div class="timeline">
+    <div class="timeline-item" data-current="true">
+      <div class="card card-pad">
+        <div class="row">
+          <span class="badge badge-accent">Versão atual</span>
+          <span class="small muted">{{ document.updated_at|datetime_br }}</span>
+          <span class="badge tabular push">{{ document.word_count|number_br }} palavras</span>
+        </div>
+      </div>
+    </div>
+
+    {% for version in pagination.items %}
+      <div class="timeline-item">
+        <div class="card card-pad stack stack-3">
+          <div class="row">
+            <span class="badge">Versão {{ version.version_number }}</span>
+            <span class="small muted">{{ version.created_at|datetime_br }}</span>
+            <span class="small subtle">({{ version.created_at|since }})</span>
+            <span class="badge tabular push">{{ version.word_count|number_br }} palavras</span>
+          </div>
+
+          {% if version.change_summary %}
+            <p class="small muted">{{ version.change_summary }}</p>
+          {% endif %}
+
+          <p class="truncate small subtle">{{ version.title }}</p>
+
+          <div class="row row-tight">
+            <a class="btn btn-sm"
+               href="{{ url_for('history.view_version', public_uuid=document.uuid, version_number=version.version_number) }}">
+              {{ icon('eye', 'icon icon-sm') }} Visualizar
+            </a>
+            <a class="btn btn-sm"
+               href="{{ url_for('history.compare', public_uuid=document.uuid, version_number=version.version_number) }}">
+              {{ icon('diff', 'icon icon-sm') }} Comparar com a atual
+            </a>
+            <form method="post" class="inline-form"
+                  action="{{ url_for('history.restore', public_uuid=document.uuid, version_number=version.version_number) }}"
+                  data-confirm="Restaurar a versão {{ version.version_number }}? O conteúdo atual será preservado no histórico antes da troca.">
+              {{ confirm_form.hidden_tag() }}
+              <button type="submit" class="btn btn-sm">{{ icon('restore', 'icon icon-sm') }} Restaurar</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+
+  {{ pager(pagination, 'history.index', {'public_uuid': document.uuid}) }}
+{% else %}
+  {{ empty_state('history', 'Nenhuma versão ainda',
+                 'Assim que você editar e salvar o documento, cada alteração real ficará registrada aqui.') }}
+{% endif %}
+{% endblock %}

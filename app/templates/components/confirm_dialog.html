@@ -1,0 +1,18 @@
+{#
+  Single confirmation dialog reused by every destructive action.
+  app.js intercepts forms carrying data-confirm and routes them through here.
+#}
+<dialog class="modal" id="confirm-dialog" aria-labelledby="confirm-dialog-title">
+  <form method="dialog">
+    <div class="modal-head">
+      <h2 class="modal-title" id="confirm-dialog-title">Confirmar ação</h2>
+    </div>
+    <div class="modal-body">
+      <p id="confirm-dialog-message">Tem certeza?</p>
+    </div>
+    <div class="modal-foot">
+      <button type="submit" value="cancel" class="btn">Cancelar</button>
+      <button type="submit" value="confirm" class="btn btn-primary" data-confirm-accept>Confirmar</button>
+    </div>
+  </form>
+</dialog>
