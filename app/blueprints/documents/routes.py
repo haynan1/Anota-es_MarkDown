@@ -26,9 +26,11 @@ from app.repositories.document_repository import (
     DocumentQuery,
     DocumentRepository,
 )
+from app.repositories.group_repository import GroupRepository
 from app.repositories.taxonomy_repository import CategoryRepository, TagRepository
 from app.services.document_service import DocumentService
 from app.services.exceptions import ServiceError
+from app.services.group_service import GroupService
 from app.services.import_service import build_preview, import_document
 from app.services.listing_service import list_documents
 from app.services.media_service import enforce_content_length
@@ -48,6 +50,7 @@ def _build_query() -> DocumentQuery:
         category_id=(
             int(args["categoria"]) if (args.get("categoria") or "").isdigit() else None
         ),
+        group_uuid=(args.get("grupo") or "").strip()[:36],
         tag_slugs=tuple(tag for tag in args.getlist("etiqueta") if tag)[:5],
         only_favorites=args.get("favoritos") == "1",
         scope=scope if scope in VALID_SCOPES else SCOPE_ACTIVE,
@@ -78,6 +81,10 @@ def index():
         view=view,
         snippets=result.snippets,
         categories=CategoryRepository.all(),
+        groups=GroupRepository.all(),
+        active_group=(
+            GroupRepository.get_by_uuid(query.group_uuid) if query.group_uuid else None
+        ),
         tag_usage=TagRepository.usage(limit=30),
         sort_options=SORT_OPTIONS,
         rename_form=RenameForm(),
@@ -214,6 +221,11 @@ def move_to_trash(public_uuid: str):
 # load an unbounded set into memory.
 MAX_BULK_SELECTION = 200
 
+# Adding to a group is the one bulk action that needs a second value (which
+# group), so it is handled here rather than inside DocumentService.bulk_apply -
+# that method is deliberately about state flags on documents alone.
+ACTION_ADD_TO_GROUP = "group"
+
 # Success line per action, as (singular, plural). The count is prefixed only
 # to the plural, so a one-document action reads "Documento arquivado." rather
 # than "1 documento arquivado.".
@@ -241,7 +253,7 @@ def bulk_action():
         return redirect(_back_to(url_for("documents.index")))
 
     action = request.form.get("acao", "")
-    if action not in DocumentService.BULK_ACTIONS:
+    if action not in DocumentService.BULK_ACTIONS and action != ACTION_ADD_TO_GROUP:
         flash("Ação inválida.", "error")
         return redirect(_back_to(url_for("documents.index")))
 
@@ -249,6 +261,9 @@ def bulk_action():
     if not uuids:
         flash("Selecione ao menos um documento.", "error")
         return redirect(_back_to(url_for("documents.index")))
+
+    if action == ACTION_ADD_TO_GROUP:
+        return _bulk_add_to_group(uuids)
 
     # Lock and unlock reach documents in any state; the other actions operate
     # only on live ones, matching what the listing can show.
@@ -278,6 +293,36 @@ def bulk_action():
     # rather than a filtered URL that may now point past the last page.
     if action == "trash":
         return redirect(url_for("documents.index"))
+    return redirect(_back_to(url_for("documents.index")))
+
+
+def _bulk_add_to_group(uuids: list[str]):
+    """Put a whole selection into one group."""
+    group_uuid = (request.form.get("grupo") or "").strip()
+    if not group_uuid:
+        flash("Escolha um grupo para adicionar os documentos.", "error")
+        return redirect(_back_to(url_for("documents.index")))
+
+    try:
+        group = GroupService.require(group_uuid)
+    except ServiceError as error:
+        flash(error.message, "error")
+        return redirect(_back_to(url_for("documents.index")))
+
+    documents = DocumentRepository.get_many_by_uuids(uuids)
+    try:
+        added = GroupService.add_documents(group, documents)
+    except ServiceError as error:
+        flash(error.message, "error")
+        return redirect(_back_to(url_for("documents.index")))
+
+    if added == 1:
+        flash(f"Documento adicionado ao grupo “{group.name}”.", "success")
+    elif added:
+        flash(f"{added} documentos adicionados ao grupo “{group.name}”.", "success")
+    else:
+        flash(f"Os documentos selecionados já estavam em “{group.name}”.", "warning")
+
     return redirect(_back_to(url_for("documents.index")))
 
 

@@ -55,6 +55,11 @@
 
     <p class="nav-section-title">Organização</p>
 
+    <a class="nav-item" href="{{ url_for('groups.index') }}" data-tooltip="Grupos"
+       {% if request.blueprint == 'groups' %}aria-current="page"{% endif %}>
+      {{ icon('layers') }}<span class="nav-label">Grupos</span>
+    </a>
+
     <a class="nav-item" href="{{ url_for('documents.categories') }}" data-tooltip="Categorias e etiquetas"
        {% if request.endpoint == 'documents.categories' %}aria-current="page"{% endif %}>
       {{ icon('folder') }}<span class="nav-label">Categorias e etiquetas</span>

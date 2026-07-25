@@ -93,6 +93,7 @@ def _register_blueprints(app: Flask) -> None:
     from app.blueprints.documents import documents_bp
     from app.blueprints.editor import editor_bp
     from app.blueprints.exports import exports_bp
+    from app.blueprints.groups import groups_bp
     from app.blueprints.history import history_bp
     from app.blueprints.media import media_bp
     from app.blueprints.settings import settings_bp
@@ -100,6 +101,7 @@ def _register_blueprints(app: Flask) -> None:
 
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(documents_bp)
+    app.register_blueprint(groups_bp)
     app.register_blueprint(editor_bp)
     app.register_blueprint(history_bp)
     app.register_blueprint(trash_bp)

@@ -16,7 +16,15 @@
      data-autosave-url="{{ url_for('api.autosave', public_uuid=document.uuid) }}"
      data-metadata-url="{{ url_for('api.update_metadata', public_uuid=document.uuid) }}"
      data-preview-url="{{ url_for('api.preview') }}"
-     data-autosave-seconds="{{ autosave_seconds }}">
+     data-autosave-seconds="{{ autosave_seconds }}"
+     {# Published so the browser can refuse an impossible upload in a tenth of
+        a second instead of after a 50 MB round trip. The server still decides. #}
+     data-upload-accept="{{ media_accept }}"
+     {# Single quotes, deliberately: `tojson` escapes < > & and the single
+        quote, but not the double quote — inside a double-quoted attribute the
+        first `"` of the JSON would end the attribute and scatter the rest as
+        bogus ones. #}
+     data-upload-limits='{{ upload_limits|tojson }}'>
 
   <div class="draft-banner" data-draft-banner hidden>
     {{ icon('alert') }}
@@ -71,6 +79,11 @@
          aria-label="Baixar arquivo .md" title="Baixar .md">
         {{ icon('download') }}
       </a>
+      <button type="button" class="btn btn-ghost btn-icon" data-action="open-rich-copy"
+              aria-label="Copiar como texto formatado (para a Wix)"
+              title="Copiar como texto formatado — para colar na Wix">
+        {{ icon('copy') }}
+      </button>
       <button type="button" class="btn btn-ghost btn-icon" data-action="open-dialog" data-target="pdf-dialog"
               aria-label="Exportar em PDF" title="Exportar em PDF">
         {{ icon('printer') }}
@@ -94,11 +107,13 @@
     <button type="button" class="md-tool" data-md="link" aria-label="Link (Ctrl+K)" title="Link · Ctrl+K">{{ icon('link') }}</button>
     <button type="button" class="md-tool" data-md="image" aria-label="Imagem por URL" title="Imagem por URL">{{ icon('image') }}</button>
 
-    {# Enviar mídia: a label is the whole control, so mouse and keyboard both
-       open the picker natively and the hidden input keeps its accessible name. #}
-    <label class="md-tool" data-tooltip="Enviar imagem, GIF ou vídeo">
-      {{ icon('upload') }}
-      <span class="visually-hidden">Enviar imagem, GIF ou vídeo</span>
+    {# Enviar do computador: a label is the whole control, so mouse and keyboard
+       both open the picker natively and the hidden input keeps its accessible
+       name. One control for every kind — the server decides from the bytes
+       whether the file becomes an image, a video or an attachment. #}
+    <label class="md-tool" title="Enviar do computador · imagem, vídeo ou arquivo">
+      {{ icon('paperclip') }}
+      <span class="visually-hidden">Enviar arquivo do computador</span>
       <input type="file" class="visually-hidden" data-media-input multiple
              accept="{{ media_accept }}">
     </label>
@@ -126,6 +141,20 @@
     <div class="editor-preview" data-preview-pane>
       <div class="editor-preview-inner markdown-body measured" data-preview aria-live="off">
         {{ document.rendered_html|safe }}
+      </div>
+    </div>
+
+    {# Drop feedback. A sibling of the panes rather than a child of the
+       scrolling one: an absolute overlay inside a scroll container slides away
+       with the text. `aria-hidden` because dragging is a pointer-only gesture
+       and the toolbar control is the keyboard path to the same thing. #}
+    <div class="drop-hint" aria-hidden="true">
+      <div class="drop-hint-card">
+        {{ icon('upload', 'icon icon-xl') }}
+        <p class="drop-hint-title">Solte para enviar</p>
+        <p class="drop-hint-note">
+          Imagens e vídeos entram no texto. PDF, Word, Excel, ZIP e outros viram anexos.
+        </p>
       </div>
     </div>
   </div>
@@ -176,6 +205,30 @@
         {{ form.tags(class='input', placeholder='markdown, projeto, ideias') }}
         <span class="field-hint">Separe por vírgula. Etiquetas novas são criadas automaticamente.</span>
       </div>
+
+      <fieldset class="field group-field">
+        <legend class="field-label">Grupos</legend>
+        {% if groups %}
+          <div class="group-choices">
+            {% for value, label in form.groups.choices %}
+              <label class="checkbox">
+                <input type="checkbox" name="{{ form.groups.name }}" value="{{ value }}"
+                       {{ 'checked' if value in (form.groups.data or []) }}>
+                <span>{{ label }}</span>
+              </label>
+            {% endfor %}
+          </div>
+          <span class="field-hint">
+            Um documento pode estar em vários grupos.
+            <a href="{{ url_for('groups.index') }}">Gerenciar grupos</a>.
+          </span>
+        {% else %}
+          <p class="field-hint">
+            Nenhum grupo ainda. <a href="{{ url_for('groups.index') }}">Crie o primeiro</a>
+            para reunir documentos do mesmo assunto.
+          </p>
+        {% endif %}
+      </fieldset>
 
       <label class="checkbox">
         {{ form.is_favorite() }}
@@ -245,6 +298,39 @@
       <button type="submit" class="btn btn-primary">{{ icon('printer', 'icon icon-sm') }} Gerar PDF</button>
     </div>
   </form>
+</dialog>
+
+{# ── Copiar para a Wix ────────────────────────────────────────────────── #}
+{# A separate view of the same document: what survives a paste into a rich
+   text field. Nothing here changes the document — it only reports and copies. #}
+<dialog class="modal modal-wide" id="rich-copy-dialog" aria-labelledby="rich-copy-title">
+  <div class="modal-head">
+    <h2 class="modal-title" id="rich-copy-title">Copiar para a Wix</h2>
+  </div>
+  <div class="modal-body stack stack-4">
+    <p class="small subtle">
+      A descrição do produto na Wix aceita <strong>texto formatado</strong> — negrito,
+      itálico, títulos, listas e links. Copie daqui e cole lá com <kbd>Ctrl</kbd>+<kbd>V</kbd>:
+      a formatação vai junto. Colar Markdown ou HTML na Wix não funciona; o texto entra literal.
+    </p>
+
+    <div class="rich-preview markdown-body" data-rich-preview tabindex="0"
+         role="region" aria-label="Prévia do que será colado"></div>
+
+    <p class="rich-empty" data-rich-empty hidden></p>
+
+    <div class="rich-changes" data-rich-notes-box hidden>
+      <p class="rich-changes-title">{{ icon('info', 'icon icon-sm') }} O que muda ao colar</p>
+      <ul class="rich-changes-list" data-rich-notes></ul>
+    </div>
+  </div>
+  <div class="modal-foot" data-rich-actions hidden>
+    <button type="button" class="btn" data-action="close-rich-copy">Fechar</button>
+    <button type="button" class="btn" data-action="copy-plain">Copiar texto simples</button>
+    <button type="button" class="btn btn-primary" data-action="copy-rich">
+      {{ icon('copy', 'icon icon-sm') }} Copiar texto formatado
+    </button>
+  </div>
 </dialog>
 
 {# ── Draft comparison dialog ─────────────────────────────────────────── #}

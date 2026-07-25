@@ -1,0 +1,196 @@
+{% extends 'base.html' %}
+{% from 'components/macros.html' import icon, field, category_badge, empty_state %}
+
+{% set topbar_title = group.name %}
+{% block title %}{{ group.name }} · Grupos · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="page-head-row">
+    <div class="group-head">
+      <span class="group-head-dot" data-color="{{ group.color }}" aria-hidden="true"></span>
+      <div>
+        <h1 class="page-title">{{ group.name }}</h1>
+        <p class="page-subtitle">
+          {% if group.description %}{{ group.description }}{% else %}
+            {{ documents|length }} documento{{ 's' if documents|length != 1 }} neste grupo.
+          {% endif %}
+        </p>
+      </div>
+    </div>
+
+    <div class="page-head-actions">
+      <a class="btn" href="{{ url_for('documents.index', grupo=group.uuid) }}">
+        {{ icon('list', 'icon icon-sm') }} Ver nos documentos
+      </a>
+      <button type="button" class="btn" data-action="open-dialog" data-target="group-edit-dialog">
+        {{ icon('edit', 'icon icon-sm') }} Editar
+      </button>
+      <form method="post" action="{{ url_for('groups.delete', public_uuid=group.uuid) }}"
+            class="inline-form"
+            data-confirm="Excluir o grupo “{{ group.name }}”? Os documentos continuam existindo — apenas o agrupamento é desfeito.">
+        {{ confirm_form.hidden_tag() }}
+        <button type="submit" class="btn btn-danger">{{ icon('trash', 'icon icon-sm') }} Excluir grupo</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<section class="card section-gap" aria-labelledby="group-documents"
+         data-group-order-url="{{ url_for('api.reorder_group', public_uuid=group.uuid) }}">
+  <div class="card-head">
+    {{ icon('file', 'icon icon-sm') }}
+    <h2 class="card-title" id="group-documents">Documentos do grupo</h2>
+    <span class="card-head-actions small muted">
+      {{ documents|length }} no total{% if documents|length > 1 %} · arraste ou use as setas para ordenar{% endif %}
+    </span>
+  </div>
+
+  {% if documents %}
+    <ol class="group-list" data-group-list>
+      {% for document in documents %}
+        <li class="group-item" id="doc-{{ document.uuid }}" data-uuid="{{ document.uuid }}" draggable="true">
+          <span class="group-item-position tabular" aria-hidden="true">{{ loop.index }}</span>
+
+          {# The handle is decorative: dragging is a pointer gesture, and the
+             buttons below are the equivalent that works with a keyboard. #}
+          <span class="group-item-handle" aria-hidden="true">{{ icon('grip', 'icon icon-sm') }}</span>
+
+          <div class="group-item-main">
+            <a class="group-item-title" href="{{ url_for('editor.edit', public_uuid=document.uuid) }}">
+              {% if document.is_locked %}{{ icon('lock', 'icon icon-sm locked-on', 'Protegido contra exclusão') }} {% endif %}
+              {% if document.is_favorite %}{{ icon('star', 'icon icon-sm star-on', 'Favorito') }} {% endif %}
+              {{ document.display_title }}
+            </a>
+            <div class="group-item-sub">
+              <span>{{ document.updated_at|since }}</span>
+              <span class="tabular">{{ document.word_count|number_br }} palavras</span>
+              {{ category_badge(document.category) }}
+              {% if document.is_archived %}<span class="badge">Arquivado</span>{% endif %}
+            </div>
+          </div>
+
+          <div class="group-item-actions">
+            <form method="post" action="{{ url_for('groups.move_document', public_uuid=group.uuid, document_uuid=document.uuid) }}"
+                  class="inline-form">
+              {{ confirm_form.hidden_tag() }}
+              <input type="hidden" name="direcao" value="cima">
+              <button type="submit" class="btn btn-ghost btn-icon btn-sm"
+                      aria-label="Mover “{{ document.display_title }}” para cima"
+                      {{ 'disabled' if loop.first }}>
+                {{ icon('chevron-up', 'icon icon-sm') }}
+              </button>
+            </form>
+            <form method="post" action="{{ url_for('groups.move_document', public_uuid=group.uuid, document_uuid=document.uuid) }}"
+                  class="inline-form">
+              {{ confirm_form.hidden_tag() }}
+              <input type="hidden" name="direcao" value="baixo">
+              <button type="submit" class="btn btn-ghost btn-icon btn-sm"
+                      aria-label="Mover “{{ document.display_title }}” para baixo"
+                      {{ 'disabled' if loop.last }}>
+                {{ icon('chevron-down', 'icon icon-sm') }}
+              </button>
+            </form>
+            <form method="post" action="{{ url_for('groups.remove_document', public_uuid=group.uuid, document_uuid=document.uuid) }}"
+                  class="inline-form"
+                  data-confirm="Tirar “{{ document.display_title }}” deste grupo? O documento continua existindo.">
+              {{ confirm_form.hidden_tag() }}
+              <button type="submit" class="btn btn-ghost btn-icon btn-sm"
+                      aria-label="Remover “{{ document.display_title }}” do grupo">
+                {{ icon('close', 'icon icon-sm') }}
+              </button>
+            </form>
+          </div>
+        </li>
+      {% endfor %}
+    </ol>
+  {% else %}
+    <div class="card-pad">
+      {{ empty_state('folder', 'Grupo vazio',
+                     'Escolha abaixo os documentos que fazem parte deste assunto.') }}
+    </div>
+  {% endif %}
+</section>
+
+<section class="card section-gap" aria-labelledby="group-add">
+  <div class="card-head">
+    {{ icon('plus', 'icon icon-sm') }}
+    <h2 class="card-title" id="group-add">Adicionar documentos</h2>
+  </div>
+
+  <div class="card-pad stack stack-4">
+    <form method="get" action="{{ url_for('groups.detail', public_uuid=group.uuid) }}" class="search-field">
+      {{ icon('search', 'icon icon-sm') }}
+      <label class="visually-hidden" for="group-search">Procurar documentos para adicionar</label>
+      <input class="input" type="search" id="group-search" name="q" value="{{ candidate_search }}"
+             placeholder="Procurar por título ou conteúdo…" autocomplete="off">
+      <noscript><button type="submit" class="btn btn-sm">Buscar</button></noscript>
+    </form>
+
+    {% if candidates %}
+      <form method="post" action="{{ url_for('groups.add_documents', public_uuid=group.uuid) }}"
+            class="stack stack-3">
+        {{ confirm_form.hidden_tag() }}
+        <fieldset class="group-picker">
+          <legend class="visually-hidden">Documentos disponíveis</legend>
+          {% for document in candidates %}
+            <label class="checkbox group-picker-item">
+              <input type="checkbox" name="uuids" value="{{ document.uuid }}">
+              <span>
+                <span class="group-picker-title">{{ document.display_title }}</span>
+                <span class="group-picker-meta">
+                  {{ document.updated_at|since }}
+                  {% if document.category %} · {{ document.category.name }}{% endif %}
+                  {% if document.is_archived %} · arquivado{% endif %}
+                </span>
+              </span>
+            </label>
+          {% endfor %}
+        </fieldset>
+        <div>
+          <button type="submit" class="btn btn-primary">
+            {{ icon('plus', 'icon icon-sm') }} Adicionar ao grupo
+          </button>
+        </div>
+      </form>
+    {% else %}
+      <p class="muted small">
+        {% if candidate_search %}
+          Nenhum documento fora do grupo corresponde a “{{ candidate_search }}”.
+        {% else %}
+          Todos os documentos já estão neste grupo.
+        {% endif %}
+      </p>
+    {% endif %}
+  </div>
+</section>
+
+{# ── Edit dialog ──────────────────────────────────────────────────────── #}
+<dialog class="modal" id="group-edit-dialog" aria-labelledby="group-edit-title">
+  <form method="post" action="{{ url_for('groups.update', public_uuid=group.uuid) }}">
+    {{ form.hidden_tag() }}
+    <div class="modal-head">
+      <h2 class="modal-title" id="group-edit-title">Editar grupo</h2>
+    </div>
+    <div class="modal-body stack stack-3">
+      {{ field(form.name) }}
+      {{ field(form.description) }}
+      <div class="field">
+        {{ form.color.label(class='field-label') }}
+        <div class="row row-tight">
+          {{ form.color(class='color-input', type='color') }}
+          <span class="field-hint">Identifica o grupo nas listas.</span>
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="btn" data-action="close-dialog">Cancelar</button>
+      <button type="submit" class="btn btn-primary">Salvar</button>
+    </div>
+  </form>
+</dialog>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/groups.js') }}" type="module"></script>
+{% endblock %}

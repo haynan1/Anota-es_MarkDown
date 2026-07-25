@@ -9,7 +9,8 @@
   <div class="page-head-row">
     <div>
       <h1 class="page-title">
-        {% if query.scope == 'archived' %}Arquivados
+        {% if active_group %}{{ active_group.name }}
+        {% elif query.scope == 'archived' %}Arquivados
         {% elif query.only_favorites %}Favoritos
         {% else %}Documentos{% endif %}
       </h1>
@@ -22,6 +23,11 @@
       </p>
     </div>
     <div class="page-head-actions">
+      {% if active_group %}
+        <a class="btn" href="{{ url_for('groups.detail', public_uuid=active_group.uuid) }}">
+          {{ icon('layers', 'icon icon-sm') }} Abrir o grupo
+        </a>
+      {% endif %}
       <a class="btn" href="{{ url_for('documents.import_markdown') }}">
         {{ icon('upload', 'icon icon-sm') }} Importar
       </a>
@@ -46,6 +52,19 @@
         {% for category in categories %}
           <option value="{{ category.id }}" {{ 'selected' if query.category_id == category.id }}>
             {{ category.name }}
+          </option>
+        {% endfor %}
+      </select>
+      {{ icon('chevron-down', 'icon icon-sm') }}
+    </div>
+
+    <label class="visually-hidden" for="filter-group">Grupo</label>
+    <div class="select-wrap">
+      <select class="select" id="filter-group" name="grupo" data-autosubmit>
+        <option value="">Todos os grupos</option>
+        {% for group in groups %}
+          <option value="{{ group.uuid }}" {{ 'selected' if query.group_uuid == group.uuid }}>
+            {{ group.name }}
           </option>
         {% endfor %}
       </select>
@@ -132,6 +151,7 @@
   {{ pager(pagination, 'documents.index', {
        'q': query.search or None,
        'categoria': query.category_id or None,
+       'grupo': query.group_uuid or None,
        'ordem': query.sort,
        'favoritos': '1' if query.only_favorites else None,
        'escopo': query.scope if query.scope != 'active' else None,
@@ -163,6 +183,22 @@
     </div>
 
     <div class="bulk-bar-actions">
+      {% if groups %}
+        {# One control, two parts: choosing the group and confirming are the
+           same decision, so they sit together instead of behind a dialog. #}
+        <label class="visually-hidden" for="bulk-group">Grupo de destino</label>
+        <div class="select-wrap select-wrap-sm">
+          <select class="select select-sm" id="bulk-group" name="grupo">
+            {% for group in groups %}
+              <option value="{{ group.uuid }}">{{ group.name }}</option>
+            {% endfor %}
+          </select>
+          {{ icon('chevron-down', 'icon icon-sm') }}
+        </div>
+        <button type="submit" name="acao" value="group" class="btn btn-sm">
+          {{ icon('layers', 'icon icon-sm') }} Adicionar ao grupo
+        </button>
+      {% endif %}
       {% if query.scope == 'archived' %}
         <button type="submit" name="acao" value="unarchive" class="btn btn-sm">
           {{ icon('archive', 'icon icon-sm') }} Desarquivar

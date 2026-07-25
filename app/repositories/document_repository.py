@@ -7,7 +7,7 @@ from sqlalchemy import case, func, select
 from sqlalchemy.orm import defer, joinedload, selectinload
 
 from app.extensions import db
-from app.models import Category, Document, Tag
+from app.models import Category, Document, Group, Tag
 from app.utils.dates import utcnow
 
 SCOPE_ACTIVE = "active"
@@ -37,6 +37,7 @@ class DocumentQuery:
 
     search: str = ""
     category_id: int | None = None
+    group_uuid: str = ""
     tag_slugs: tuple[str, ...] = ()
     only_favorites: bool = False
     scope: str = SCOPE_ACTIVE
@@ -54,6 +55,7 @@ class DocumentQuery:
         return bool(
             self.is_searching
             or self.category_id
+            or self.group_uuid
             or self.tag_slugs
             or self.only_favorites
         )
@@ -153,6 +155,15 @@ class DocumentRepository:
 
         if query.category_id:
             stmt = stmt.where(Document.category_id == query.category_id)
+
+        if query.group_uuid:
+            # EXISTS rather than a join: a document belongs to a group once,
+            # so a join would be safe here, but keeping every membership filter
+            # in the same shape as the tag filter means the statement can never
+            # start duplicating rows as filters are combined.
+            stmt = stmt.where(
+                Document.groups.any(Group.uuid == query.group_uuid)
+            )
 
         if query.only_favorites:
             stmt = stmt.where(Document.is_favorite.is_(True))

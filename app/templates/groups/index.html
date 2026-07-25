@@ -1,0 +1,71 @@
+{% extends 'base.html' %}
+{% from 'components/macros.html' import icon, field, empty_state %}
+
+{% set topbar_title = 'Grupos' %}
+{% block title %}Grupos · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="page-head-row">
+    <div>
+      <h1 class="page-title">Grupos</h1>
+      <p class="page-subtitle">
+        Reúna documentos do mesmo assunto na ordem que fizer sentido para você.
+        Um documento pode estar em vários grupos.
+      </p>
+    </div>
+  </div>
+</div>
+
+<section class="card card-pad section-gap" aria-labelledby="new-group">
+  <h2 class="card-title" id="new-group">Novo grupo</h2>
+  <form method="post" class="stack stack-3">
+    {{ form.hidden_tag() }}
+    <div class="form-grid">
+      {{ field(form.name, placeholder='Ex.: Manual do produto, Proposta Acme, Curso de Markdown') }}
+      <div class="field">
+        {{ form.color.label(class='field-label') }}
+        <div class="row row-tight">
+          {{ form.color(class='color-input', type='color') }}
+          <span class="field-hint">Identifica o grupo nas listas.</span>
+        </div>
+        {% for error in form.color.errors %}
+          <span class="field-error">{{ icon('alert', 'icon icon-sm') }}{{ error }}</span>
+        {% endfor %}
+      </div>
+    </div>
+    {{ field(form.description, placeholder='Sobre o que é este conjunto de documentos') }}
+    <div>
+      <button type="submit" class="btn btn-primary">{{ icon('plus', 'icon icon-sm') }} Criar grupo</button>
+    </div>
+  </form>
+</section>
+
+{% if usage %}
+  <div class="grid grid-cards">
+    {% for group, total in usage %}
+      <article class="group-card">
+        <span class="group-card-stripe" data-color="{{ group.color }}" aria-hidden="true"></span>
+        <div class="group-card-body">
+          <a class="group-card-title" href="{{ url_for('groups.detail', public_uuid=group.uuid) }}">
+            {{ group.name }}
+          </a>
+          {% if group.description %}
+            <p class="group-card-text">{{ group.description }}</p>
+          {% else %}
+            <p class="group-card-text subtle">Sem descrição.</p>
+          {% endif %}
+          <p class="group-card-meta">
+            <span class="tabular">{{ total }}</span> documento{{ 's' if total != 1 }}
+            <span aria-hidden="true">·</span>
+            <span>{{ group.updated_at|since }}</span>
+          </p>
+        </div>
+      </article>
+    {% endfor %}
+  </div>
+{% else %}
+  {{ empty_state('folder', 'Nenhum grupo ainda',
+                 'Crie o primeiro grupo acima e depois adicione os documentos que pertencem a ele.') }}
+{% endif %}
+{% endblock %}

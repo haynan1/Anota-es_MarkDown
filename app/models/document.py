@@ -9,11 +9,13 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.extensions import db
 from app.models.base import TimestampMixin
+from app.models.group import document_groups
 from app.models.tag import document_tags
 
 if TYPE_CHECKING:  # pragma: no cover - resolved by SQLAlchemy at runtime
     from app.models.category import Category
     from app.models.document_version import DocumentVersion
+    from app.models.group import Group
     from app.models.tag import Tag
 
 PAGE_SIZES = ("A4", "Letter")
@@ -99,6 +101,16 @@ class Document(TimestampMixin, db.Model):
         lazy="selectin",
         order_by="Tag.name",
     )
+    # Lazy, unlike tags: no listing renders a document's groups, so eager
+    # loading would add a query to every page that shows documents in order to
+    # fetch something nobody displays. The two places that do need them - the
+    # editor panel and the backup export - ask for them explicitly.
+    groups: Mapped[list["Group"]] = relationship(
+        secondary=document_groups,
+        back_populates="documents",
+        lazy="select",
+        order_by="Group.name",
+    )
     versions: Mapped[list["DocumentVersion"]] = relationship(
         back_populates="document",
         cascade="all, delete-orphan",
@@ -114,6 +126,10 @@ class Document(TimestampMixin, db.Model):
     @property
     def tag_names(self) -> list[str]:
         return [tag.name for tag in self.tags]
+
+    @property
+    def group_names(self) -> list[str]:
+        return [group.name for group in self.groups]
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid
         return f"<Document {self.id} {self.title!r}>"

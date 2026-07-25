@@ -16,6 +16,8 @@ import threading
 import markdown
 from markupsafe import escape
 
+from app.services.attachment_service import NOT_RESOLVED, AttachmentExtension
+from app.services.attachment_service import build_resolver as build_attachment_resolver
 from app.services.sanitizer import pre_strip_dangerous, sanitize_html
 from app.services.wikilink_service import WikiLinkExtension, build_resolver
 
@@ -32,6 +34,14 @@ def _current_wikilink_resolver(key: str):
     """
     resolver = getattr(_local, "wiki_resolver", None)
     return resolver(key) if resolver else None
+
+
+def _current_attachment_resolver(identifier: str):
+    """Same bridge, for uploaded files referenced by a link."""
+    resolver = getattr(_local, "attachment_resolver", None)
+    # With no resolver installed nothing was looked up, which is not the same
+    # as "the file is gone" - see attachment_service.NOT_RESOLVED.
+    return resolver(identifier) if resolver else NOT_RESOLVED
 
 _EXTENSIONS = [
     "markdown.extensions.tables",
@@ -85,7 +95,11 @@ def _renderer() -> markdown.Markdown:
     instance = getattr(_local, "renderer", None)
     if instance is None:
         instance = markdown.Markdown(
-            extensions=[*_EXTENSIONS, WikiLinkExtension(_current_wikilink_resolver)],
+            extensions=[
+                *_EXTENSIONS,
+                WikiLinkExtension(_current_wikilink_resolver),
+                AttachmentExtension(_current_attachment_resolver),
+            ],
             extension_configs=_EXTENSION_CONFIGS,
             output_format="html",
             tab_length=4,
@@ -120,8 +134,10 @@ def render_markdown(markdown_text: str) -> str:
     renderer = _renderer()
     renderer.reset()
     # One database lookup for every [[link]] in this document, resolved before
-    # parsing starts rather than one query per link during it.
+    # parsing starts rather than one query per link during it. Uploaded files
+    # referenced by a link are resolved the same way, in one more query.
     _local.wiki_resolver = build_resolver(markdown_text)
+    _local.attachment_resolver = build_attachment_resolver(markdown_text)
 
     try:
         raw_html = renderer.convert(pre_strip_dangerous(markdown_text))
@@ -140,6 +156,7 @@ def render_markdown(markdown_text: str) -> str:
         return sanitize_html(_plain_text_fallback(markdown_text))
     finally:
         _local.wiki_resolver = None
+        _local.attachment_resolver = None
 
     return sanitize_html(raw_html)
 

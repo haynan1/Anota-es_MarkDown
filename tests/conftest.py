@@ -20,16 +20,22 @@ def app(tmp_path):
     database = tmp_path / "test.db"
     backups = tmp_path / "backups"
     exports = tmp_path / "exports"
+    uploads = tmp_path / "uploads"
 
     # Passed as overrides, not assigned afterwards: the engine is built during
     # init_app, so a later assignment would leave the app on an in-memory
     # database while the config claimed otherwise.
+    #
+    # UPLOAD_DIR is redirected for the same reason the database is: without it
+    # every media test writes real files into instance/uploads and leaves them
+    # there, since the rows that referenced them are dropped with the schema.
     application = create_app(
         "testing",
         {
             "SQLALCHEMY_DATABASE_URI": f"sqlite:///{database.as_posix()}",
             "BACKUP_DIR": backups,
             "EXPORT_DIR": exports,
+            "UPLOAD_DIR": uploads,
             "WTF_CSRF_ENABLED": False,
             "TESTING": True,
         },

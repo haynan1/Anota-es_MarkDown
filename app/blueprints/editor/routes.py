@@ -4,11 +4,19 @@ from flask import flash, redirect, render_template, request, url_for
 
 from app.blueprints.documents.forms import ConfirmForm, DocumentMetadataForm
 from app.blueprints.editor import editor_bp
+from app.repositories.group_repository import GroupRepository
 from app.repositories.taxonomy_repository import CategoryRepository
 from app.repositories.version_repository import VersionRepository
 from app.services.document_service import DocumentService
 from app.services.exceptions import ConflictError, ServiceError
-from app.services.media_service import PICKER_ACCEPT
+from app.services.group_service import GroupService
+from app.services.media_service import (
+    KIND_FILE,
+    KIND_IMAGE,
+    KIND_VIDEO,
+    PICKER_ACCEPT,
+    max_bytes_for,
+)
 from app.services.settings_service import SettingsService
 
 
@@ -33,12 +41,18 @@ def edit(public_uuid: str):
     form.category_id.choices = [("", "Sem categoria")] + [
         (str(category.id), category.name) for category in CategoryRepository.all()
     ]
+    # One query answers both "which groups exist" and "which ones is this
+    # document in", so opening the editor does not cost two.
+    membership = GroupRepository.all_with_membership(document.id)
+    groups = [group for group, _ in membership]
+    form.groups.choices = [(group.uuid, group.name) for group in groups]
 
     if request.method == "GET":
         DocumentService.touch_opened(document)
         form.title.data = document.title
         form.content_markdown.data = document.content_markdown
         form.category_id.data = str(document.category_id or "")
+        form.groups.data = [group.uuid for group, is_member in membership if is_member]
         form.tags.data = ", ".join(document.tag_names)
         form.is_favorite.data = document.is_favorite
         form.page_size.data = document.page_size
@@ -56,6 +70,7 @@ def edit(public_uuid: str):
                 page_size=form.page_size.data,
                 pdf_theme=form.pdf_theme.data,
             )
+            GroupService.set_groups_for(document, form.selected_group_uuids())
             DocumentService.save(
                 document,
                 title=form.title.data or "",
@@ -76,8 +91,13 @@ def edit(public_uuid: str):
     return render_template(
         "editor/edit.html",
         media_accept=PICKER_ACCEPT,
+        upload_limits={
+            kind: max_bytes_for(kind)
+            for kind in (KIND_IMAGE, KIND_VIDEO, KIND_FILE)
+        },
         document=document,
         form=form,
+        groups=groups,
         confirm_form=ConfirmForm(),
         version_count=VersionRepository.count(document.id),
         autosave_seconds=settings["autosave_seconds"],

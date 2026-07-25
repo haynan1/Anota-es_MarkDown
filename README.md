@@ -19,6 +19,7 @@ depender de internet para funcionar.
 - [Como iniciar a aplicação](#como-iniciar-a-aplicação)
 - [Como executar os testes](#como-executar-os-testes)
 - [Exportação em PDF](#exportação-em-pdf)
+- [Copiar para a Wix](#copiar-para-a-wix)
 - [Dependências do WeasyPrint](#dependências-do-weasyprint)
 - [Backup e restauração](#backup-e-restauração)
 - [Segurança](#segurança)
@@ -47,11 +48,17 @@ depender de internet para funcionar.
 - Controle de concorrência otimista: uma resposta atrasada nunca sobrescreve
   uma edição mais recente
 
-**Mídia**
-- Enviar imagens, GIFs e vídeos arrastando, colando ou pelo botão da barra
-- Formatos: PNG, JPG, GIF, WebP, MP4 e WebM
+**Arquivos do computador**
+- Enviar qualquer arquivo arrastando, colando ou pelo botão de clipe da barra
+- **Imagens e vídeos** entram no texto: PNG, JPG, GIF, WebP, MP4 e WebM
+- **Anexos** viram um card com nome, tipo e tamanho, clicável para baixar:
+  PDF, Word, Excel, PowerPoint, OpenDocument, RTF, EPUB, ZIP, 7Z, RAR, GZ,
+  MP3, WAV, OGG e texto (TXT, MD, CSV, TSV, JSON, YAML, INI, LOG, RST)
+- Fila de envio com progresso por arquivo, cancelar e tentar de novo
 - Tipo determinado pelo conteúdo do arquivo, nunca pela extensão
-- Imagens entram no PDF; vídeos viram uma nota impressa
+- Anexos são sempre entregues como download, nunca interpretados pelo navegador
+- Imagens entram no PDF; vídeos viram uma nota impressa; anexos viram uma
+  linha "Anexo: nome — tipo · tamanho"
 
 **Ligações entre documentos**
 - Sintaxe `[[Título do documento]]`, como no Obsidian
@@ -60,9 +67,13 @@ depender de internet para funcionar.
 - Link para documento inexistente fica destacado e, ao ser clicado, cria o documento
 
 **Organização**
+- **Grupos** — coleções de documentos do mesmo assunto, com cor e descrição.
+  Um documento pode estar em vários grupos, e cada grupo guarda sua própria
+  ordem (arraste ou use as setas). Adicione pelo editor, pela página do grupo
+  ou selecionando vários documentos na lista.
 - Categorias com cor e etiquetas livres
 - Busca por título, conteúdo, categoria e etiqueta
-- Filtros, ordenação, paginação, visualização em cards ou lista
+- Filtros por grupo, categoria e etiqueta; ordenação, paginação, cards ou lista
 - Favoritos e arquivamento
 - **Cadeado**: protege um documento contra exclusão acidental, inclusive ao
   esvaziar a lixeira. A edição continua livre — o cadeado protege a existência,
@@ -77,6 +88,8 @@ depender de internet para funcionar.
 - Importar `.md` com validação, arrastar e soltar e prévia
 - Baixar o `.md` original em UTF-8
 - Exportar PDF em 4 temas, A4 ou Carta, com cabeçalho, rodapé e numeração
+- **Copiar para a Wix** — o documento como texto formatado, pronto para colar
+  na descrição do produto (ver abaixo)
 - Backup completo em ZIP e restauração com mesclagem ou substituição
 
 **Interface**
@@ -96,6 +109,8 @@ depender de internet para funcionar.
 | **Editor** | `/editor/<uuid>` | Título, editor, pré-visualização ao vivo, barra de ferramentas, painel de organização, exportações |
 | **Histórico** | `/documentos/<uuid>/historico` | Linha do tempo das versões, visualização, comparação e restauração |
 | **Lixeira** | `/lixeira/` | Documentos excluídos, restauração, exclusão definitiva e esvaziamento com confirmação forte |
+| **Grupos** | `/grupos/` | Criar grupos, ver quantos documentos cada um reúne |
+| **Grupo** | `/grupos/<uuid>` | Documentos do grupo na ordem definida, reordenar, adicionar e remover |
 | **Categorias** | `/documentos/categorias` | Criar e remover categorias e etiquetas, com contagem de uso |
 | **Importar** | `/documentos/importar` | Envio por seleção ou arrastar e soltar, com prévia antes de salvar |
 | **Configurações** | `/configuracoes/` | Aparência, PDF, fuso horário, autosave, backups e manutenção |
@@ -212,7 +227,10 @@ Copie `.env.example` para `.env` e ajuste. Os valores que mais importam:
 | `HOST` | `127.0.0.1` | Interface de escuta. Ver [rede local](#cuidados-para-acesso-por-rede-local) |
 | `PORT` | `5000` | Porta HTTP |
 | `PDF_ENGINE` | `auto` | `auto`, `weasyprint` ou `xhtml2pdf` |
-| `MAX_UPLOAD_MB` | `8` | Teto de upload; ultrapassar gera a página 413 |
+| `MAX_UPLOAD_MB` | `8` | Teto da importação de `.md`; ultrapassar gera a página 413 |
+| `MEDIA_MAX_IMAGE_MB` | `10` | Teto de uma imagem enviada pelo editor |
+| `MEDIA_MAX_VIDEO_MB` | `100` | Teto de um vídeo enviado pelo editor |
+| `MEDIA_MAX_FILE_MB` | `50` | Teto de um anexo (PDF, Office, ZIP, texto) |
 | `MAX_MARKDOWN_MB` | `2` | Tamanho máximo do corpo de um documento |
 | `BACKUP_DIR` | `instance/backups` | Onde os ZIPs de backup são gravados |
 | `AUTO_CREATE_DB` | `true` | Cria tabelas ausentes ao iniciar |
@@ -330,6 +348,41 @@ Dois formatos, escolhidos no diálogo de exportação:
 
 ---
 
+## Copiar para a Wix
+
+A descrição de um produto na Wix é um campo de **texto rico**: ele aceita texto
+com formatação aplicada (negrito, itálico, títulos, listas, links), como quando
+se cola de um editor de textos. Markdown colado ali entra literal, com os
+asteriscos à mostra; HTML colado também não é interpretado.
+
+O botão de copiar no editor (ícone de duas folhas, ao lado da impressora)
+resolve isso: ele converte o documento para o subconjunto que o campo aceita,
+mostra exatamente o que será colado e coloca no clipboard nos dois formatos que
+um editor de textos usaria (`text/html` e `text/plain`). Depois é só
+<kbd>Ctrl</kbd>+<kbd>V</kbd> na Wix.
+
+**O que é convertido, e não perdido:**
+
+| No documento | Ao colar na Wix |
+|:-------------|:----------------|
+| Tabela | Um parágrafo por linha, com o título da coluna em negrito |
+| Bloco de código | Parágrafos de texto comum, com a indentação preservada |
+| Checklist | Os símbolos ☐ e ☑ |
+| Linha horizontal | Uma linha de traços |
+| Lista de definições | Termo em negrito, definição no parágrafo seguinte |
+
+**O que não atravessa** — e é sempre informado na tela antes de copiar:
+imagens e vídeos (a Wix não aceita mídia colada de fora; use a galeria do
+produto), anexos (o arquivo continua aqui, só o nome vai junto) e links
+internos, que só funcionam dentro deste aplicativo e viram texto.
+
+> A cópia usa a API de clipboard do navegador, disponível em contextos seguros
+> — `localhost` é um deles. Se você acessar o app pelo IP da máquina em HTTP,
+> a cópia cai automaticamente para a seleção do próprio navegador, com o mesmo
+> resultado.
+
+---
+
 ## Dependências do WeasyPrint
 
 O WeasyPrint produz PDFs melhores: layout CSS real, cabeçalhos e rodapés em
@@ -427,6 +480,9 @@ Mesmo sem login, a aplicação trata o conteúdo dos documentos como não confi�
 | **SSRF** | A geração de PDF **nunca** faz requisições de rede. Um único ponto de resolução restringe recursos a `static/` e a imagens enviadas, resolvidas pelo banco |
 | **Upload** | Tipo decidido por assinatura de bytes, não por extensão nem pelo MIME do cliente. SVG é recusado (formato que carrega script). Nome de arquivo gerado; nada da requisição toca o sistema de arquivos |
 | **Entrega de mídia** | Caminho lido do banco, `Content-Type` reproduzido da nossa allowlist, `nosniff` e CSP `sandbox` na resposta |
+| **Anexos** | Só imagem e vídeo são exibidos inline. PDF, Office, ZIP e texto são sempre entregues com `Content-Disposition: attachment` — nada que o navegador possa interpretar dentro da nossa origem |
+| **Texto sem assinatura** | `.txt`, `.csv`, `.json` e afins não têm bytes mágicos: são aceitos só se decodificarem em UTF-8 sem bytes nulos, e a extensão apenas escolhe o rótulo, entre uma lista curta que exclui `.html`, `.svg`, `.js`, `.bat` e outros executáveis |
+| **Texto rico (Wix)** | O HTML copiado passa por uma segunda sanitização, com allowlist menor que a da aplicação: só formatação e links `http(s)`/`mailto`/`tel` |
 | **Vídeo no conteúdo** | Só sobrevive apontando para `/midia/`; `autoplay` é removido e `controls` é forçado |
 | **Erros** | Página amigável para o usuário, stack trace apenas no log |
 | **Logs** | Registram estrutura, nunca conteúdo de documentos |
@@ -517,12 +573,14 @@ MarkDown_Projetos/
 │   ├── security.py              CSP e headers de segurança
 │   ├── errors.py                handlers de erro
 │   ├── cli.py                   comandos flask personalizados
-│   ├── models/                  Document, DocumentVersion, Category, Tag, Setting
-│   ├── services/                markdown, sanitizer, document, history,
-│   │                            search, pdf, import, backup, settings
-│   ├── repositories/            document, version, taxonomy
-│   ├── blueprints/              dashboard, documents, editor, history,
-│   │                            trash, exports, settings, api
+│   ├── models/                  Document, DocumentVersion, Category, Tag,
+│   │                            Group, MediaAsset, Setting
+│   ├── services/                markdown, sanitizer, attachment, document,
+│   │                            group, history, search, pdf, media, wix,
+│   │                            import, backup, settings
+│   ├── repositories/            document, version, taxonomy, group
+│   ├── blueprints/              dashboard, documents, groups, editor, history,
+│   │                            trash, exports, settings, media, api
 │   ├── templates/
 │   │   ├── base.html
 │   │   ├── components/          sidebar, topbar, macros, sprite, toasts
@@ -535,7 +593,7 @@ MarkDown_Projetos/
 │       └── favicon.svg
 ├── instance/                    app.db, backups/, exports/, logs/  (não versionado)
 ├── migrations/                  Alembic
-├── tests/                       224 testes
+├── tests/                       825 testes
 ├── .env.example
 ├── .gitignore
 ├── requirements.txt
@@ -563,6 +621,12 @@ MarkDown_Projetos/
   funciona, mas diferencia acentos.
 - **Sem testes de navegador.** O JavaScript foi validado manualmente e por
   verificações de integração; não há Playwright ou Selenium.
+- **Os arquivos enviados não entram no backup.** O ZIP guarda documentos,
+  histórico, taxonomias, grupos e configurações — as imagens, vídeos e anexos
+  ficam em `instance/uploads/`. Copie essa pasta junto ao restaurar em outra
+  máquina.
+- **Áudio enviado é anexo, não toca na página.** MP3, WAV e OGG são aceitos e
+  baixáveis; não há player embutido no documento.
 
 ---
 

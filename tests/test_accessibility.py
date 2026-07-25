@@ -18,6 +18,7 @@ PAGES = [
     "/configuracoes/",
     "/documentos/categorias",
     "/documentos/importar",
+    "/grupos/",
 ]
 
 

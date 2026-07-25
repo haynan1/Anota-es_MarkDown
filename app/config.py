@@ -57,6 +57,9 @@ class Config:
     MAX_DOCUMENT_UPLOAD_BYTES = _env_int("MAX_UPLOAD_MB", 8) * 1024 * 1024
     MEDIA_MAX_IMAGE_BYTES = _env_int("MEDIA_MAX_IMAGE_MB", 10) * 1024 * 1024
     MEDIA_MAX_VIDEO_BYTES = _env_int("MEDIA_MAX_VIDEO_MB", 100) * 1024 * 1024
+    # Attachments (PDF, Office, archives, text). Generous enough for a real
+    # deck or a scanned contract without inviting a disk-filling upload.
+    MEDIA_MAX_FILE_BYTES = _env_int("MEDIA_MAX_FILE_MB", 50) * 1024 * 1024
 
     # Hard ceiling enforced by Werkzeug -> triggers a 413 page. Sized for the
     # largest legitimate upload, with room for multipart framing. Endpoints
@@ -66,6 +69,7 @@ class Config:
             MAX_DOCUMENT_UPLOAD_BYTES,
             MEDIA_MAX_IMAGE_BYTES,
             MEDIA_MAX_VIDEO_BYTES,
+            MEDIA_MAX_FILE_BYTES,
         )
         + 1024 * 1024
     )

@@ -16,6 +16,7 @@ import { $, $$, debounce, formatNumber, openDialog, closeDialog, postJSON } from
 import { toast } from './modules/toasts.js';
 import { initToolbar, applyAction, handleTab } from './modules/toolbar.js';
 import { initUploads } from './modules/uploads.js';
+import { initRichCopy } from './modules/richcopy.js';
 import { saveDraft, readDraft, clearDraft, pruneDrafts, diffLines } from './modules/drafts.js';
 
 const MODE_KEY = 'markdown-studio:editor-mode';
@@ -28,6 +29,16 @@ const STATUS = {
   error: { label: 'Erro ao salvar', state: 'error' },
   conflict: { label: 'Conflito de edição', state: 'conflict' },
 };
+
+/** Per-kind upload ceilings published by the server, in bytes. */
+function parseLimits(raw) {
+  try {
+    const parsed = JSON.parse(raw || '{}');
+    return parsed && typeof parsed === 'object' ? parsed : undefined;
+  } catch (error) {
+    return undefined;
+  }
+}
 
 function boot() {
   const page = $('#editor-page');
@@ -439,8 +450,15 @@ function boot() {
     pane: $('.editor-source'),
     documentUuid: uuid,
     input: $('[data-media-input]'),
-    onStatus: (message, kind) => toast(message, kind, { timeout: kind === 'info' ? 0 : 5000 }),
+    trayHost: page,
+    accept: page.dataset.uploadAccept || '',
+    limits: parseLimits(page.dataset.uploadLimits),
+    // No toasts here: the tray occupies the same corner of the screen and
+    // tells the whole story - name, progress, outcome, retry. A toast would
+    // land on top of the thing the writer is already watching.
+    onStatus: () => {},
   });
+  initRichCopy({ textarea, dialog: $('#rich-copy-dialog') });
   initDraftRecovery();
   pruneDrafts();
   syncMirrors();

@@ -143,6 +143,8 @@ def _restore_message(report) -> str:
     parts = [f"{report.documents_created} documento(s) restaurado(s)"]
     if report.documents_skipped:
         parts.append(f"{report.documents_skipped} já existente(s) mantido(s)")
+    if report.groups_created:
+        parts.append(f"{report.groups_created} grupo(s) recriado(s)")
     if report.safety_backup:
         parts.append(f"backup de segurança: {report.safety_backup}")
     if report.warnings:

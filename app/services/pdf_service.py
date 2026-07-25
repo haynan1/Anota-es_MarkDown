@@ -306,6 +306,45 @@ def replace_videos_for_print(html: str) -> str:
     )
 
 
+_ATTACHMENT_CARD_RE = re.compile(
+    r'<a class="attachment(?P<missing> attachment-missing)?"[^>]*>'
+    r'\s*<span class="attachment-badge">(?P<badge>[^<]*)</span>'
+    r'\s*<span class="attachment-body">'
+    r'\s*<span class="attachment-name">(?P<name>[^<]*)</span>'
+    r'\s*<span class="attachment-meta">(?P<meta>[^<]*)</span>'
+    r"\s*</span>\s*</a>",
+    re.S | re.I,
+)
+
+
+def replace_attachments_for_print(html: str) -> str:
+    """Flatten attachment cards into one printable line each.
+
+    The card on screen is a flex layout; neither PDF engine can be trusted
+    with that, and xhtml2pdf ignores most of it outright. A single labelled
+    paragraph is engine-independent and says exactly what the reader needs to
+    know: this document carries a file, here is its name and size.
+    """
+
+    def replace(match: re.Match[str]) -> str:
+        badge = (match.group("badge") or "").strip()
+        name = (match.group("name") or "").strip()
+        meta = (match.group("meta") or "").strip()
+        prefix = "Anexo indisponível" if match.group("missing") else "Anexo"
+        detail = f" — {meta}" if meta else ""
+        return (
+            f'<p class="attachment-print"><strong>{prefix}:</strong> '
+            f"{name}{detail}</p>"
+        )
+
+    return _ATTACHMENT_CARD_RE.sub(replace, html or "")
+
+
+def prepare_for_print(html: str) -> str:
+    """Everything the rendered HTML needs before it becomes paper."""
+    return replace_attachments_for_print(replace_videos_for_print(html))
+
+
 VARIANT_RENDERED = "rendered"
 VARIANT_SOURCE = "source"
 VARIANTS = (VARIANT_RENDERED, VARIANT_SOURCE)
@@ -344,7 +383,7 @@ def render_document_pdf(
         fallback_font=FALLBACK_FONTS.get(context.font, "Times-Roman"),
         fallback=engine is not WeasyPrintEngine,
         lines=(document.content_markdown or "").splitlines()[:MAX_SOURCE_LINES],
-        printable_html=replace_videos_for_print(document.rendered_html),
+        printable_html=prepare_for_print(document.rendered_html),
     )
 
     try:

@@ -129,6 +129,17 @@
     color: var(--muted); font-size: 8.5pt; text-align: center;
   }
 
+  /* An attached file cannot be opened from paper, so it prints as a labelled
+     line: the reader still learns which file belongs to this document. */
+  .attachment-print {
+    margin: 0 0 8pt; padding: 6pt 9pt;
+    background: #F9FAFB;
+    border-left: 2pt solid var(--accent); border-radius: 2pt;
+    font-size: 9.5pt;
+    break-inside: avoid; page-break-inside: avoid;
+  }
+  .attachment-print strong { color: var(--accent); }
+
   hr { border: 0; border-top: 0.5pt solid var(--line); margin: 14pt 0; }
 
   .footnote { margin-top: 18pt; padding-top: 8pt; border-top: 0.5pt solid var(--line); font-size: 8.5pt; color: var(--muted); }

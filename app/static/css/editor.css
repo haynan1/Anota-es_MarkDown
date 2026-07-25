@@ -3,7 +3,8 @@
    The layout is driven by data-mode on .editor: split | write | read.
    ========================================================================== */
 
-.editor-page { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+/* `relative` anchors the upload tray, which floats over the writing surface. */
+.editor-page { position: relative; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
 
 /* ── Header ─────────────────────────────────────────────────────────────── */
 
@@ -83,16 +84,12 @@ label.md-tool:focus-within {
   outline: 2px solid var(--accent); outline-offset: 1px;
 }
 
-/* Drop target feedback while dragging a file over the writing pane. */
-.editor-source[data-dropping="true"] {
-  outline: 2px dashed var(--accent);
-  outline-offset: -6px;
-  background: var(--accent-soft);
-}
-
 /* ── Panes ──────────────────────────────────────────────────────────────── */
 
-.editor { flex: 1; display: grid; min-height: 0; }
+/* `relative` is what lets the drop overlay cover the writing pane: an absolute
+   child of .editor-source would scroll away with the text, since that pane is
+   the scroll container. */
+.editor { position: relative; flex: 1; display: grid; min-height: 0; }
 .editor[data-mode="split"] { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 .editor[data-mode="write"] { grid-template-columns: minmax(0, 1fr); }
 .editor[data-mode="read"]  { grid-template-columns: minmax(0, 1fr); }
@@ -119,6 +116,128 @@ label.md-tool:focus-within {
 }
 .editor-textarea:focus { outline: none; }
 .editor-textarea::placeholder { color: var(--text-subtle); }
+
+/* ── Sending files from the computer ────────────────────────────────────── */
+
+/* While a file is over the pane, the tint says "here"; the overlay says what
+   will happen when it lands. */
+.editor-source[data-dropping="true"] { background: var(--accent-soft); }
+
+.drop-hint {
+  position: absolute;
+  inset: var(--sp-3);
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  border: 2px dashed var(--accent);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  backdrop-filter: blur(3px);
+  opacity: 0;
+  pointer-events: none;  /* the drop belongs to the pane underneath */
+  transition: opacity var(--dur) var(--ease);
+}
+/* Split view: the overlay covers the pane that will receive the file. */
+.editor[data-mode="split"] .drop-hint { right: calc(50% + var(--sp-3) / 2); }
+.editor[data-mode="read"] .drop-hint { display: none; }
+.editor-source[data-dropping="true"] ~ .drop-hint { opacity: 1; }
+
+.drop-hint-card { display: grid; justify-items: center; gap: var(--sp-2); padding: var(--sp-5); text-align: center; }
+.drop-hint-card .icon { color: var(--accent); }
+.drop-hint-title { margin: 0; font-size: var(--fs-xl); font-weight: 650; letter-spacing: -0.02em; }
+.drop-hint-note { margin: 0; max-width: 42ch; color: var(--text-muted); font-size: var(--fs-sm); }
+
+/* The tray: one row per file, with progress, cancel and retry. It floats over
+   the text instead of pushing it, so the writing surface never jumps. */
+.upload-tray {
+  position: absolute;
+  right: var(--sp-4);
+  /* Clears the editor footer, and sits above the toast stack rather than
+     under it — both live in this corner. */
+  bottom: calc(var(--sp-7) + var(--sp-3));
+  z-index: 60;
+  width: min(380px, calc(100vw - var(--sp-6)));
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  animation: upload-tray-in var(--dur) var(--ease);
+}
+.upload-tray[hidden] { display: none; }
+
+/* The same entrance the bulk bar and the toasts use: arriving from below,
+   never appearing out of nowhere. */
+@keyframes upload-tray-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.98); }
+  to   { opacity: 1; transform: none; }
+}
+
+.upload-tray-head {
+  display: flex; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-4);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.upload-tray-title { margin: 0; flex: 1; font-size: var(--fs-sm); font-weight: 600; }
+
+.upload-tray-list {
+  margin: 0; padding: 0; list-style: none;
+  max-height: 40vh; overflow-y: auto; overscroll-behavior: contain;
+}
+
+.upload-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-3) var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--border);
+}
+.upload-item:last-child { border-bottom: 0; }
+
+.upload-badge {
+  display: grid; place-items: center;
+  min-width: 38px; height: 30px; padding: 0 var(--sp-2);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken); color: var(--text-muted);
+  font-size: var(--fs-2xs); font-weight: 700; letter-spacing: 0.04em;
+}
+.upload-text { display: grid; gap: 2px; min-width: 0; }
+.upload-name {
+  font-size: var(--fs-sm); font-weight: 550;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.upload-state { font-size: var(--fs-xs); color: var(--text-muted); }
+
+/* State is never colour-only: the label spells it out, the badge changes too. */
+.upload-item[data-state="done"] .upload-badge { background: var(--success-soft); color: var(--success); }
+.upload-item[data-state="error"] .upload-badge { background: var(--danger-soft); color: var(--danger); }
+.upload-item[data-state="error"] .upload-state { color: var(--danger); }
+.upload-item[data-state="canceled"] { opacity: 0.6; }
+
+.upload-progress {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  width: 100%; height: 3px;
+  appearance: none; border: 0;
+  background: transparent; color: var(--accent);
+}
+.upload-progress::-webkit-progress-bar { background: transparent; }
+.upload-progress::-webkit-progress-value { background: var(--accent); transition: inline-size var(--dur) var(--ease); }
+.upload-progress::-moz-progress-bar { background: var(--accent); }
+.upload-item[data-state="done"] .upload-progress,
+.upload-item[data-state="canceled"] .upload-progress { visibility: hidden; }
+.upload-item[data-state="error"] .upload-progress::-webkit-progress-value { background: var(--danger); }
+.upload-item[data-state="error"] .upload-progress::-moz-progress-bar { background: var(--danger); }
+
+@media (prefers-reduced-motion: reduce) {
+  .drop-hint { transition: none; }
+  .upload-tray { animation: none; }
+  .upload-progress::-webkit-progress-value { transition: none; }
+}
 
 .editor-preview { background: var(--bg); }
 .editor-preview-inner { padding: var(--sp-6) var(--sp-7) 40vh; margin-inline: auto; }
@@ -189,6 +308,53 @@ label.md-tool:focus-within {
 .draft-banner-actions { margin-left: auto; display: flex; gap: var(--sp-2); }
 .draft-banner[hidden] { display: none; }
 
+/* ── Grupos no painel de organização ────────────────────────────────────── */
+
+.group-field { border: 0; margin: 0; padding: 0; }
+.group-choices {
+  display: grid; gap: var(--sp-1);
+  max-height: 168px; overflow-y: auto; overscroll-behavior: contain;
+  padding: var(--sp-2);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.group-choices .checkbox { min-height: 30px; }
+
+/* ── Copiar para a Wix ──────────────────────────────────────────────────── */
+
+/* The preview is the copy: what is shown here is literally the node the
+   fallback path selects, so there is no gap between the promise and the paste. */
+.rich-preview {
+  padding: var(--sp-5);
+  border: 1px solid var(--border); border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--text);
+  max-height: 46vh; overflow-y: auto; overscroll-behavior: contain;
+}
+.rich-preview:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.rich-preview > :first-child { margin-top: 0; }
+.rich-preview > :last-child { margin-bottom: 0; }
+
+.rich-empty { color: var(--text-muted); font-size: var(--fs-md); }
+
+/* A neutral surface with a single amber edge: these notes are information,
+   not an alarm. A full yellow wash would shout at the writer every time they
+   copied a document that happens to contain a table. */
+.rich-changes {
+  padding: var(--sp-4);
+  border: 1px solid var(--border); border-left: 3px solid var(--warning);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.rich-changes-title {
+  display: flex; align-items: center; gap: var(--sp-2);
+  margin: 0 0 var(--sp-2);
+  color: var(--text); font-size: var(--fs-sm); font-weight: 620;
+}
+.rich-changes-title .icon { color: var(--warning); }
+.rich-changes-list { margin: 0; padding-left: var(--sp-5); display: grid; gap: var(--sp-1); }
+.rich-changes-list li { color: var(--text-muted); font-size: var(--fs-sm); line-height: 1.55; }
+
 /* ── History diff ───────────────────────────────────────────────────────── */
 
 .diff {
@@ -244,6 +410,9 @@ label.md-tool:focus-within {
 @media (max-width: 900px) {
   .editor[data-mode="split"] { grid-template-columns: minmax(0, 1fr); }
   .editor[data-mode="split"] .editor-preview { display: none; }
+  /* Only one pane is visible, so the overlay covers the whole surface. */
+  .editor[data-mode="split"] .drop-hint { right: var(--sp-3); }
+  .upload-tray { right: var(--sp-3); left: var(--sp-3); width: auto; bottom: calc(var(--sp-6) + var(--sp-3)); }
   .editor-textarea, .editor-preview-inner { padding: var(--sp-4) var(--sp-4) 40vh; }
   .md-toolbar { overflow-x: auto; flex-wrap: nowrap; }
   .editor-header { flex-wrap: wrap; }

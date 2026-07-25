@@ -13,8 +13,10 @@ from app.extensions import db
 from app.repositories.document_repository import DocumentQuery
 from app.services.document_service import DocumentService
 from app.services.exceptions import ValidationError
+from app.services.group_service import GroupService
 from app.services.listing_service import list_documents
 from app.services.markdown_service import render_markdown
+from app.services.wix_service import render_for_wix
 from app.utils.text import (
     build_excerpt,
     count_characters,
@@ -49,6 +51,33 @@ def preview():
             "character_count": count_characters(content),
             "reading_time": reading_time_minutes(words),
             "excerpt": build_excerpt(content, limit=160),
+        }
+    )
+
+
+@api_bp.post("/texto-rico")
+def rich_text():
+    """The document as rich text, ready to paste into a Wix description.
+
+    Takes the markdown from the editor rather than the stored document: the
+    writer copies what is on screen, including the paragraph typed a second
+    ago. The conversion itself lives in ``wix_service``.
+    """
+    payload = request.get_json(silent=True) or {}
+    content = payload.get("content_markdown") or ""
+
+    if not isinstance(content, str):
+        raise ValidationError("Conteúdo inválido.")
+    if len(content.encode("utf-8")) > MAX_PREVIEW_BYTES:
+        raise ValidationError("O documento é grande demais para converter.")
+
+    result = render_for_wix(content)
+    return jsonify(
+        {
+            "ok": True,
+            "html": result.html,
+            "text": result.text,
+            "notes": result.notes,
         }
     )
 
@@ -116,6 +145,24 @@ def update_metadata(public_uuid: str):
             "pdf_theme": document.pdf_theme,
         }
     )
+
+
+@api_bp.post("/grupos/<public_uuid>/ordem")
+def reorder_group(public_uuid: str):
+    """Persist a drag-and-drop reordering of a group.
+
+    The arrow buttons on the page do the same thing with a plain form post;
+    this endpoint exists so the pointer gesture does not need a page reload.
+    """
+    group = GroupService.require(public_uuid)
+    payload = request.get_json(silent=True) or {}
+
+    uuids = payload.get("uuids")
+    if not isinstance(uuids, list) or not all(isinstance(item, str) for item in uuids):
+        raise ValidationError("Ordem inválida.")
+
+    total = GroupService.reorder(group, uuids)
+    return jsonify({"ok": True, "total": total})
 
 
 @api_bp.get("/busca")

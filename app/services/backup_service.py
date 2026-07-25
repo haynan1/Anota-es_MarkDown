@@ -26,7 +26,16 @@ from flask import current_app
 from sqlalchemy.orm import joinedload, selectinload
 
 from app.extensions import db
-from app.models import Category, Document, DocumentVersion, Setting, Tag
+from app.models import (
+    Category,
+    Document,
+    DocumentVersion,
+    Group,
+    Setting,
+    Tag,
+    document_groups,
+)
+from app.repositories.group_repository import GroupRepository
 from app.repositories.taxonomy_repository import CategoryRepository, TagRepository
 from app.services.exceptions import ValidationError
 from app.services.markdown_service import render_markdown
@@ -38,6 +47,7 @@ from app.utils.files import (
     safe_filename,
     unique_path,
 )
+from app.utils.humanize import format_bytes
 from app.utils.text import build_excerpt, content_hash, count_characters, count_words
 
 logger = logging.getLogger(__name__)
@@ -68,12 +78,7 @@ class BackupInfo:
 
     @property
     def size_readable(self) -> str:
-        size = float(self.size_bytes)
-        for unit in ("B", "KB", "MB", "GB"):
-            if size < 1024 or unit == "GB":
-                return f"{size:.0f} {unit}" if unit == "B" else f"{size:.1f} {unit}"
-            size /= 1024
-        return f"{size:.1f} GB"
+        return format_bytes(self.size_bytes)
 
 
 @dataclass(slots=True)
@@ -82,6 +87,7 @@ class RestoreReport:
     documents_created: int = 0
     documents_skipped: int = 0
     categories_created: int = 0
+    groups_created: int = 0
     tags_created: int = 0
     settings_applied: int = 0
     safety_backup: str | None = None
@@ -114,6 +120,10 @@ def _serialize_document(document: Document) -> dict:
         "excerpt": document.excerpt,
         "category": document.category.name if document.category else None,
         "tags": [tag.name for tag in document.tags],
+        # Groups travel with the document, by name. The membership is what
+        # matters; the order inside a group is rebuilt on restore, in the order
+        # the documents are read back.
+        "groups": [group.name for group in document.groups],
         "is_favorite": document.is_favorite,
         "is_locked": document.is_locked,
         "is_archived": document.is_archived,
@@ -149,6 +159,7 @@ def build_export_payload() -> dict:
             db.select(Document).options(
                 selectinload(Document.versions),
                 selectinload(Document.tags),
+                selectinload(Document.groups),
                 joinedload(Document.category),
             )
         )
@@ -163,6 +174,18 @@ def build_export_payload() -> dict:
         "tags": [
             {"name": tag.name, "slug": tag.slug}
             for tag in db.session.scalars(db.select(Tag))
+        ],
+        # Exported in full, not just as names on documents: an empty group is
+        # still a decision the user made, and its colour and description would
+        # otherwise be lost on every restore.
+        "groups": [
+            {
+                "name": group.name,
+                "slug": group.slug,
+                "color": group.color,
+                "description": group.description,
+            }
+            for group in db.session.scalars(db.select(Group))
         ],
         "settings": SettingsService.export(),
         "documents": [_serialize_document(document) for document in documents],
@@ -194,6 +217,7 @@ def create_backup(label: str = "") -> BackupInfo:
         "counts": {
             "documents": len(payload["documents"]),
             "categories": len(payload["categories"]),
+            "groups": len(payload["groups"]),
             "tags": len(payload["tags"]),
             "settings": len(payload["settings"]),
         },
@@ -420,6 +444,8 @@ def _restore_document(entry: dict) -> Document:
         document.tags = TagRepository.resolve_many(
             [tag for tag in entry["tags"] if isinstance(tag, str)]
         )
+    if isinstance(entry.get("groups"), list):
+        _restore_memberships(document, entry["groups"])
     db.session.flush()
 
     for raw_version in entry.get("versions") or []:
@@ -444,6 +470,27 @@ def _restore_document(entry: dict) -> Document:
     return document
 
 
+def _restore_memberships(document: Document, names: list) -> None:
+    """Re-create this document's group memberships, creating groups as needed.
+
+    Archives written before groups existed simply carry no "groups" key, and
+    a document restored from one lands in no group - which is exactly what it
+    was in when the archive was written.
+    """
+    from app.services.group_service import GroupService
+
+    for raw in names[:50]:
+        if not isinstance(raw, str) or not raw.strip():
+            continue
+        group = GroupRepository.get_by_name(raw)
+        if group is None:
+            try:
+                group = GroupService.create(raw)
+            except ValidationError:
+                continue
+        GroupService.add_documents(group, [document])
+
+
 def restore_backup(source, mode: str = "merge") -> RestoreReport:
     """Restore ``source`` (a path or file object) using ``mode``."""
     if mode not in RESTORE_MODES:
@@ -457,6 +504,12 @@ def restore_backup(source, mode: str = "merge") -> RestoreReport:
         safety = create_backup(label="antes-da-restauracao")
         report.safety_backup = safety.name
 
+        # Association rows first: SQLite only enforces ON DELETE CASCADE when
+        # foreign keys are switched on per connection, so nothing here relies
+        # on it. Leaving them behind would point at documents that no longer
+        # exist.
+        db.session.execute(document_groups.delete())
+        db.session.execute(db.delete(Group))
         db.session.execute(db.delete(DocumentVersion))
         db.session.execute(db.delete(Document))
         db.session.execute(db.delete(Setting))
@@ -474,6 +527,26 @@ def restore_backup(source, mode: str = "merge") -> RestoreReport:
             CategoryRepository.get_or_create(raw["name"], raw.get("color"))
             if before is None:
                 report.categories_created += 1
+
+    # Restored before the documents, so a group keeps the colour and the
+    # description it was given rather than the defaults a membership would
+    # create it with.
+    for raw in payload.get("groups") or []:
+        if not isinstance(raw, dict) or not raw.get("name"):
+            continue
+        if GroupRepository.get_by_name(raw["name"]) is not None:
+            continue
+        try:
+            from app.services.group_service import GroupService
+
+            GroupService.create(
+                raw["name"],
+                description=raw.get("description") or "",
+                color=raw.get("color"),
+            )
+            report.groups_created += 1
+        except ValidationError:
+            report.warnings.append(f"Grupo ignorado: {raw['name'][:40]}")
 
     existing_uuids = {
         row[0] for row in db.session.execute(db.select(Document.uuid)).all()

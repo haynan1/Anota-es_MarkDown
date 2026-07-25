@@ -80,6 +80,45 @@ class TestQueryCounts:
         assert response.status_code == 200
         assert counter.count <= 15, f"{counter.count} consultas no painel"
 
+    def test_group_pages_do_not_scale_queries_with_members(self, client, many_documents):
+        """The group screens must stay flat as a collection grows."""
+        from app.repositories.document_repository import DocumentRepository
+        from app.services.group_service import GroupService
+
+        group = GroupService.create("Coleção")
+        everything = DocumentRepository.paginate(DocumentQuery(per_page=30)).items
+        GroupService.add_documents(group, list(everything[:5]))
+        db.session.expire_all()
+
+        with QueryCounter() as small:
+            client.get(f"/grupos/{group.uuid}")
+
+        GroupService.add_documents(group, list(everything[5:]))
+        db.session.expire_all()
+
+        with QueryCounter() as large:
+            response = client.get(f"/grupos/{group.uuid}")
+
+        assert response.status_code == 200
+        assert large.count == small.count, (
+            f"N+1 na página do grupo: {small.count} consultas para 5 documentos, "
+            f"{large.count} para {len(everything)}"
+        )
+        assert large.count <= 15, f"{large.count} consultas na página do grupo"
+
+    def test_group_index_query_count_is_bounded(self, client, many_documents):
+        from app.services.group_service import GroupService
+
+        for index in range(10):
+            GroupService.create(f"Grupo {index}")
+        db.session.expire_all()
+
+        with QueryCounter() as counter:
+            response = client.get("/grupos/")
+
+        assert response.status_code == 200
+        assert counter.count <= 10, f"{counter.count} consultas na lista de grupos"
+
     def test_editor_query_count_is_bounded(self, client, document):
         with QueryCounter() as counter:
             response = client.get(f"/editor/{document.uuid}")

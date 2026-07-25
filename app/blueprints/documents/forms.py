@@ -8,7 +8,15 @@ from __future__ import annotations
 
 from flask_wtf import FlaskForm
 from flask_wtf.file import FileAllowed, FileField, FileRequired
-from wtforms import BooleanField, HiddenField, SelectField, StringField, TextAreaField
+from wtforms import (
+    BooleanField,
+    HiddenField,
+    SelectField,
+    SelectMultipleField,
+    StringField,
+    TextAreaField,
+)
+from wtforms.widgets import CheckboxInput, ListWidget
 from wtforms.validators import (
     DataRequired,
     Length,
@@ -33,6 +41,16 @@ class DocumentMetadataForm(FlaskForm):
         "Etiquetas",
         validators=[Length(max=400, message="Lista de etiquetas longa demais.")],
         description="Separe por vírgula",
+    )
+    # Checkboxes rather than a multi-select list: a document belongs to few
+    # groups out of few, and a native multi-select needs Ctrl-click to add a
+    # second value - a gesture most people never discover.
+    groups = SelectMultipleField(
+        "Grupos",
+        validators=[Optional()],
+        validate_choice=False,
+        option_widget=CheckboxInput(),
+        widget=ListWidget(prefix_label=False),
     )
     is_favorite = BooleanField("Favorito")
     page_size = SelectField(
@@ -59,6 +77,9 @@ class DocumentMetadataForm(FlaskForm):
     def selected_category_id(self) -> int | None:
         raw = (self.category_id.data or "").strip()
         return int(raw) if raw.isdigit() else None
+
+    def selected_group_uuids(self) -> list[str]:
+        return [value for value in (self.groups.data or []) if value][:50]
 
 
 class RenameForm(FlaskForm):
