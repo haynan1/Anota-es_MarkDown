@@ -92,9 +92,11 @@
 }
 .md-toolbar-menu[data-aligned="true"] > summary { color: var(--accent); }
 
+/* No min-width of its own: the rows never wrap, so the panel is already wider
+   than the shared 220px floor. A second number here would be a second answer
+   to a question the base component already answered. */
 .menu-panel-below {
   top: calc(100% + 6px); bottom: auto; left: 0; right: auto;
-  min-width: 264px;
   animation: menu-in-down 140ms var(--ease);
 }
 @keyframes menu-in-down {
@@ -282,7 +284,11 @@ label.md-tool:focus-within {
 }
 
 .editor-preview { background: var(--bg); }
-.editor-preview-inner { padding: var(--sp-6) var(--sp-7) 40vh; margin-inline: auto; }
+/* The same inset as the writing pane, deliberately: in split view the two
+   panes show the same paragraph side by side, and a different left margin in
+   each made the same line start in two different places. Reading mode gets its
+   generosity from the measure below, not from padding. */
+.editor-preview-inner { padding: var(--sp-6) var(--sp-6) 40vh; margin-inline: auto; }
 .editor-preview[data-loading="true"] .editor-preview-inner { opacity: 0.55; transition: opacity var(--dur) var(--ease); }
 
 .editor[data-mode="read"] .editor-preview-inner { max-width: 780px; }
@@ -511,7 +517,10 @@ label.md-tool:focus-within {
 
 /* ── Responsive ─────────────────────────────────────────────────────────── */
 
-@media (max-width: 900px) {
+/* The same threshold the shell uses to go off-canvas (base.css). Two "narrow"
+   breakpoints 60px apart is two answers to one question: the product decides
+   once where it stops being a desktop, and every screen obeys it. */
+@media (max-width: 960px) {
   .editor[data-mode="split"] { grid-template-columns: minmax(0, 1fr); }
   .editor[data-mode="split"] .editor-preview { display: none; }
   /* Only one pane is visible, so the overlay covers the whole surface. */
