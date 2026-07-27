@@ -76,6 +76,48 @@
 .md-tool:hover { background: var(--surface-2); color: var(--text); border-color: var(--border); }
 .md-toolbar-modes { margin-left: auto; }
 
+/* ── Alignment menu ───────────────────────────────────────────────────────
+   The shared menu opens upward, because its trigger lives in a card footer.
+   This one hangs from a toolbar at the top of the screen, so it drops down
+   and aligns with its trigger's left edge instead.
+   ------------------------------------------------------------------------ */
+
+.md-toolbar-menu > summary { cursor: pointer; }
+/* The trigger stays lit while the panel is open, and while the caret sits in
+   an aligned block — the toolbar reports the document's state, it does not
+   just launch commands. */
+.md-toolbar-menu[open] > summary,
+.md-toolbar-menu[data-aligned="true"] > summary {
+  background: var(--surface-2); color: var(--text); border-color: var(--border);
+}
+.md-toolbar-menu[data-aligned="true"] > summary { color: var(--accent); }
+
+.menu-panel-below {
+  top: calc(100% + 6px); bottom: auto; left: 0; right: auto;
+  min-width: 264px;
+  animation: menu-in-down 140ms var(--ease);
+}
+@keyframes menu-in-down {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* label | shortcut | check — the check slot is always reserved, so choosing an
+   option never shifts the row underneath the pointer. */
+.align-item { gap: var(--sp-2); }
+.align-item-label { flex: 1; }
+.align-item-key {
+  padding: 0.1em 0.4em;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-subtle);
+  font-family: var(--font-mono); font-size: var(--fs-2xs); white-space: nowrap;
+}
+.align-item-check { flex: none; opacity: 0; color: var(--accent); }
+/* State is never colour alone: the row is tinted *and* it carries a check. */
+.align-item[aria-pressed="true"] { background: var(--accent-soft); color: var(--text); }
+.align-item[aria-pressed="true"] .align-item-check { opacity: 1; }
+
 /* The upload control is a <label>; it must behave like the buttons beside it. */
 label.md-tool { cursor: pointer; }
 label.md-tool:focus-within {
@@ -337,6 +379,68 @@ label.md-tool:focus-within {
 
 .rich-empty { color: var(--text-muted); font-size: var(--fs-md); }
 
+/* ── Copiar em partes ─────────────────────────────────────────────────────
+   Wix takes one upload at a time, so a document with pictures is pasted in
+   instalments. These cards are the instalments: the text between two
+   pictures, the picture named underneath, and — the whole point — a visible
+   answer to "where was I?" when the writer comes back from the other tab.
+   ------------------------------------------------------------------------ */
+
+.rich-plan {
+  display: grid; gap: var(--sp-1);
+  padding: var(--sp-4);
+  border: 1px solid var(--border); border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.rich-plan-text { margin: 0; color: var(--text-muted); font-size: var(--fs-sm); line-height: 1.55; }
+.rich-plan-progress { margin: 0; color: var(--text); font-size: var(--fs-sm); font-weight: 620; }
+
+.rich-parts {
+  display: grid; gap: var(--sp-3);
+  max-height: 46vh; overflow-y: auto; overscroll-behavior: contain;
+  padding-right: var(--sp-2);
+}
+
+.rich-part {
+  border: 1px solid var(--border); border-radius: var(--radius-lg);
+  background: var(--surface);
+  overflow: hidden;
+  transition: border-color var(--dur) var(--ease);
+}
+/* Three states, and never by colour alone: the current card carries a ring,
+   the done one carries a check and the word "Copiado" on its button.
+   Deliberately no opacity fade — a part already pasted is exactly the one the
+   writer re-reads to find their place, and dimming it would cost contrast on
+   the text that matters most. */
+.rich-part[data-state="current"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.rich-part[data-state="done"] .rich-part-head { background: var(--success-soft); }
+.rich-part[data-state="done"] .rich-part-copy { color: var(--success); }
+.rich-part[data-state="done"] .rich-part-title { color: var(--text-muted); }
+
+.rich-part-head {
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.rich-part-title { margin: 0; flex: 1; font-size: var(--fs-sm); font-weight: 620; color: var(--text); }
+.rich-part-copy { flex: none; }
+
+.rich-part-body { padding: var(--sp-4); color: var(--text); }
+.rich-part-body > :first-child { margin-top: 0; }
+.rich-part-body > :last-child { margin-bottom: 0; }
+.rich-part-empty { margin: 0; padding: var(--sp-4); color: var(--text-subtle); font-size: var(--fs-sm); }
+
+/* The step between two parts: not a card, on purpose — it is something to do
+   elsewhere, not something to copy from here. */
+.rich-part-media {
+  display: flex; align-items: center; gap: var(--sp-2);
+  margin: 0; padding: 0 var(--sp-4);
+  color: var(--accent); font-size: var(--fs-sm); font-weight: 560;
+}
+.rich-part-media .icon { flex: none; }
+
 /* A neutral surface with a single amber edge: these notes are information,
    not an alarm. A full yellow wash would shout at the writer every time they
    copied a document that happens to contain a table. */
@@ -417,4 +521,19 @@ label.md-tool:focus-within {
   .md-toolbar { overflow-x: auto; flex-wrap: nowrap; }
   .editor-header { flex-wrap: wrap; }
   .editor-title-field { flex-basis: 100%; order: -1; }
+
+  /* Here the toolbar scrolls sideways, and a scrolling box clips anything that
+     hangs out of it — the dropdown would be cut off at the toolbar's edge. So
+     it leaves the flow entirely and becomes a sheet at the bottom of the
+     screen, which is where the thumb already is. */
+  .md-toolbar-menu .menu-panel {
+    position: fixed;
+    inset: auto var(--sp-3) var(--sp-3);
+    z-index: 70;
+    min-width: 0;
+    animation-name: menu-in;
+  }
+  .align-item { min-height: 44px; }
+  /* No Ctrl key on a phone. */
+  .align-item-key { display: none; }
 }

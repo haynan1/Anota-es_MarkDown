@@ -130,10 +130,37 @@
 .markdown-body th { background: var(--surface-2); font-weight: 620; text-align: left; }
 .markdown-body tbody tr:nth-child(even) { background: var(--surface-2); }
 
+/* Alignment: table cells (from `|:---:|`) and whole blocks (from the
+   `::: centro` … `:::` fence). Both arrive as a class, never as an inline
+   style, so the CSP can keep forbidding those outright. */
 .markdown-body .md-align-left   { text-align: left; }
 .markdown-body .md-align-center { text-align: center; }
 .markdown-body .md-align-right  { text-align: right; }
 .markdown-body .md-align-justify { text-align: justify; }
+
+/* `text-align` moves text and inline images. Everything that is a block in its
+   own right — a list's bullet column, a video, a checklist row — has to be
+   moved on purpose, or the container centres its text around a marker still
+   pinned to the left margin. */
+.markdown-body .md-align-center > ul,
+.markdown-body .md-align-center > ol,
+.markdown-body .md-align-right > ul,
+.markdown-body .md-align-right > ol {
+  padding-left: 0;
+  list-style-position: inside;
+}
+.markdown-body .md-align-center .task-list-item { justify-content: center; }
+.markdown-body .md-align-right .task-list-item { justify-content: flex-end; }
+
+.markdown-body .md-align-center video { margin-inline: auto; }
+.markdown-body .md-align-right video { margin-inline: auto 0; }
+
+/* The container inherits the document's spacing from the blocks inside it, so
+   it must not add a second bottom margin of its own at the end. */
+.markdown-body > .md-align-center:last-child > *:last-child,
+.markdown-body > .md-align-right:last-child > *:last-child,
+.markdown-body > .md-align-left:last-child > *:last-child,
+.markdown-body > .md-align-justify:last-child > *:last-child { margin-bottom: 0; }
 
 .markdown-body img { max-width: 100%; height: auto; border-radius: var(--radius); }
 .markdown-body video {

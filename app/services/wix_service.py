@@ -66,6 +66,10 @@ _INLINE_MAP: dict[str, str] = {
 # Block containers that only wrap other blocks: walk through them.
 _TRANSPARENT_BLOCKS = {"div", "section", "article", "figure", "details", "main", "header", "footer"}
 
+# Alignment is carried by a class, and a class is exactly what a Wix paste
+# discards. Left is the default, so only the other three are worth reporting.
+_ALIGNED_CLASSES = {"md-align-center", "md-align-right", "md-align-justify"}
+
 _HEADINGS = {"h1", "h2", "h3", "h4", "h5", "h6"}
 
 # Deep enough for any document a person writes, shallow enough that a
@@ -80,6 +84,37 @@ _WHITESPACE_RE = re.compile(r"[ \t]+")
 
 DIVIDER_TEXT = "———"
 
+# Marks where a picture or a video stood, so the document can be cut there.
+# It never reaches the clipboard: the split removes it before serialising.
+_BREAK_TAG = "wix-break"
+
+
+@dataclass(slots=True)
+class WixMedia:
+    """A picture or a video: the one thing that has to be added on the Wix side."""
+
+    kind: str
+    label: str
+
+    @property
+    def description(self) -> str:
+        return f"{self.kind}: {self.label}" if self.label else self.kind
+
+
+@dataclass(slots=True)
+class WixPart:
+    """A stretch of text with no media in it - one paste, start to finish.
+
+    Media is where the writer has to stop and leave the keyboard: Wix takes one
+    upload at a time, from its own gallery. Cutting the document exactly there
+    turns "paste everything and then fix it" into a checklist that can be
+    followed from top to bottom without ever losing the place.
+    """
+
+    html: str
+    text: str
+    media_after: WixMedia | None = None
+
 
 @dataclass(slots=True)
 class WixDocument:
@@ -88,6 +123,7 @@ class WixDocument:
     html: str
     text: str
     notes: list[str] = field(default_factory=list)
+    parts: list[WixPart] = field(default_factory=list)
 
 
 # ── Tree helpers ────────────────────────────────────────────────────────────
@@ -115,6 +151,30 @@ def _is_empty(element: etree.Element) -> bool:
     if element.find(".//br") is not None:
         return False
     return not _text_of(element).strip()
+
+
+def _media_in(element: etree.Element) -> list[WixMedia]:
+    """Pictures and videos inside ``element``, in reading order.
+
+    The label is the original filename: an upload writes it into the ``alt``
+    of the image (or the ``title`` of the video), which makes it the one word
+    that tells the writer *which* file to pick from the Wix gallery.
+    """
+    found: list[WixMedia] = []
+    for node in element.iter():
+        tag = node.tag if isinstance(node.tag, str) else ""
+        if tag == "img":
+            found.append(WixMedia("imagem", (node.get("alt") or "").strip()))
+        elif tag == "video":
+            found.append(WixMedia("vídeo", (node.get("title") or "").strip()))
+    return found
+
+
+def _break_marker(media: WixMedia) -> etree.Element:
+    element = etree.Element(_BREAK_TAG)
+    element.set("kind", media.kind)
+    element.set("label", media.label)
+    return element
 
 
 # ── Conversion ──────────────────────────────────────────────────────────────
@@ -213,6 +273,19 @@ class _Converter:
         for child in node:
             tag = child.tag if isinstance(child.tag, str) else ""
 
+            if tag in _TRANSPARENT_BLOCKS:
+                if tag == "details":
+                    self.stats["details"] += 1
+                if _ALIGNED_CLASSES.intersection((child.get("class") or "").split()):
+                    self.stats["alignment"] += 1
+                # The recursive call marks the media inside it.
+                self.blocks(child, out, depth + 1)
+                continue
+
+            # Read before converting: the conversion is what drops the media,
+            # and the cut has to be made where it stood.
+            media = _media_in(child)
+
             if tag in _HEADINGS or tag == "p":
                 out.append(self._simple(child, tag))
             elif tag in {"ul", "ol"}:
@@ -231,14 +304,12 @@ class _Converter:
                 self.stats["images"] += 1
             elif tag in {"video", "audio", "iframe"}:
                 self.stats["videos"] += 1
-            elif tag in _TRANSPARENT_BLOCKS:
-                if tag == "details":
-                    self.stats["details"] += 1
-                self.blocks(child, out, depth + 1)
             elif tag == "summary":
                 out.append(self._simple(child, "p", bold=True))
             elif tag:
                 out.append(self._simple(child, "p"))
+
+            out.extend(_break_marker(item) for item in media)
 
     def _simple(self, source: etree.Element, tag: str, bold: bool = False) -> etree.Element:
         element = etree.Element(tag)
@@ -266,6 +337,11 @@ class _Converter:
     def _quote(self, source: etree.Element) -> list[etree.Element]:
         blocks: list[etree.Element] = []
         self.blocks(source, blocks, depth=1)
+        # The recursion marks the media it finds, but a cut cannot happen in
+        # the middle of a quotation - and the caller already marked this whole
+        # quote from the outside. Dropping the markers here keeps the sentinel
+        # out of the tree it would otherwise be serialised into.
+        blocks = [block for block in blocks if block.tag != _BREAK_TAG]
         if not blocks:
             blocks = [self._simple(source, "p")]
 
@@ -376,6 +452,12 @@ def _build_notes(stats: Counter[str]) -> list[str]:
         )
     if stats["checklists"]:
         notes.append("Caixas de seleção viraram os símbolos ☐ e ☑.")
+    if stats["alignment"]:
+        notes.append(
+            f"{_plural(stats['alignment'], 'trecho alinhado colará', 'trechos alinhados colarão')}"
+            " à esquerda — a Wix não aceita alinhamento colado de fora; use os"
+            " botões de alinhamento do editor dela."
+        )
 
     return notes
 
@@ -406,29 +488,19 @@ def _plain_text(blocks: list[etree.Element]) -> str:
 # ── Public API ──────────────────────────────────────────────────────────────
 
 
-def render_for_wix(markdown_text: str) -> WixDocument:
-    """Convert ``markdown_text`` into rich text a Wix field will accept."""
-    rendered = render_markdown(markdown_text or "")
-    if not rendered.strip():
-        return WixDocument(html="", text="", notes=[])
+def _serialize(blocks: list[etree.Element]) -> str:
+    """Blocks to HTML, reduced to what a Wix field keeps.
 
-    tree = html5lib.parseFragment(
-        rendered, treebuilder="etree", namespaceHTMLElements=False
-    )
-
-    converter = _Converter()
-    blocks: list[etree.Element] = []
-    converter.blocks(tree, blocks)
-    blocks = [block for block in blocks if not _is_empty(block)]
-
+    Defence in depth: the converter is the design, this is the guarantee.
+    Whatever it might have let through is removed here, against a list that is
+    strictly smaller than the application's own. Every string that reaches the
+    clipboard passes through this function - the whole document and each part
+    alike, so a part can never be laxer than the document it came from.
+    """
     html = "".join(
         etree.tostring(block, encoding="unicode", method="html") for block in blocks
     )
-
-    # Defence in depth: the converter is the design, this is the guarantee.
-    # Whatever it might have let through is removed here, against a list that
-    # is strictly smaller than the application's own.
-    html = bleach.clean(
+    return bleach.clean(
         html,
         tags=WIX_TAGS,
         attributes=WIX_ATTRIBUTES,
@@ -437,8 +509,60 @@ def render_for_wix(markdown_text: str) -> WixDocument:
         strip_comments=True,
     )
 
+
+def _split_on_media(blocks: list[etree.Element]) -> list[WixPart]:
+    """Cut the document where the media stood - one part per paste."""
+    parts: list[WixPart] = []
+    current: list[etree.Element] = []
+
+    for block in blocks:
+        if block.tag != _BREAK_TAG:
+            current.append(block)
+            continue
+
+        parts.append(
+            WixPart(
+                html=_serialize(current),
+                text=_plain_text(current),
+                media_after=WixMedia(block.get("kind", ""), block.get("label", "")),
+            )
+        )
+        current = []
+
+    # The tail after the last picture. A document that ends on one has nothing
+    # left to say, so it gets no empty part - the last part already carries the
+    # upload that closes the checklist.
+    if current:
+        parts.append(WixPart(html=_serialize(current), text=_plain_text(current)))
+
+    return parts
+
+
+def render_for_wix(markdown_text: str) -> WixDocument:
+    """Convert ``markdown_text`` into rich text a Wix field will accept."""
+    rendered = render_markdown(markdown_text or "")
+    if not rendered.strip():
+        return WixDocument(html="", text="", notes=[], parts=[])
+
+    tree = html5lib.parseFragment(
+        rendered, treebuilder="etree", namespaceHTMLElements=False
+    )
+
+    converter = _Converter()
+    blocks: list[etree.Element] = []
+    converter.blocks(tree, blocks)
+    blocks = [
+        block for block in blocks if block.tag == _BREAK_TAG or not _is_empty(block)
+    ]
+
+    content = [block for block in blocks if block.tag != _BREAK_TAG]
+    parts = _split_on_media(blocks)
+
     return WixDocument(
-        html=html,
-        text=_plain_text(blocks),
+        html=_serialize(content),
+        text=_plain_text(content),
         notes=_build_notes(converter.stats),
+        # A document with no media is one part, and the dialog says so by not
+        # mentioning parts at all.
+        parts=[part for part in parts if part.html or part.media_after],
     )

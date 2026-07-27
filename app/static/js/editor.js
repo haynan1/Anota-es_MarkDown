@@ -14,13 +14,27 @@
 
 import { $, $$, debounce, formatNumber, openDialog, closeDialog, postJSON } from './modules/dom.js';
 import { toast } from './modules/toasts.js';
-import { initToolbar, applyAction, handleTab } from './modules/toolbar.js';
+import {
+  initToolbar,
+  applyAction,
+  applyAlign,
+  currentAlignment,
+  handleTab,
+} from './modules/toolbar.js';
 import { initUploads } from './modules/uploads.js';
 import { initRichCopy } from './modules/richcopy.js';
 import { saveDraft, readDraft, clearDraft, pruneDrafts, diffLines } from './modules/drafts.js';
 
 const MODE_KEY = 'markdown-studio:editor-mode';
 const PREVIEW_DEBOUNCE_MS = 260;
+
+/** Ctrl+Shift+<key> -> alignment, the word-processor convention. */
+const ALIGN_KEYS = {
+  l: 'esquerda',
+  e: 'centro',
+  r: 'direita',
+  j: 'justificado',
+};
 
 const STATUS = {
   saved: { label: 'Salvo', state: 'saved' },
@@ -221,6 +235,75 @@ function boot() {
   });
   titleInput.addEventListener('input', onEdit);
 
+  /* ── Alignment ──────────────────────────────────────────────────────── */
+
+  /* The menu reports before it acts: the trigger carries the alignment of the
+     block the caret is in, so the state of the document is readable from the
+     toolbar without opening anything. */
+  const alignMenu = $('[data-align-menu]');
+
+  function refreshAlignment() {
+    if (!alignMenu) return;
+
+    const active = currentAlignment(textarea);
+    let icon = 'align-left';
+
+    $$('[data-align]', alignMenu).forEach((item) => {
+      const pressed = item.dataset.align === active;
+      item.setAttribute('aria-pressed', pressed ? 'true' : 'false');
+      if (pressed) icon = item.dataset.icon;
+    });
+
+    alignMenu.dataset.aligned = active === 'esquerda' ? 'false' : 'true';
+
+    const glyph = alignMenu.querySelector('summary use');
+    if (glyph) glyph.setAttribute('href', `#i-${icon}`);
+  }
+
+  // One refresh per frame at most: `selectionchange` fires on every keystroke
+  // and every pointer move during a drag-select.
+  let alignFrame = 0;
+  function scheduleAlignRefresh() {
+    if (alignFrame) return;
+    alignFrame = window.requestAnimationFrame(() => {
+      alignFrame = 0;
+      refreshAlignment();
+    });
+  }
+
+  function align(name) {
+    applyAlign(textarea, name);
+    if (alignMenu) alignMenu.removeAttribute('open');
+    // `applyAlign` moved the caret onto the text it just aligned; keeping the
+    // focus there is what makes the menu feel like part of the editor.
+    textarea.focus();
+    refreshAlignment();
+  }
+
+  // `selectionchange` lands on the document in some browsers and on the field
+  // in others, and neither fires when the value changes without the caret
+  // moving. Every path is covered; the frame guard makes the overlap free.
+  document.addEventListener('selectionchange', () => {
+    if (document.activeElement === textarea) scheduleAlignRefresh();
+  });
+  ['selectionchange', 'input', 'keyup', 'click', 'focus'].forEach((event) =>
+    textarea.addEventListener(event, scheduleAlignRefresh)
+  );
+
+  if (alignMenu) {
+    alignMenu.addEventListener('click', (event) => {
+      const item = event.target.closest('[data-align]');
+      if (!item) return;
+      event.preventDefault();
+      align(item.dataset.align);
+    });
+    // Opening by keyboard does not move the caret, so the panel could be
+    // showing a stale answer to "where am I?".
+    alignMenu.addEventListener('toggle', () => {
+      if (alignMenu.open) refreshAlignment();
+    });
+  }
+
   /* ── View modes ─────────────────────────────────────────────────────── */
 
   function setMode(mode) {
@@ -413,6 +496,19 @@ function boot() {
 
     if (!inEditor) return;
 
+    // Ctrl+Shift+L/E/R/J, as in every word processor. Ctrl alone is left to
+    // the browser: Ctrl+L is the address bar and Ctrl+E the search box, and
+    // stealing those inside a text area would be a trap.
+    if (event.shiftKey) {
+      const alignment = ALIGN_KEYS[key];
+      if (alignment) {
+        event.preventDefault();
+        align(alignment);
+      }
+      // Ctrl+Shift+I is the developer tools; the editor does not want it.
+      return;
+    }
+
     if (key === 'b') {
       event.preventDefault();
       applyAction(textarea, 'bold');
@@ -460,6 +556,7 @@ function boot() {
   });
   initRichCopy({ textarea, dialog: $('#rich-copy-dialog') });
   initDraftRecovery();
+  refreshAlignment();
   pruneDrafts();
   syncMirrors();
   setStatus('saved');

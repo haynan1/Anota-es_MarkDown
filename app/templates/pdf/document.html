@@ -116,10 +116,21 @@
   th { background: #F3F4F6; font-weight: 700; }
   thead { display: table-header-group; }
 
+  /* Cell alignment (from `|:---:|`) and block alignment (from the `::: centro`
+     fence) share one set of classes. On paper the block form matters most:
+     a centred title page or a right-aligned signature line. */
   .md-align-left { text-align: left; }
   .md-align-center { text-align: center; }
   .md-align-right { text-align: right; }
   .md-align-justify { text-align: justify; }
+
+  /* A bullet column pinned to the left margin under centred text reads as a
+     mistake; inside an aligned block the marker travels with the item. */
+  .md-align-center > ul, .md-align-center > ol,
+  .md-align-right > ul, .md-align-right > ol {
+    padding-left: 0;
+    list-style-position: inside;
+  }
 
   img { max-width: 100%; height: auto; }
 

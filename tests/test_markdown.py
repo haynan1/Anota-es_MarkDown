@@ -56,6 +56,92 @@ class TestRendering:
         assert render_markdown("   \n  ") == ""
 
 
+class TestAlignment:
+    """`::: centro` … `:::` — the only way to align a block in this editor.
+
+    The syntax has to be forgiving where it costs nothing (two languages, extra
+    colons) and strict where it costs the writer their text: an unknown keyword
+    or a fence nobody closed must render as visible text, never disappear.
+    """
+
+    @pytest.mark.parametrize(
+        ("keyword", "expected"),
+        [
+            ("centro", "center"),
+            ("centralizado", "center"),
+            ("center", "center"),
+            ("direita", "right"),
+            ("right", "right"),
+            ("esquerda", "left"),
+            ("justificado", "justify"),
+            ("JUSTIFY", "justify"),
+        ],
+    )
+    def test_every_accepted_keyword(self, app, keyword, expected):
+        html = render_markdown(f"::: {keyword}\nTexto.\n:::")
+        assert f'<div class="md-align-{expected}">' in html
+        # A class, never an inline style: the CSP forbids those outright.
+        assert "style=" not in html
+
+    def test_the_content_is_still_markdown(self, app):
+        html = render_markdown("::: centro\n# Título\n\n- **um**\n- dois\n:::")
+        assert '<div class="md-align-center">' in html
+        assert "<h1" in html
+        assert "<strong>um</strong>" in html
+        assert "<li>dois</li>" in html
+
+    def test_several_paragraphs_share_one_block(self, app):
+        html = render_markdown("::: centro\nUm.\n\nDois.\n:::")
+        assert html.count("md-align-center") == 1
+        assert html.count("<p>") == 2
+
+    def test_text_around_the_block_is_untouched(self, app):
+        html = render_markdown("Antes.\n\n::: centro\nMeio.\n:::\n\nDepois.")
+        assert "<p>Antes.</p>" in html
+        assert "<p>Depois.</p>" in html
+
+    def test_content_after_the_closing_fence_is_not_swallowed(self, app):
+        html = render_markdown("::: centro\nMeio.\n:::\nDepois, sem linha em branco.")
+        assert "<p>Depois, sem linha em branco.</p>" in html
+
+    def test_two_blocks_in_a_row(self, app):
+        html = render_markdown("::: centro\na\n:::\n::: direita\nb\n:::")
+        assert "md-align-center" in html
+        assert "md-align-right" in html
+
+    def test_an_unknown_keyword_stays_visible(self, app):
+        html = render_markdown("::: aviso\nNão é alinhamento.\n:::")
+        assert "md-align" not in html
+        assert "Não é alinhamento." in html
+        assert ":::" in html
+
+    def test_an_unclosed_fence_stays_visible(self, app):
+        html = render_markdown("::: centro\nNunca fecha.")
+        assert "md-align" not in html
+        assert "Nunca fecha." in html
+
+    def test_a_code_sample_containing_the_fence_is_still_code(self, app):
+        indented = render_markdown("    ::: centro\n    x = 1")
+        fenced = render_markdown("```\n::: centro\n```")
+        assert "md-align" not in indented
+        assert "md-align" not in fenced
+
+    def test_content_is_sanitized_like_everything_else(self, app):
+        html = render_markdown("::: centro\n<script>alert(1)</script>\n:::")
+        assert "<script" not in html.lower()
+        assert "alert" not in html
+
+    def test_hard_line_breaks_survive_the_closing_fence(self, app):
+        html = render_markdown("::: centro\nLinha um  \nLinha dois\n:::")
+        assert "<br>" in html
+
+    def test_the_fence_is_not_counted_as_prose(self, app):
+        text = "::: centro\numa duas três\n:::"
+        assert count_words(text) == 3
+        assert ":::" not in build_excerpt(text)
+        assert "centro" not in build_excerpt(text)
+
+
 class TestSanitization:
     def test_script_tag_is_removed_with_its_payload(self, app):
         html = render_markdown("Antes\n\n<script>alert('xss')</script>\n\nDepois")

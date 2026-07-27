@@ -23,6 +23,11 @@ _BLOCKQUOTE_RE = re.compile(r"^\s{0,3}>\s?", re.MULTILINE)
 _LIST_MARKER_RE = re.compile(r"^\s*(?:[-*+]|\d+\.)\s+(?:\[[ xX]\]\s+)?", re.MULTILINE)
 _EMPHASIS_RE = re.compile(r"[*_~]{1,3}")
 _HRULE_RE = re.compile(r"^\s{0,3}(?:-{3,}|\*{3,}|_{3,})\s*$", re.MULTILINE)
+# Alignment fences (`::: centro` … `:::`) - see app/services/align_service.py.
+# Duplicated rather than imported: this layer may not depend on services, and
+# without it the word "centro" would be counted as prose and leak into every
+# excerpt and search snippet.
+_ALIGN_FENCE_RE = re.compile(r"^ {0,3}:{3,}[ \t]*[A-Za-z]*[ \t]*$", re.MULTILINE)
 _TABLE_PIPE_RE = re.compile(r"[|]")
 _WHITESPACE_RE = re.compile(r"\s+")
 _WORD_RE = re.compile(r"[^\W_]+", re.UNICODE)
@@ -44,6 +49,7 @@ def strip_markdown(markdown_text: str) -> str:
     text = _LINK_RE.sub(r"\1", text)
     text = _HTML_TAG_RE.sub(" ", text)
     text = _HRULE_RE.sub(" ", text)
+    text = _ALIGN_FENCE_RE.sub(" ", text)
     text = _HEADING_RE.sub("", text)
     text = _BLOCKQUOTE_RE.sub("", text)
     text = _LIST_MARKER_RE.sub("", text)

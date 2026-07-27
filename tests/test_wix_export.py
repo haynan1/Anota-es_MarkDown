@@ -116,6 +116,21 @@ class TestWhatCannotCross:
         assert "<video" not in result.html
         assert any("vídeo" in note for note in result.notes)
 
+    def test_alignment_is_flattened_and_reported(self, app):
+        """Wix keeps the words but not the class that centred them."""
+        result = render_for_wix("::: centro\nTítulo da promoção\n:::\n")
+
+        assert "Título da promoção" in result.html
+        assert "class=" not in result.html
+        assert any("alinhad" in note for note in result.notes)
+
+    def test_left_alignment_is_not_worth_a_note(self, app):
+        """It is what the paste already does; saying so is noise."""
+        result = render_for_wix("::: esquerda\nTexto.\n:::\n")
+
+        assert "Texto." in result.html
+        assert not any("alinhad" in note for note in result.notes)
+
     def test_internal_links_become_text(self, app):
         result = render_for_wix(PRODUCT)
 
@@ -146,6 +161,132 @@ class TestWhatCannotCross:
 
         assert "/editor/" not in result.html
         assert "Outro documento" in result.html
+
+
+class TestCopyingInParts:
+    """O documento cortado onde estão as imagens.
+
+    Wix accepts one upload at a time, so a document with pictures is pasted in
+    instalments. The split has exactly one rule that cannot bend: everything in
+    the whole copy has to be in the parts, in the same order. A writer who
+    follows the checklist to the end must arrive at the same description as one
+    who pasted it all at once.
+    """
+
+    WITH_IMAGES = (
+        "# Camiseta\n\nPrimeiro trecho.\n\n"
+        "![frente.png](/midia/aaa)\n\n"
+        "## Detalhes\n\nSegundo trecho.\n\n"
+        "![costas.png](/midia/bbb)\n\n"
+        "Trecho final.\n"
+    )
+
+    def test_the_document_is_cut_at_every_picture(self, app):
+        result = render_for_wix(self.WITH_IMAGES)
+
+        assert len(result.parts) == 3
+        assert result.parts[0].media_after.description == "imagem: frente.png"
+        assert result.parts[1].media_after.description == "imagem: costas.png"
+        assert result.parts[2].media_after is None
+
+    def test_nothing_is_lost_in_the_split(self, app):
+        """The parts, joined back together, are the whole copy."""
+        result = render_for_wix(self.WITH_IMAGES)
+
+        assert "".join(part.html for part in result.parts) == result.html
+
+    def test_each_part_carries_its_own_text_twin(self, app):
+        result = render_for_wix(self.WITH_IMAGES)
+
+        assert "Primeiro trecho." in result.parts[0].text
+        assert "Segundo trecho." in result.parts[1].text
+        # A part is a paste of its own: part 2 must not repeat part 1.
+        assert "Primeiro trecho." not in result.parts[1].text
+
+    def test_a_part_is_sanitized_like_the_whole(self, app):
+        import re
+
+        result = render_for_wix(self.WITH_IMAGES + "\n<script>alert(1)</script>\n")
+
+        for part in result.parts:
+            assert "class=" not in part.html
+            assert "style=" not in part.html
+            assert "script" not in part.html.lower()
+            assert set(re.findall(r"<([a-zA-Z0-9]+)", part.html)) <= WIX_TAGS
+
+    def test_a_document_without_media_is_a_single_part(self, app):
+        """Nothing to interleave, so the dialog stays as it was."""
+        result = render_for_wix("Só texto.\n\nMais texto.")
+
+        assert len(result.parts) == 1
+        assert result.parts[0].media_after is None
+        assert result.parts[0].html == result.html
+
+    def test_a_document_that_opens_with_a_picture(self, app):
+        """The upload comes first; the part before it is empty on purpose."""
+        result = render_for_wix("![capa.png](/midia/ccc)\n\nTexto depois.")
+
+        assert len(result.parts) == 2
+        assert result.parts[0].html == ""
+        assert result.parts[0].media_after.description == "imagem: capa.png"
+        assert "Texto depois." in result.parts[1].html
+
+    def test_a_document_that_ends_with_a_picture_has_no_empty_tail(self, app):
+        result = render_for_wix("Texto antes.\n\n![fim.png](/midia/ddd)")
+
+        assert len(result.parts) == 1
+        assert result.parts[0].media_after.description == "imagem: fim.png"
+
+    def test_a_video_is_a_step_of_its_own(self, app):
+        result = render_for_wix(
+            'Antes.\n\n<video controls src="/midia/h" title="clipe.mp4"></video>\n\nDepois.'
+        )
+
+        assert len(result.parts) == 2
+        assert result.parts[0].media_after.kind == "vídeo"
+        assert result.parts[0].media_after.label == "clipe.mp4"
+
+    def test_a_picture_inside_a_paragraph_breaks_after_it(self, app):
+        """Half a paragraph is not a paste; the cut waits for the end of it."""
+        result = render_for_wix("Texto com ![meio.png](/midia/g) no meio.\n\nDepois.")
+
+        assert len(result.parts) == 2
+        assert "Texto com" in result.parts[0].html
+        assert "Depois." in result.parts[1].html
+
+    def test_an_empty_document_has_no_parts(self, app):
+        assert render_for_wix("").parts == []
+
+    def test_the_split_marker_never_reaches_the_clipboard(self, app):
+        """The sentinel that marks a cut is machinery, not content.
+
+        It is created inside the converter and has to be gone before anything
+        is serialised - including from inside a quotation, where a cut cannot
+        happen and the marker would otherwise be carried along in the tree.
+        """
+        from app.services.wix_service import _BREAK_TAG
+
+        result = render_for_wix(
+            "> Citação com ![dentro.png](/midia/x) uma imagem\n\nDepois.\n"
+        )
+
+        assert _BREAK_TAG not in result.html
+        assert all(_BREAK_TAG not in part.html for part in result.parts)
+        assert _BREAK_TAG not in result.text
+        # The picture still cuts the document, from outside the quotation.
+        assert len(result.parts) == 2
+        assert result.parts[0].media_after.label == "dentro.png"
+
+    def test_the_endpoint_publishes_the_parts(self, client, app):
+        response = client.post(
+            "/api/texto-rico", json={"content_markdown": self.WITH_IMAGES}
+        )
+        payload = response.get_json()
+
+        assert response.status_code == 200
+        assert len(payload["parts"]) == 3
+        assert payload["parts"][0]["media"]["description"] == "imagem: frente.png"
+        assert payload["parts"][2]["media"] is None
 
 
 class TestSafety:

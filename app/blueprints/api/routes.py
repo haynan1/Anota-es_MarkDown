@@ -78,6 +78,24 @@ def rich_text():
             "html": result.html,
             "text": result.text,
             "notes": result.notes,
+            # The same document cut at its pictures: Wix takes one upload at a
+            # time, so the writer pastes, uploads, and comes back for the next.
+            "parts": [
+                {
+                    "html": part.html,
+                    "text": part.text,
+                    "media": (
+                        {
+                            "kind": part.media_after.kind,
+                            "label": part.media_after.label,
+                            "description": part.media_after.description,
+                        }
+                        if part.media_after
+                        else None
+                    ),
+                }
+                for part in result.parts
+            ],
         }
     )
 

@@ -123,6 +123,39 @@
     <button type="button" class="md-tool" data-md="table" aria-label="Tabela" title="Tabela">{{ icon('table') }}</button>
     <button type="button" class="md-tool" data-md="code" aria-label="Bloco de código" title="Bloco de código">{{ icon('code') }}</button>
     <button type="button" class="md-tool" data-md="rule" aria-label="Linha horizontal" title="Linha horizontal">{{ icon('minus') }}</button>
+    <span class="md-toolbar-sep" aria-hidden="true"></span>
+
+    {# Alignment is a property of the block the caret is in, not something to
+       insert — so it gets a menu that *reports* the current state instead of
+       four more identical-looking buttons. Built on <details>, like every
+       other menu in the application: it opens by mouse or keyboard, and the
+       global handler closes it on Escape or on a click elsewhere. The summary
+       icon follows the caret, so the current alignment is readable without
+       opening anything. #}
+    <details class="menu md-toolbar-menu" data-align-menu>
+      <summary class="md-tool" title="Alinhamento do texto"
+               aria-label="Alinhamento do texto" aria-haspopup="true">
+        {{ icon('align-left') }}
+      </summary>
+
+      <div class="menu-panel menu-panel-below" role="group" aria-label="Alinhamento do bloco atual">
+        {% for value, label, glyph, shortcut, note in [
+             ('esquerda',    'Esquerda',    'align-left',    'Ctrl+Shift+L', 'padrão'),
+             ('centro',      'Centralizado','align-center',  'Ctrl+Shift+E', ''),
+             ('direita',     'Direita',     'align-right',   'Ctrl+Shift+R', ''),
+             ('justificado', 'Justificado', 'align-justify', 'Ctrl+Shift+J', '')] %}
+          <button type="button" class="menu-item align-item" data-align="{{ value }}"
+                  data-icon="{{ glyph }}" aria-pressed="false">
+            {{ icon(glyph, 'icon icon-sm') }}
+            <span class="align-item-label">
+              {{ label }}{% if note %} <span class="subtle small">— {{ note }}</span>{% endif %}
+            </span>
+            <kbd class="align-item-key">{{ shortcut }}</kbd>
+            {{ icon('check', 'icon icon-sm align-item-check') }}
+          </button>
+        {% endfor %}
+      </div>
+    </details>
 
     <div class="btn-group md-toolbar-modes" role="group" aria-label="Modo de exibição">
       <button type="button" class="btn btn-icon" data-mode="write" aria-pressed="false" aria-label="Somente editor" title="Somente editor">{{ icon('edit', 'icon icon-sm') }}</button>
@@ -314,6 +347,18 @@
       a formatação vai junto. Colar Markdown ou HTML na Wix não funciona; o texto entra literal.
     </p>
 
+    {# With pictures in the document the copy stops being one gesture and
+       becomes a routine: paste, upload, come back. The dialog turns into the
+       checklist for that routine — one card per stretch of text, the picture
+       to upload named between them, and the place you stopped always visible.
+       A document without pictures never sees any of this. #}
+    <div class="rich-plan" data-rich-plan hidden>
+      <p class="rich-plan-text" data-rich-plan-text></p>
+      <p class="rich-plan-progress" data-rich-progress aria-live="polite"></p>
+    </div>
+
+    <div class="rich-parts" data-rich-parts hidden></div>
+
     <div class="rich-preview markdown-body" data-rich-preview tabindex="0"
          role="region" aria-label="Prévia do que será colado"></div>
 
@@ -327,8 +372,10 @@
   <div class="modal-foot" data-rich-actions hidden>
     <button type="button" class="btn" data-action="close-rich-copy">Fechar</button>
     <button type="button" class="btn" data-action="copy-plain">Copiar texto simples</button>
+    {# Still here when the document is split: sometimes you just want it all,
+       and taking that away would be deciding for the writer. #}
     <button type="button" class="btn btn-primary" data-action="copy-rich">
-      {{ icon('copy', 'icon icon-sm') }} Copiar texto formatado
+      {{ icon('copy', 'icon icon-sm') }} <span data-rich-copy-label>Copiar texto formatado</span>
     </button>
   </div>
 </dialog>

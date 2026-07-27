@@ -16,6 +16,7 @@ import threading
 import markdown
 from markupsafe import escape
 
+from app.services.align_service import AlignExtension
 from app.services.attachment_service import NOT_RESOLVED, AttachmentExtension
 from app.services.attachment_service import build_resolver as build_attachment_resolver
 from app.services.sanitizer import pre_strip_dangerous, sanitize_html
@@ -97,6 +98,7 @@ def _renderer() -> markdown.Markdown:
         instance = markdown.Markdown(
             extensions=[
                 *_EXTENSIONS,
+                AlignExtension(),
                 WikiLinkExtension(_current_wikilink_resolver),
                 AttachmentExtension(_current_attachment_resolver),
             ],

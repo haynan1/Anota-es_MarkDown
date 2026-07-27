@@ -129,6 +129,16 @@ class TestControlsHaveNames:
         for button in toolbar_buttons:
             assert "aria-label=" in button, f"ferramenta sem rótulo: {button[:70]}"
 
+    def test_the_alignment_menu_announces_which_option_is_active(self, client, document):
+        """Four exclusive options, each declaring its own state."""
+        html = body_of(client, f"/editor/{document.uuid}")
+
+        assert 'aria-label="Alinhamento do texto"' in html
+        options = re.findall(r'<button[^>]*data-align="[^"]*"[^>]*>', html)
+        assert len(options) == 4, "opções de alinhamento incompletas"
+        for option in options:
+            assert "aria-pressed=" in option, f"opção sem estado: {option[:70]}"
+
 
 class TestIconsAreHidden:
     @pytest.mark.parametrize("path", PAGES)

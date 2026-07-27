@@ -37,8 +37,12 @@ depender de internet para funcionar.
 - Editor Markdown com pré-visualização ao vivo
 - Três modos: dividido, somente editor, somente visualização
 - Barra de ferramentas que insere sintaxe na posição do cursor
+- **Alinhamento** do bloco onde está o cursor: esquerda, centralizado, direita
+  ou justificado, pelo menu da barra ou pelo teclado (ver abaixo)
 - Atalhos: `Ctrl+S` salvar, `Ctrl+P` exportar PDF, `Ctrl+B` negrito,
   `Ctrl+I` itálico, `Ctrl+K` link, `Tab` indentar, `Esc` sair
+- Atalhos de alinhamento: `Ctrl+Shift+L` esquerda, `Ctrl+Shift+E` centralizado,
+  `Ctrl+Shift+R` direita, `Ctrl+Shift+J` justificado
 - Tela cheia, contadores de palavras e caracteres, tempo estimado de leitura
 
 **Salvamento**
@@ -59,6 +63,29 @@ depender de internet para funcionar.
 - Anexos são sempre entregues como download, nunca interpretados pelo navegador
 - Imagens entram no PDF; vídeos viram uma nota impressa; anexos viram uma
   linha "Anexo: nome — tipo · tamanho"
+
+**Alinhamento de texto**
+- Markdown não tem alinhamento próprio; aqui ele é escrito como um bloco
+  cercado, a convenção do Pandoc:
+
+  ```
+  ::: centro
+  Este parágrafo sai centralizado.
+
+  E este também, no mesmo bloco.
+  :::
+  ```
+- Palavras aceitas: `centro`, `direita`, `esquerda`, `justificado` — e os
+  equivalentes em inglês (`center`, `right`, `left`, `justify`)
+- Dentro do bloco continua sendo Markdown normal: títulos, listas, imagens,
+  negrito, links
+- Você não precisa digitar nada disso: o menu de alinhamento da barra envolve o
+  bloco onde está o cursor, troca o alinhamento com um clique e desfaz ao
+  escolher "esquerda" ou o alinhamento que já está ativo
+- O ícone da barra mostra o alinhamento do bloco onde o cursor está
+- Vale na visualização, no documento salvo e no PDF, nos quatro temas
+- Uma palavra desconhecida (`::: aviso`) ou uma cerca sem fechamento aparecem
+  como texto — o conteúdo nunca desaparece dentro de um bloco que você não pediu
 
 **Ligações entre documentos**
 - Sintaxe `[[Título do documento]]`, como no Obsidian
@@ -89,7 +116,8 @@ depender de internet para funcionar.
 - Baixar o `.md` original em UTF-8
 - Exportar PDF em 4 temas, A4 ou Carta, com cabeçalho, rodapé e numeração
 - **Copiar para a Wix** — o documento como texto formatado, pronto para colar
-  na descrição do produto (ver abaixo)
+  na descrição do produto; com imagens no meio, ele vem dividido em partes,
+  uma por vez, com a imagem a subir nomeada entre elas (ver abaixo)
 - Backup completo em ZIP e restauração com mesclagem ou substituição
 
 **Interface**
@@ -371,10 +399,25 @@ um editor de textos usaria (`text/html` e `text/plain`). Depois é só
 | Linha horizontal | Uma linha de traços |
 | Lista de definições | Termo em negrito, definição no parágrafo seguinte |
 
+**Copiar em partes, quando há imagens.** A Wix aceita uma imagem por vez, pela
+galeria do produto — então um documento com imagens não é uma colagem só, é uma
+rotina: cola, sobe a imagem, volta. Quando o documento tem imagens ou vídeos
+entre os textos, o diálogo vira o roteiro dessa rotina: um cartão por trecho de
+texto, o arquivo a subir nomeado entre eles (`Agora suba na Wix: imagem:
+frente.png`) e um contador de quantas partes já foram copiadas. A parte em que
+você parou fica destacada, e as já copiadas ficam marcadas — inclusive se você
+fechar e reabrir o diálogo, desde que o texto não tenha mudado. O botão
+"Copiar tudo de uma vez" continua ali para quem preferir.
+
+Nada se perde no corte: as partes, emendadas, são exatamente a cópia inteira —
+e isso é um teste, não uma promessa.
+
 **O que não atravessa** — e é sempre informado na tela antes de copiar:
 imagens e vídeos (a Wix não aceita mídia colada de fora; use a galeria do
-produto), anexos (o arquivo continua aqui, só o nome vai junto) e links
-internos, que só funcionam dentro deste aplicativo e viram texto.
+produto), anexos (o arquivo continua aqui, só o nome vai junto), links
+internos, que só funcionam dentro deste aplicativo e viram texto, e o
+alinhamento, que a Wix descarta ao colar — o texto vai inteiro, alinhado à
+esquerda, e você reposiciona com os botões do editor dela.
 
 > A cópia usa a API de clipboard do navegador, disponível em contextos seguros
 > — `localhost` é um deles. Se você acessar o app pelo IP da máquina em HTTP,
@@ -575,9 +618,9 @@ MarkDown_Projetos/
 │   ├── cli.py                   comandos flask personalizados
 │   ├── models/                  Document, DocumentVersion, Category, Tag,
 │   │                            Group, MediaAsset, Setting
-│   ├── services/                markdown, sanitizer, attachment, document,
-│   │                            group, history, search, pdf, media, wix,
-│   │                            import, backup, settings
+│   ├── services/                markdown, sanitizer, align, attachment,
+│   │                            document, group, history, search, pdf, media,
+│   │                            wix, import, backup, settings
 │   ├── repositories/            document, version, taxonomy, group
 │   ├── blueprints/              dashboard, documents, groups, editor, history,
 │   │                            trash, exports, settings, media, api
@@ -593,7 +636,7 @@ MarkDown_Projetos/
 │       └── favicon.svg
 ├── instance/                    app.db, backups/, exports/, logs/  (não versionado)
 ├── migrations/                  Alembic
-├── tests/                       825 testes
+├── tests/                       908 testes (js/ roda sob o Node, se houver)
 ├── .env.example
 ├── .gitignore
 ├── requirements.txt
