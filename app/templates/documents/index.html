@@ -31,6 +31,16 @@
       <a class="btn" href="{{ url_for('documents.import_markdown') }}">
         {{ icon('upload', 'icon icon-sm') }} Importar
       </a>
+      {% if nav_counts.total %}
+        {# A plain link, not a form: exporting reads and changes nothing, so it
+           survives a refresh and can be bookmarked. Hidden while the library
+           is empty — an action that can only answer "there is nothing" should
+           not be on screen. #}
+        <a class="btn" href="{{ url_for('exports.download_all_markdown') }}"
+           title="Baixar todos os documentos em Markdown (.zip)">
+          {{ icon('download', 'icon icon-sm') }} Exportar tudo
+        </a>
+      {% endif %}
     </div>
   </div>
 </div>
@@ -199,6 +209,13 @@
           {{ icon('layers', 'icon icon-sm') }} Adicionar ao grupo
         </button>
       {% endif %}
+      {# formaction sends this one submit to the export blueprint instead of
+         the bulk-action route; the script mirrors that when it submits the
+         form programmatically. #}
+      <button type="submit" name="acao" value="export" class="btn btn-sm"
+              formaction="{{ url_for('exports.download_selected_markdown') }}">
+        {{ icon('download', 'icon icon-sm') }} Baixar .md
+      </button>
       {% if query.scope == 'archived' %}
         <button type="submit" name="acao" value="unarchive" class="btn btn-sm">
           {{ icon('archive', 'icon icon-sm') }} Desarquivar

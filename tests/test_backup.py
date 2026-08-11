@@ -266,8 +266,6 @@ class TestRoutes:
                 "pdf_theme": "modern",
                 "pdf_font": "sans",
                 "pdf_margin": "wide",
-                "pdf_header": "Cabeçalho",
-                "pdf_footer": "Rodapé",
                 "backup_keep_last": "5",
             },
             follow_redirects=True,
@@ -276,7 +274,39 @@ class TestRoutes:
         SettingsService.invalidate_cache()
         assert SettingsService.get("app_name") == "Meu Estúdio"
         assert SettingsService.get("autosave_seconds") == 5
-        assert SettingsService.get("pdf_show_page_numbers") is False
+        assert SettingsService.get("pdf_margin") == "wide"
+        # An unticked checkbox is absent from the payload, which is how a
+        # boolean setting is turned off.
+        assert SettingsService.get("pdf_show_generated_date") is False
+
+    def test_retired_pdf_settings_are_not_accepted(self, client, app):
+        """The rendered PDF is the Markdown alone, so its chrome has no knobs.
+
+        A setting that no template reads is a promise the application cannot
+        keep; posting the retired keys must not resurrect them.
+        """
+        client.post(
+            "/configuracoes/",
+            data={
+                "app_name": "Estúdio",
+                "theme": "dark",
+                "accent_color": "#16A34A",
+                "timezone": "America/Sao_Paulo",
+                "autosave_seconds": "5",
+                "pdf_page_size": "A4",
+                "pdf_theme": "classic",
+                "pdf_font": "serif",
+                "pdf_margin": "normal",
+                "pdf_header": "Cabeçalho",
+                "pdf_footer": "Rodapé",
+                "pdf_show_page_numbers": "y",
+                "backup_keep_last": "5",
+            },
+            follow_redirects=True,
+        )
+        SettingsService.invalidate_cache()
+        for retired in ("pdf_header", "pdf_footer", "pdf_show_page_numbers"):
+            assert SettingsService.get(retired) is None
 
     def test_invalid_settings_are_rejected(self, client, app):
         client.post(

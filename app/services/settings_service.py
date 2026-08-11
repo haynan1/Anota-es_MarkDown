@@ -54,9 +54,14 @@ SETTINGS_SCHEMA: tuple[SettingDefinition, ...] = (
     SettingDefinition("pdf_theme", "classic", choices=PDF_THEMES),
     SettingDefinition("pdf_font", "serif", choices=PDF_FONTS),
     SettingDefinition("pdf_margin", "normal", choices=PDF_MARGINS),
-    SettingDefinition("pdf_header", "", max_length=120),
-    SettingDefinition("pdf_footer", "", max_length=120),
-    SettingDefinition("pdf_show_page_numbers", True, kind="bool"),
+    # No pdf_header / pdf_footer / pdf_show_page_numbers: the rendered PDF is
+    # the Markdown and nothing else, so there is no chrome left for them to
+    # configure. A setting that changes nothing is worse than a missing one -
+    # it promises an effect it cannot deliver. Old backups may still carry
+    # these keys; import_values drops anything not declared here.
+    #
+    # This one survives because the Markdown *source* listing still stamps
+    # itself with a generation date - a code listing, not a document.
     SettingDefinition("pdf_show_generated_date", True, kind="bool"),
     SettingDefinition("backup_keep_last", 10, kind="int", minimum=1, maximum=200),
 )

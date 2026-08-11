@@ -1,8 +1,15 @@
 {#
-  WeasyPrint template.
+  WeasyPrint template - the rendered Markdown, and nothing else.
 
-  Uses real CSS paged media: @page margin boxes for the running header/footer,
-  `counter(page)` for numbering and `break-inside` for widow control.
+  The page carries no title block, no metadata line, no running header or
+  footer and no page number: this export is the Markdown as it reads, put on
+  paper. Anything the document does not say itself does not belong on the
+  page. Whatever chrome a PDF needs is the document's own job — write a title
+  as `# Título` and it appears, because it is part of the Markdown.
+
+  What remains is typography: page size, margins, font and theme. Those are
+  not additions to the document, they are how it is set.
+
   The xhtml2pdf fallback lives in `pdf/document_fallback.html`.
 #}
 <!DOCTYPE html>
@@ -14,29 +21,6 @@
   @page {
     size: {{ ctx.page_size }};
     margin: {{ margin }};
-
-    @top-center {
-      content: "{{ ctx.header }}";
-      font-size: 8.5pt;
-      color: #6B7280;
-      padding-bottom: 6pt;
-    }
-
-    @bottom-left {
-      content: "{{ ctx.footer }}";
-      font-size: 8.5pt;
-      color: #6B7280;
-    }
-
-    @bottom-right {
-      {% if ctx.show_page_numbers %}
-      content: counter(page) " / " counter(pages);
-      {% else %}
-      content: "";
-      {% endif %}
-      font-size: 8.5pt;
-      color: #6B7280;
-    }
   }
 
   :root { --ink: #111827; --muted: #6B7280; --line: #D1D5DB; --accent: #4F46E5; }
@@ -52,13 +36,6 @@
     hyphens: auto;
   }
 
-  /* ── Document header ─────────────────────────────────────────────── */
-
-  .doc-header { margin-bottom: 22pt; }
-  .doc-title { font-size: 22pt; line-height: 1.2; margin: 0 0 6pt; font-weight: 700; }
-  .doc-meta { font-size: 8.5pt; color: var(--muted); }
-  .doc-meta span + span::before { content: " · "; }
-
   /* ── Content ─────────────────────────────────────────────────────── */
 
   h1, h2, h3, h4, h5, h6 {
@@ -67,9 +44,12 @@
     break-after: avoid;
     page-break-after: avoid;
   }
-  h1 { font-size: 17pt; }
-  h2 { font-size: 14pt; }
-  h3 { font-size: 12pt; }
+  /* The first heading opens the page: no document header sits above it, so
+     the top margin that separated the two would now read as a stray gap. */
+  h1:first-child, h2:first-child, h3:first-child { margin-top: 0; }
+  h1 { font-size: 20pt; }
+  h2 { font-size: 15pt; }
+  h3 { font-size: 12.5pt; }
   h4, h5, h6 { font-size: 10.5pt; }
 
   p { margin: 0 0 8pt; orphans: 3; widows: 3; }
@@ -157,33 +137,32 @@
   .footnote hr { display: none; }
 
   {# ── Themes ────────────────────────────────────────────────────────── #}
+  {# Typography only. A theme decides how the Markdown is set, never what is
+     added to it. #}
 
   {% if ctx.theme == 'classic' %}
-  .doc-header { border-bottom: 1.5pt solid var(--ink); padding-bottom: 10pt; }
+  h1 { border-bottom: 1.5pt solid var(--ink); padding-bottom: 6pt; }
   h2 { border-bottom: 0.5pt solid var(--line); padding-bottom: 3pt; }
 
   {% elif ctx.theme == 'minimal' %}
-  .doc-title { font-size: 19pt; font-weight: 600; }
-  .doc-header { margin-bottom: 28pt; }
   body { font-size: 10pt; line-height: 1.7; }
+  h1 { font-size: 18pt; font-weight: 600; }
   th, td { border: 0; border-bottom: 0.5pt solid var(--line); }
   th { background: none; }
   pre { background: none; border: 0; border-left: 1.5pt solid var(--line); border-radius: 0; }
 
   {% elif ctx.theme == 'academic' %}
   body { font-size: 11pt; line-height: 1.75; text-align: justify; }
-  .doc-header { text-align: center; margin-bottom: 26pt; }
-  .doc-title { font-size: 16pt; font-weight: 700; }
+  h1 { font-size: 16pt; text-align: center; }
   h1, h2, h3 { font-weight: 700; }
   p { text-indent: 14pt; }
-  p:first-of-type, blockquote p, li p { text-indent: 0; }
+  p:first-of-type, blockquote p, li p, td p, th p { text-indent: 0; }
   blockquote { margin-left: 18pt; margin-right: 18pt; border-left: 0; font-size: 10pt; }
 
   {% elif ctx.theme == 'modern' %}
-  .doc-header { border-left: 3pt solid var(--accent); padding-left: 12pt; }
-  .doc-title { font-size: 24pt; font-weight: 700; letter-spacing: -0.5pt; }
-  h1, h2, h3 { color: #1F2937; letter-spacing: -0.2pt; }
-  h2 { color: var(--accent); }
+  h1 { font-size: 22pt; font-weight: 700; letter-spacing: -0.5pt; border-left: 3pt solid var(--accent); padding-left: 12pt; }
+  h1, h3 { color: #1F2937; letter-spacing: -0.2pt; }
+  h2 { color: var(--accent); letter-spacing: -0.2pt; }
   th { background: var(--accent); color: #FFFFFF; border-color: var(--accent); }
   pre { background: #0F172A; color: #E2E8F0; border: 0; }
   pre code, pre span { color: inherit !important; }
@@ -191,18 +170,6 @@
 </style>
 </head>
 <body>
-  <header class="doc-header">
-    <h1 class="doc-title">{{ document.display_title }}</h1>
-    <p class="doc-meta">
-      {% if document.category %}<span>{{ document.category.name }}</span>{% endif %}
-      <span>{{ document.word_count }} palavras</span>
-      {% if ctx.show_generated_date %}<span>Gerado em {{ ctx.generated_at }}</span>{% endif %}
-      {% if document.tags %}<span>{{ document.tag_names | join(', ') }}</span>{% endif %}
-    </p>
-  </header>
-
-  <main>
-    {{ printable_html | safe }}
-  </main>
+{{ printable_html | safe }}
 </body>
 </html>

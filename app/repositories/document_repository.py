@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from datetime import timedelta
 
@@ -91,6 +92,61 @@ class DocumentRepository:
         if not include_deleted:
             stmt = stmt.where(Document.is_deleted.is_(False))
         return list(db.session.scalars(stmt).unique().all())
+
+    @staticmethod
+    def iter_for_export(
+        limit: int, uuids: Sequence[str] | None = None, chunk_size: int = 100
+    ) -> Iterator[Document]:
+        """Stream documents ready to be written out as Markdown files.
+
+        ``uuids`` narrows the set to a selection; omitting it means every live
+        document, archived ones included and the trash excluded. ``limit`` is
+        required rather than defaulted: "export everything" is the one query in
+        this class with no natural bound, and the ceiling belongs in the SQL,
+        not in a caller's loop that has already paid to load the rows.
+
+        Three further choices, all about not loading a whole library into
+        memory at once to write it back out again:
+
+        * ``rendered_html`` is deferred - the export writes Markdown, and the
+          HTML is the largest column on the table;
+        * ``yield_per`` bounds how many rows the driver buffers at a time;
+        * tags and groups are ``selectinload``ed, which is both yield_per-safe
+          and the difference between three queries and two per document.
+
+        No ``unique()`` here, unlike every other query in this class: it is
+        rejected outright alongside ``yield_per``, and it is unnecessary -
+        nothing in these options is a joined eager load against a collection,
+        so no row can be duplicated in the first place.
+        """
+        stmt = (
+            select(Document)
+            .options(
+                defer(Document.rendered_html),
+                joinedload(Document.category),
+                selectinload(Document.tags),
+                selectinload(Document.groups),
+            )
+            .where(Document.is_deleted.is_(False))
+            .order_by(func.lower(Document.title).asc(), Document.id.asc())
+            .limit(limit)
+            .execution_options(yield_per=chunk_size)
+        )
+        if uuids is not None:
+            stmt = stmt.where(Document.uuid.in_(list(uuids)))
+        return iter(db.session.scalars(stmt))
+
+    @staticmethod
+    def uuid_exists(public_uuid: str) -> bool:
+        """Whether a document already carries this identifier, trash included.
+
+        Used by the importer to make re-importing the same archive idempotent
+        instead of duplicating every document in it.
+        """
+        if not public_uuid:
+            return False
+        stmt = select(Document.id).where(Document.uuid == public_uuid).limit(1)
+        return db.session.scalar(stmt) is not None
 
     @staticmethod
     def slug_exists(slug: str, exclude_id: int | None = None) -> bool:

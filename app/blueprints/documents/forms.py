@@ -7,7 +7,8 @@ half of every constraint the UI advertises.
 from __future__ import annotations
 
 from flask_wtf import FlaskForm
-from flask_wtf.file import FileAllowed, FileField, FileRequired
+from flask_wtf.file import FileAllowed, FileRequired, MultipleFileField
+from werkzeug.datastructures import FileStorage
 from wtforms import (
     BooleanField,
     HiddenField,
@@ -114,17 +115,30 @@ class CategoryForm(FlaskForm):
 
 
 class ImportForm(FlaskForm):
-    file = FileField(
-        "Arquivo Markdown",
+    """One or many Markdown files, or a ZIP holding them.
+
+    A ``MultipleFileField`` rather than a plain one: importing a library is
+    the same gesture as importing a file, and making people repeat it once per
+    document is not an import feature. A single selection still behaves
+    exactly as it did - it is just a list of one.
+    """
+
+    files = MultipleFileField(
+        "Arquivos Markdown",
         validators=[
-            FileRequired(message="Selecione um arquivo."),
+            FileRequired(message="Selecione ao menos um arquivo."),
             FileAllowed(
-                ["md", "markdown", "mdown", "txt"],
-                message="Envie um arquivo .md, .markdown, .mdown ou .txt.",
+                ["md", "markdown", "mdown", "txt", "zip"],
+                message="Envie arquivos .md, .markdown, .mdown, .txt ou um .zip com eles.",
             ),
         ],
     )
     category_id = SelectField("Categoria", validators=[Optional()], validate_choice=False)
+
+    def uploads(self) -> list[FileStorage]:
+        """The selected files, in the order the browser sent them."""
+        data = self.files.data or []
+        return [item for item in data if isinstance(item, FileStorage) and item.filename]
 
     def selected_category_id(self) -> int | None:
         raw = (self.category_id.data or "").strip()

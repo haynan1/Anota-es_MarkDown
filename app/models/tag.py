@@ -12,6 +12,9 @@ from app.utils.dates import utcnow
 if TYPE_CHECKING:  # pragma: no cover - resolved by SQLAlchemy at runtime
     from app.models.document import Document
 
+# Column width other layers truncate against, named next to the column.
+MAX_TAG_NAME_LENGTH = 60
+
 document_tags = Table(
     "document_tags",
     db.metadata,
@@ -29,7 +32,9 @@ class Tag(db.Model):
     __tablename__ = "tags"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(60), nullable=False, unique=True, index=True)
+    name: Mapped[str] = mapped_column(
+        String(MAX_TAG_NAME_LENGTH), nullable=False, unique=True, index=True
+    )
     slug: Mapped[str] = mapped_column(String(70), nullable=False, unique=True, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, nullable=False

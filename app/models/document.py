@@ -18,6 +18,10 @@ if TYPE_CHECKING:  # pragma: no cover - resolved by SQLAlchemy at runtime
     from app.models.group import Group
     from app.models.tag import Tag
 
+# Column widths that other layers have to respect. Named here, next to the
+# column, so a title is truncated once - at the boundary that owns the rule.
+MAX_TITLE_LENGTH = 200
+
 PAGE_SIZES = ("A4", "Letter")
 PDF_THEMES = ("classic", "minimal", "academic", "modern")
 
@@ -47,7 +51,9 @@ class Document(TimestampMixin, db.Model):
         String(36), default=new_uuid, nullable=False, unique=True, index=True
     )
 
-    title: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(
+        String(MAX_TITLE_LENGTH), nullable=False, index=True
+    )
     slug: Mapped[str] = mapped_column(String(220), nullable=False, unique=True, index=True)
 
     content_markdown: Mapped[str] = mapped_column(Text, nullable=False, default="")

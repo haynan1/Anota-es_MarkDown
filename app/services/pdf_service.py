@@ -22,11 +22,12 @@ import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TypeAlias
 from urllib.parse import unquote, urlparse
 
 from flask import current_app, render_template
 
-from app.models import Document
+from app.models import PAGE_SIZES, PDF_THEMES, Document
 from app.services.exceptions import NotFoundError
 from app.services.media_service import asset_path, get_asset
 from app.services.settings_service import SettingsService
@@ -54,17 +55,22 @@ class PdfGenerationError(RuntimeError):
 
 @dataclass(slots=True)
 class RenderContext:
+    """Everything a PDF template is allowed to know.
+
+    Deliberately narrow. The rendered export is the Markdown and nothing else,
+    so there is no running header, no footer and no page counter to carry:
+    removing the fields is what stops them from growing back one template edit
+    at a time. ``show_generated_date`` survives because the source listing -
+    a code listing, not a document - still stamps itself.
+    """
+
     document: Document
     theme: str
     page_size: str
     margin: str
     font: str
-    header: str
-    footer: str
-    show_page_numbers: bool
     show_generated_date: bool
     generated_at: str
-    app_name: str
 
 
 # ── Resource access policy ──────────────────────────────────────────────────
@@ -225,7 +231,14 @@ class Xhtml2PdfEngine:
         return buffer.getvalue()
 
 
-ENGINES = {engine.name: engine for engine in (WeasyPrintEngine, Xhtml2PdfEngine)}
+#: The two engines, named as a type rather than as a bare ``type``. There is no
+#: base class on purpose - each is a namespace of classmethods, and inheritance
+#: would only exist to satisfy an annotation.
+PdfEngine: TypeAlias = type[WeasyPrintEngine] | type[Xhtml2PdfEngine]
+
+ENGINES: dict[str, PdfEngine] = {
+    engine.name: engine for engine in (WeasyPrintEngine, Xhtml2PdfEngine)
+}
 
 
 def select_engine():
@@ -278,16 +291,12 @@ def build_context(document: Document, overrides: dict | None = None) -> RenderCo
 
     return RenderContext(
         document=document,
-        theme=theme if theme in {"classic", "minimal", "academic", "modern"} else "classic",
-        page_size=page_size if page_size in {"A4", "Letter"} else "A4",
+        theme=theme if theme in PDF_THEMES else "classic",
+        page_size=page_size if page_size in PAGE_SIZES else "A4",
         margin=settings["pdf_margin"],
         font=settings["pdf_font"],
-        header=settings["pdf_header"],
-        footer=settings["pdf_footer"],
-        show_page_numbers=settings["pdf_show_page_numbers"],
         show_generated_date=settings["pdf_show_generated_date"],
         generated_at=format_datetime(utcnow(), settings["timezone"]),
-        app_name=settings["app_name"],
     )
 
 
@@ -353,29 +362,29 @@ VARIANTS = (VARIANT_RENDERED, VARIANT_SOURCE)
 MAX_SOURCE_LINES = 20_000
 
 
-def render_document_pdf(
+def template_for(variant: str, engine: PdfEngine) -> str:
+    if variant == VARIANT_SOURCE:
+        return "pdf/source.html"
+    return (
+        "pdf/document.html" if engine is WeasyPrintEngine else "pdf/document_fallback.html"
+    )
+
+
+def build_html(
     document: Document,
-    overrides: dict | None = None,
+    context: RenderContext,
+    engine: PdfEngine,
     variant: str = VARIANT_RENDERED,
-) -> tuple[bytes, str]:
-    """Render ``document`` and return ``(pdf_bytes, filename)``.
+) -> str:
+    """The HTML an engine is about to turn into pages.
 
-    ``variant`` selects between the formatted document and a numbered listing
-    of its Markdown source.
+    Its own function so that what reaches paper can be asserted directly.
+    Reading a generated PDF back to check that nothing was added to the
+    document would mean parsing compressed content streams; reading the HTML
+    checks the same promise at the point where it is actually made.
     """
-    engine = select_engine()
-    context = build_context(document, overrides)
-    is_source = variant == VARIANT_SOURCE
-
-    if is_source:
-        template = "pdf/source.html"
-    elif engine is WeasyPrintEngine:
-        template = "pdf/document.html"
-    else:
-        template = "pdf/document_fallback.html"
-
-    html = render_template(
-        template,
+    return render_template(
+        template_for(variant, engine),
         ctx=context,
         document=document,
         margin=MARGIN_VALUES.get(context.margin, "22mm"),
@@ -385,6 +394,23 @@ def render_document_pdf(
         lines=(document.content_markdown or "").splitlines()[:MAX_SOURCE_LINES],
         printable_html=prepare_for_print(document.rendered_html),
     )
+
+
+def render_document_pdf(
+    document: Document,
+    overrides: dict | None = None,
+    variant: str = VARIANT_RENDERED,
+) -> tuple[bytes, str]:
+    """Render ``document`` and return ``(pdf_bytes, filename)``.
+
+    ``variant`` selects between the formatted document - the Markdown as it
+    reads, and nothing else - and a numbered listing of its Markdown source.
+    """
+    engine = select_engine()
+    context = build_context(document, overrides)
+    is_source = variant == VARIANT_SOURCE
+
+    html = build_html(document, context, variant=variant, engine=engine)
 
     try:
         pdf_bytes = engine.render(html)

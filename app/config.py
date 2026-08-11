@@ -61,12 +61,18 @@ class Config:
     # deck or a scanned contract without inviting a disk-filling upload.
     MEDIA_MAX_FILE_BYTES = _env_int("MEDIA_MAX_FILE_MB", 50) * 1024 * 1024
 
+    # A bulk import carries a whole library in one request - a ZIP of every
+    # document, or a few hundred .md files dropped at once. Holding it to the
+    # single-document ceiling would refuse a perfectly ordinary archive.
+    MAX_BULK_IMPORT_BYTES = _env_int("MAX_BULK_IMPORT_MB", 64) * 1024 * 1024
+
     # Hard ceiling enforced by Werkzeug -> triggers a 413 page. Sized for the
     # largest legitimate upload, with room for multipart framing. Endpoints
     # that accept something smaller enforce their own limit first.
     MAX_CONTENT_LENGTH = (
         max(
             MAX_DOCUMENT_UPLOAD_BYTES,
+            MAX_BULK_IMPORT_BYTES,
             MEDIA_MAX_IMAGE_BYTES,
             MEDIA_MAX_VIDEO_BYTES,
             MEDIA_MAX_FILE_BYTES,

@@ -130,13 +130,22 @@ class TestLimits:
         assert ceiling > app.config["MAX_DOCUMENT_UPLOAD_BYTES"]
 
     def test_markdown_import_keeps_its_own_smaller_ceiling(self, client, app):
-        """The generous global limit must not leak into other endpoints."""
-        document_limit = app.config["MAX_DOCUMENT_UPLOAD_BYTES"]
-        oversized = b"x" * (document_limit + 4096)
+        """The generous global limit must not leak into other endpoints.
+
+        The import ceiling is the bulk one - a single request may carry a whole
+        library - but it is still well below the video-sized global cap, and
+        it is enforced before the body is parsed.
+        """
+        assert app.config["MAX_BULK_IMPORT_BYTES"] < app.config["MAX_CONTENT_LENGTH"]
+
+        # Lowered rather than exercised at its real size: this asserts that the
+        # gate is wired to the endpoint, not that Werkzeug can buffer 64 MB.
+        app.config["MAX_BULK_IMPORT_BYTES"] = 4096
+        oversized = b"x" * 16384
 
         response = client.post(
             "/documentos/importar",
-            data={"file": (io.BytesIO(oversized), "grande.md"), "action": "import"},
+            data={"files": (io.BytesIO(oversized), "grande.md"), "action": "import"},
             content_type="multipart/form-data",
         )
 

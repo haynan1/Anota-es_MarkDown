@@ -16,6 +16,7 @@ from flask import current_app
 
 from app.extensions import db
 from app.models import PAGE_SIZES, PDF_THEMES, Document
+from app.models.document import MAX_TITLE_LENGTH
 from app.repositories.document_repository import DocumentRepository
 from app.repositories.taxonomy_repository import CategoryRepository, TagRepository
 from app.repositories.version_repository import VersionRepository
@@ -36,8 +37,16 @@ from app.utils.text import (
     reading_time_minutes,
 )
 
-MAX_TITLE_LENGTH = 200
 UNTITLED = "Documento sem título"
+
+# Ceiling on a single bulk request from the listing: enough for "select every
+# document on a 100-item page", small enough that a crafted POST cannot ask the
+# server to load an unbounded set into memory.
+#
+# One constant for every action that consumes that selection - archiving,
+# trashing, grouping, exporting. Two ceilings for one set of checkboxes is how
+# a page ends up archiving 200 of the 300 documents it just exported.
+MAX_BULK_SELECTION = 200
 
 
 @dataclass(slots=True)

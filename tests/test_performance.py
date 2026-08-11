@@ -249,6 +249,39 @@ class TestBulkOperationsDoNotScaleQueries:
         db.session.expire_all()
         return 25
 
+    def test_markdown_export_is_not_n_plus_one(self, app, many_documents):
+        """Exporting the whole library must not query per document.
+
+        Every document needs its category, its tags and its groups. Loading
+        those lazily is three extra round trips each - invisible with 30
+        documents, ruinous with 3000.
+        """
+        from app.services.bulk_export_service import export_all
+
+        db.session.expire_all()
+        with QueryCounter() as counter:
+            archive = export_all()
+        archive.stream.close()
+
+        assert archive.document_count == many_documents
+        assert counter.count <= 8, (
+            f"{counter.count} consultas para exportar {many_documents} documentos"
+        )
+
+    def test_markdown_export_does_not_read_the_rendered_html(self, app, many_documents):
+        """The export writes Markdown; the HTML column is the biggest one."""
+        from app.services.bulk_export_service import export_all
+
+        db.session.expire_all()
+        with QueryCounter() as counter:
+            export_all().stream.close()
+
+        selects = [s for s in counter.statements if "FROM documents" in s]
+        assert selects, "nenhuma consulta a documents"
+        assert not any("rendered_html" in s for s in selects), (
+            "o export carregou rendered_html, que ele nunca usa"
+        )
+
     def test_backup_export_is_not_n_plus_one(self, app, corpus_with_history):
         from app.services.backup_service import build_export_payload
 

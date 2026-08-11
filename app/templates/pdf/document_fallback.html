@@ -1,12 +1,14 @@
 {#
-  xhtml2pdf (ReportLab) template.
+  xhtml2pdf (ReportLab) template - the rendered Markdown, and nothing else.
+
+  Same contract as `pdf/document.html`: no title block, no metadata line, no
+  running header or footer, no page number. What the document does not say
+  itself does not reach the page.
 
   This engine understands only a subset of CSS, so the layout is rebuilt with
-  the constructs it does support:
-    * @frame instead of @page margin boxes for the running header/footer
-    * <pdf:pagenumber> / <pdf:pagecount> instead of counter(page)
-    * base-14 font names instead of a font stack
-    * no flexbox, no grid, no break-inside
+  the constructs it does support: base-14 font names instead of a font stack,
+  no flexbox, no grid, no break-inside. With the running frames gone, the
+  whole page is one flow, which is also the shape this engine handles best.
 
   Visual fidelity is deliberately lower than the WeasyPrint template - see the
   README section "Dependências do WeasyPrint" for how to enable the full one.
@@ -20,15 +22,6 @@
   @page {
     size: {{ 'a4' if ctx.page_size == 'A4' else 'letter' }} portrait;
     margin: {{ margin }};
-
-    @frame header_frame {
-      -pdf-frame-content: page-header;
-      left: {{ margin }}; right: {{ margin }}; top: 12pt; height: 18pt;
-    }
-    @frame footer_frame {
-      -pdf-frame-content: page-footer;
-      left: {{ margin }}; right: {{ margin }}; bottom: 12pt; height: 18pt;
-    }
   }
 
   body {
@@ -38,16 +31,9 @@
     color: #111827;
   }
 
-  .running { font-size: 8pt; color: #6B7280; }
-  .running-right { text-align: right; }
-
-  .doc-header { margin-bottom: 18pt; border-bottom: 1pt solid #111827; padding-bottom: 8pt; }
-  .doc-title { font-size: 20pt; font-weight: bold; margin: 0 0 4pt; }
-  .doc-meta { font-size: 8pt; color: #6B7280; margin: 0; }
-
-  h1 { font-size: 16pt; margin: 14pt 0 6pt; }
-  h2 { font-size: 13pt; margin: 13pt 0 5pt; }
-  h3 { font-size: 11.5pt; margin: 12pt 0 4pt; }
+  h1 { font-size: 19pt; margin: 14pt 0 6pt; }
+  h2 { font-size: 14pt; margin: 13pt 0 5pt; }
+  h3 { font-size: 12pt; margin: 12pt 0 4pt; }
   h4, h5, h6 { font-size: 10.5pt; margin: 10pt 0 4pt; }
 
   p { margin: 0 0 7pt; }
@@ -83,44 +69,40 @@
   .md-align-right { text-align: right; }
   .md-align-justify { text-align: justify; }
 
+  .media-placeholder {
+    padding: 6pt; margin: 0 0 7pt;
+    border: 0.5pt solid #D1D5DB;
+    color: #6B7280; font-size: 8.5pt; text-align: center;
+  }
+
+  .attachment-print {
+    margin: 0 0 7pt; padding: 5pt 8pt;
+    background-color: #F9FAFB;
+    border-left: 2pt solid #4F46E5;
+    font-size: 9.5pt;
+  }
+
   hr { border-top: 0.5pt solid #D1D5DB; margin: 12pt 0; }
 
   .footnote { margin-top: 16pt; border-top: 0.5pt solid #D1D5DB; padding-top: 6pt; font-size: 8pt; color: #6B7280; }
 
+  {# Typography only, matching the WeasyPrint themes as closely as this
+     engine allows. #}
+
   {% if ctx.theme == 'academic' %}
   body { font-size: 11pt; line-height: 1.7; }
-  .doc-header { text-align: center; }
+  h1 { font-size: 16pt; text-align: center; }
   {% elif ctx.theme == 'minimal' %}
-  .doc-header { border-bottom: 0; }
+  body { font-size: 10pt; }
+  h1 { font-size: 17pt; }
   th { background-color: transparent; }
   {% elif ctx.theme == 'modern' %}
-  .doc-title { font-size: 22pt; }
+  h1 { font-size: 21pt; }
   th { background-color: #4F46E5; color: #FFFFFF; }
   {% endif %}
 </style>
 </head>
 <body>
-  <div id="page-header" class="running">{{ ctx.header }}</div>
-
-  <div id="page-footer" class="running">
-    {{ ctx.footer }}
-    {% if ctx.show_page_numbers %}
-      <div class="running-right">
-        <pdf:pagenumber /> / <pdf:pagecount />
-      </div>
-    {% endif %}
-  </div>
-
-  <div class="doc-header">
-    <div class="doc-title">{{ document.display_title }}</div>
-    <p class="doc-meta">
-      {% if document.category %}{{ document.category.name }} &middot; {% endif %}
-      {{ document.word_count }} palavras
-      {% if ctx.show_generated_date %} &middot; Gerado em {{ ctx.generated_at }}{% endif %}
-      {% if document.tags %} &middot; {{ document.tag_names | join(', ') }}{% endif %}
-    </p>
-  </div>
-
-  {{ printable_html | safe }}
+{{ printable_html | safe }}
 </body>
 </html>

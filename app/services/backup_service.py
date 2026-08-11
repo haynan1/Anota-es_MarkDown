@@ -38,9 +38,10 @@ from app.models import (
 from app.repositories.group_repository import GroupRepository
 from app.repositories.taxonomy_repository import CategoryRepository, TagRepository
 from app.services.exceptions import ValidationError
+from app.services.group_service import GroupService
 from app.services.markdown_service import render_markdown
 from app.services.search_service import search_index
-from app.utils.dates import as_utc, utcnow
+from app.utils.dates import as_utc, parse_iso, utcnow
 from app.utils.files import (
     ensure_directory,
     is_safe_archive_member,
@@ -100,15 +101,6 @@ class RestoreReport:
 def _iso(value: datetime | None) -> str | None:
     utc_value = as_utc(value)
     return utc_value.isoformat() if utc_value else None
-
-
-def _parse_iso(value: str | None) -> datetime | None:
-    if not value:
-        return None
-    try:
-        return as_utc(datetime.fromisoformat(value))
-    except (TypeError, ValueError):
-        return None
 
 
 def _serialize_document(document: Document) -> dict:
@@ -283,7 +275,7 @@ def list_backups() -> list[BackupInfo]:
             info.document_count = manifest.get("counts", {}).get("documents", 0)
             info.format_version = manifest.get("backup_format", 1)
             info.app_version = manifest.get("app_version", "")
-            parsed = _parse_iso(manifest.get("created_at"))
+            parsed = parse_iso(manifest.get("created_at"))
             if parsed:
                 info.created_at = parsed
         except (KeyError, ValueError, zipfile.BadZipFile, json.JSONDecodeError):
@@ -423,7 +415,7 @@ def _restore_document(entry: dict) -> Document:
         document.uuid = entry["uuid"]
 
     for field_name in ("created_at", "updated_at", "deleted_at"):
-        parsed = _parse_iso(entry.get(field_name))
+        parsed = parse_iso(entry.get(field_name))
         if parsed:
             setattr(document, field_name, parsed)
 
@@ -445,7 +437,12 @@ def _restore_document(entry: dict) -> Document:
             [tag for tag in entry["tags"] if isinstance(tag, str)]
         )
     if isinstance(entry.get("groups"), list):
-        _restore_memberships(document, entry["groups"])
+        # Archives written before groups existed simply carry no "groups" key,
+        # and a document restored from one lands in no group - which is exactly
+        # the state it was in when the archive was written.
+        GroupService.attach_by_names(
+            document, [name for name in entry["groups"] if isinstance(name, str)]
+        )
     db.session.flush()
 
     for raw_version in entry.get("versions") or []:
@@ -462,33 +459,12 @@ def _restore_document(entry: dict) -> Document:
             change_summary=(raw_version.get("change_summary") or "")[:200],
             word_count=int(raw_version.get("word_count") or count_words(version_body)),
         )
-        created = _parse_iso(raw_version.get("created_at"))
+        created = parse_iso(raw_version.get("created_at"))
         if created:
             version.created_at = created
         db.session.add(version)
 
     return document
-
-
-def _restore_memberships(document: Document, names: list) -> None:
-    """Re-create this document's group memberships, creating groups as needed.
-
-    Archives written before groups existed simply carry no "groups" key, and
-    a document restored from one lands in no group - which is exactly what it
-    was in when the archive was written.
-    """
-    from app.services.group_service import GroupService
-
-    for raw in names[:50]:
-        if not isinstance(raw, str) or not raw.strip():
-            continue
-        group = GroupRepository.get_by_name(raw)
-        if group is None:
-            try:
-                group = GroupService.create(raw)
-            except ValidationError:
-                continue
-        GroupService.add_documents(group, [document])
 
 
 def restore_backup(source, mode: str = "merge") -> RestoreReport:
@@ -537,8 +513,6 @@ def restore_backup(source, mode: str = "merge") -> RestoreReport:
         if GroupRepository.get_by_name(raw["name"]) is not None:
             continue
         try:
-            from app.services.group_service import GroupService
-
             GroupService.create(
                 raw["name"],
                 description=raw.get("description") or "",

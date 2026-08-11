@@ -19,6 +19,7 @@ depender de internet para funcionar.
 - [Como iniciar a aplicação](#como-iniciar-a-aplicação)
 - [Como executar os testes](#como-executar-os-testes)
 - [Exportação em PDF](#exportação-em-pdf)
+- [Exportar e importar em massa](#exportar-e-importar-em-massa)
 - [Copiar para a Wix](#copiar-para-a-wix)
 - [Dependências do WeasyPrint](#dependências-do-weasyprint)
 - [Backup e restauração](#backup-e-restauração)
@@ -113,8 +114,13 @@ depender de internet para funcionar.
 
 **Entrada e saída**
 - Importar `.md` com validação, arrastar e soltar e prévia
+- **Importar em massa**: vários arquivos de uma vez, ou um `.zip` inteiro
 - Baixar o `.md` original em UTF-8
-- Exportar PDF em 4 temas, A4 ou Carta, com cabeçalho, rodapé e numeração
+- **Exportar em massa**: todos os documentos (ou só os selecionados) num `.zip`
+  de `.md`, em pastas por categoria, com metadados no topo de cada arquivo —
+  o pacote volta pela importação sem perder nada
+- Exportar PDF em 4 temas, A4 ou Carta — **apenas a representação do Markdown**,
+  sem capa, cabeçalho, rodapé ou numeração
 - **Copiar para a Wix** — o documento como texto formatado, pronto para colar
   na descrição do produto; com imagens no meio, ele vem dividido em partes,
   uma por vez, com a imagem a subir nomeada entre elas (ver abaixo)
@@ -140,7 +146,7 @@ depender de internet para funcionar.
 | **Grupos** | `/grupos/` | Criar grupos, ver quantos documentos cada um reúne |
 | **Grupo** | `/grupos/<uuid>` | Documentos do grupo na ordem definida, reordenar, adicionar e remover |
 | **Categorias** | `/documentos/categorias` | Criar e remover categorias e etiquetas, com contagem de uso |
-| **Importar** | `/documentos/importar` | Envio por seleção ou arrastar e soltar, com prévia antes de salvar |
+| **Importar** | `/documentos/importar` | Um arquivo, vários de uma vez ou um `.zip`, por seleção ou arrastar e soltar, com prévia antes de salvar e relatório depois; e a exportação de todo o acervo em Markdown |
 | **Configurações** | `/configuracoes/` | Aparência, PDF, fuso horário, autosave, backups e manutenção |
 
 ---
@@ -255,7 +261,8 @@ Copie `.env.example` para `.env` e ajuste. Os valores que mais importam:
 | `HOST` | `127.0.0.1` | Interface de escuta. Ver [rede local](#cuidados-para-acesso-por-rede-local) |
 | `PORT` | `5000` | Porta HTTP |
 | `PDF_ENGINE` | `auto` | `auto`, `weasyprint` ou `xhtml2pdf` |
-| `MAX_UPLOAD_MB` | `8` | Teto da importação de `.md`; ultrapassar gera a página 413 |
+| `MAX_UPLOAD_MB` | `8` | Teto de um envio avulso de documento; ultrapassar gera a página 413 |
+| `MAX_BULK_IMPORT_MB` | `64` | Teto de um envio de importação em massa (vários `.md` ou um `.zip`) |
 | `MEDIA_MAX_IMAGE_MB` | `10` | Teto de uma imagem enviada pelo editor |
 | `MEDIA_MAX_VIDEO_MB` | `100` | Teto de um vídeo enviado pelo editor |
 | `MEDIA_MAX_FILE_MB` | `50` | Teto de um anexo (PDF, Office, ZIP, texto) |
@@ -363,16 +370,86 @@ em vez da impressão do navegador).
 
 Dois formatos, escolhidos no diálogo de exportação:
 
-- **Documento formatado** — títulos, tabelas, listas e código renderizados
+- **Documento formatado** — a representação do Markdown, e nada além disso:
+  títulos, tabelas, listas e código renderizados. Sem capa, sem linha de
+  metadados, sem cabeçalho, sem rodapé e sem numeração de página. O que aparece
+  na folha é o que o documento diz; um título no PDF vem de um `# Título` no
+  Markdown, não de um bloco que o aplicativo acrescenta.
 - **Código-fonte Markdown** — listagem numerada do texto original, útil para
-  revisar a sintaxe ou arquivar o fonte
+  revisar a sintaxe ou arquivar o fonte. Este continua se identificando no
+  topo: é uma listagem, não o documento.
 
 - **Tamanhos:** A4 e Carta (Letter)
-- **Temas:** Clássico, Minimalista, Acadêmico e Moderno
-- **Configurável:** margens, fonte, cabeçalho, rodapé, numeração de página e
-  data de geração (em Configurações)
+- **Temas:** Clássico, Minimalista, Acadêmico e Moderno — tipografia apenas.
+  Um tema decide como o Markdown é composto, nunca o que é acrescentado a ele.
+- **Configurável:** margens e fonte (em Configurações)
 - **Nome do arquivo:** derivado do slug do título, sem caracteres inválidos —
   `guia-profissional-de-google-ads.pdf`
+
+---
+
+## Exportar e importar em massa
+
+Todo o acervo entra e sai em Markdown, sem passar pelo formato de backup.
+
+**Exportar** — botão *Exportar tudo* na tela de Documentos (ou na tela de
+Importar), e *Baixar .md* na barra de seleção múltipla para levar só o que
+está marcado. Sai um `.zip` com:
+
+```
+documentos-markdown-20260811-153000.zip
+├── guia-sem-categoria.md
+└── marketing-digital/
+    ├── guia-de-google-ads.md
+    └── plano-de-midia.md
+```
+
+Uma pasta por categoria, um arquivo por documento, e no topo de cada arquivo um
+bloco de front matter com o que o Markdown sozinho não guarda:
+
+```markdown
+---
+title: "Guia de Google Ads"
+uuid: "3f2b1c9d-…"
+slug: "guia-de-google-ads"
+category: "Marketing Digital"
+tags: ["ads", "google"]
+groups: ["Campanhas 2026"]
+favorite: true
+created: "2026-01-02T12:00:00+00:00"
+updated: "2026-03-14T09:30:00+00:00"
+---
+
+# Guia de Google Ads
+…
+```
+
+A lixeira fica de fora — aqueles documentos foram excluídos, e um pacote que os
+ressuscitasse na próxima importação seria uma surpresa. Para levar tudo,
+inclusive a lixeira e o histórico de versões, use o backup completo.
+
+Um pacote leva até 20 000 documentos (teto aplicado como `LIMIT` na consulta,
+não como corte depois de carregar tudo). Acima disso o log registra um aviso de
+que o pacote pode não conter a biblioteca inteira — o número existe para que
+uma base descontrolada não gere uma resposta sem fim, não como limite de uso.
+
+**Importar** — a mesma tela de sempre (`/documentos/importar`), agora aceitando
+vários arquivos de uma vez ou um `.zip` com eles dentro. O bloco de front
+matter é lido de volta: categorias, etiquetas, grupos, favoritos, arquivados e
+datas voltam como estavam.
+
+- **Reimportar o mesmo pacote não duplica nada.** Cada documento é reconhecido
+  pelo `uuid` gravado no arquivo; o que já existe é contado como "já existente"
+  e mantido intacto.
+- **Um arquivo com problema não derruba o lote.** Codificação errada, entrada
+  corrompida, cabeçalho malformado: cada caso é contado, descrito no relatório
+  ao fim da importação, e a importação segue.
+- **Arquivos de outras ferramentas funcionam.** Sem front matter, o título vem
+  do primeiro `#` ou do nome do arquivo. Chaves desconhecidas (`aliases`,
+  `draft`) são ignoradas sem reclamar.
+- **O ZIP é tratado como hostil**: caminhos com `..`, entradas absolutas,
+  número de membros e tamanho descompactado são verificados antes de ler um
+  único byte.
 
 ---
 

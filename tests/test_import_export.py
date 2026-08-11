@@ -7,8 +7,9 @@ import io
 import pytest
 from werkzeug.datastructures import FileStorage
 
+from app.services.bulk_import_service import import_files
 from app.services.exceptions import ValidationError
-from app.services.import_service import build_preview, decode_markdown, import_document
+from app.services.import_service import build_preview, decode_markdown
 from app.services.pdf_service import (
     _resolve_local_asset,
     engine_info,
@@ -23,9 +24,10 @@ def upload(content: bytes, filename="documento.md"):
 
 class TestImport:
     def test_imports_a_valid_file(self, app):
-        document = import_document(upload("# Meu título\n\nCorpo.".encode("utf-8")))
-        assert document.title == "Meu título"
-        assert "Corpo." in document.content_markdown
+        report = import_files([upload("# Meu título\n\nCorpo.".encode("utf-8"))])
+        assert report.created == 1
+        assert report.first.title == "Meu título"
+        assert "Corpo." in report.first.content_markdown
 
     def test_title_comes_from_the_filename_when_there_is_no_heading(self, app):
         preview = build_preview(upload(b"Apenas texto solto.", "notas-do-projeto.md"))
@@ -44,8 +46,8 @@ class TestImport:
         assert "Acentuação" in preview.content_markdown
 
     def test_accents_survive_the_round_trip(self, app):
-        document = import_document(upload("# Ação\n\nÓrgão e coração.".encode("utf-8")))
-        assert "Órgão e coração." in document.content_markdown
+        report = import_files([upload("# Ação\n\nÓrgão e coração.".encode("utf-8"))])
+        assert "Órgão e coração." in report.first.content_markdown
 
     def test_non_utf8_file_is_rejected_with_a_clear_message(self, app):
         with pytest.raises(ValidationError) as excinfo:
@@ -80,7 +82,7 @@ class TestImport:
         response = client.post(
             "/documentos/importar",
             data={
-                "file": (io.BytesIO("# Importado\n\nOk.".encode("utf-8")), "arquivo.md"),
+                "files": (io.BytesIO("# Importado\n\nOk.".encode("utf-8")), "arquivo.md"),
                 "action": "import",
             },
             content_type="multipart/form-data",
@@ -95,7 +97,7 @@ class TestImport:
         client.post(
             "/documentos/importar",
             data={
-                "file": (io.BytesIO(b"# Somente previa"), "arquivo.md"),
+                "files": (io.BytesIO(b"# Somente previa"), "arquivo.md"),
                 "action": "preview",
             },
             content_type="multipart/form-data",
@@ -107,7 +109,7 @@ class TestImport:
 
         client.post(
             "/documentos/importar",
-            data={"file": (io.BytesIO(b"x"), "virus.exe"), "action": "import"},
+            data={"files": (io.BytesIO(b"x"), "virus.exe"), "action": "import"},
             content_type="multipart/form-data",
             follow_redirects=True,
         )

@@ -1,27 +1,35 @@
-"""Markdown import.
+"""Markdown import - one file.
 
 Uploads are validated before anything touches the database: extension, size,
 and a strict UTF-8 decode (with a BOM-tolerant retry and a clear error message
 when the file is in another encoding).
+
+Parsing is split from uploading on purpose. :mod:`app.services.bulk_import_service`
+reads members out of a ZIP, where there is no ``FileStorage`` to validate -
+only bytes and a name - and it must go through exactly the same parser as a
+single upload, or the two paths would drift apart the first time either one
+changed.
 """
 
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import PurePath
 
 from flask import current_app
 from werkzeug.datastructures import FileStorage
 
-from app.services.document_service import DocumentService
+from app.models.document import MAX_TITLE_LENGTH
+from app.models.tag import MAX_TAG_NAME_LENGTH
+from app.services import front_matter
 from app.services.exceptions import ValidationError
+from app.services.sanitizer import sanitize_plain_text
 from app.utils.text import build_excerpt, count_words
 
 _H1_RE = re.compile(r"^\s{0,3}#\s+(.+?)\s*#*\s*$", re.MULTILINE)
-_FRONT_MATTER_RE = re.compile(r"\A---\s*\n(.*?)\n---\s*\n", re.DOTALL)
-_FM_TITLE_RE = re.compile(r"^title\s*:\s*(.+)$", re.MULTILINE | re.IGNORECASE)
-_FM_TAGS_RE = re.compile(r"^tags\s*:\s*(.+)$", re.MULTILINE | re.IGNORECASE)
+
+MAX_TAGS = 20
 
 
 @dataclass(slots=True)
@@ -33,31 +41,16 @@ class ImportPreview:
     size_bytes: int
     filename: str
     tags: list[str]
+    #: Everything the front matter block declared, including keys this
+    #: application does not act on. The bulk importer reads identity, state
+    #: and dates out of here; a single upload only needs title and tags.
+    fields: dict[str, front_matter.FrontMatterValue] = field(default_factory=dict)
 
 
 def _title_from_filename(filename: str) -> str:
     stem = PurePath(filename or "").stem or "Documento importado"
     stem = stem.replace("_", " ").replace("-", " ").strip()
-    return stem[:200] or "Documento importado"
-
-
-def _parse_front_matter(text: str) -> tuple[str | None, list[str], str]:
-    """Pull ``title`` / ``tags`` out of a simple YAML front matter block."""
-    match = _FRONT_MATTER_RE.match(text)
-    if not match:
-        return None, [], text
-
-    block = match.group(1)
-    title_match = _FM_TITLE_RE.search(block)
-    title = title_match.group(1).strip().strip("\"'") if title_match else None
-
-    tags: list[str] = []
-    tags_match = _FM_TAGS_RE.search(block)
-    if tags_match:
-        raw = tags_match.group(1).strip().strip("[]")
-        tags = [part.strip().strip("\"'") for part in raw.split(",") if part.strip()]
-
-    return title, tags[:20], text[match.end() :]
+    return stem[:MAX_TITLE_LENGTH] or "Documento importado"
 
 
 def decode_markdown(raw: bytes) -> str:
@@ -89,6 +82,11 @@ def validate_upload(storage: FileStorage | None) -> bytes:
     raw = storage.read()
     storage.seek(0)
 
+    return validate_bytes(raw)
+
+
+def validate_bytes(raw: bytes) -> bytes:
+    """Size and shape checks that apply wherever the bytes came from."""
     if not raw:
         raise ValidationError("O arquivo está vazio.")
 
@@ -105,38 +103,53 @@ def validate_upload(storage: FileStorage | None) -> bytes:
     return raw
 
 
-def build_preview(storage: FileStorage) -> ImportPreview:
-    """Validate and parse an upload without persisting anything."""
-    raw = validate_upload(storage)
+def parse_markdown(filename: str, raw: bytes) -> ImportPreview:
+    """Turn validated bytes into everything needed to create a document.
+
+    The title is taken from the front matter, then from the first heading,
+    then from the filename - in that order, because each is a weaker statement
+    of intent than the one before it.
+
+    Labels - title and tags - are stripped of markup here rather than on the
+    way to the database. A header is attacker-controlled text: a file someone
+    sent you can name its category ``<img src=x onerror=…>`` just as easily as
+    "Marketing". Templates escape it, so this is not what stands between the
+    file and an XSS, but a label is a label, and the preview screen must show
+    the same string that will be stored.
+    """
     text = decode_markdown(raw).replace("\r\n", "\n").replace("\r", "\n")
+    fields, body = front_matter.parse(text)
 
-    front_title, tags, body = _parse_front_matter(text)
-
-    title = front_title
+    title = sanitize_plain_text(front_matter.text_of(fields, "title"), MAX_TITLE_LENGTH)
     if not title:
         heading = _H1_RE.search(body)
-        title = heading.group(1).strip() if heading else None
+        title = sanitize_plain_text(heading.group(1), MAX_TITLE_LENGTH) if heading else ""
     if not title:
-        title = _title_from_filename(storage.filename)
+        title = _title_from_filename(filename)
 
     return ImportPreview(
-        title=title[:200],
+        title=title,
         content_markdown=body.strip("\n"),
         excerpt=build_excerpt(body),
         word_count=count_words(body),
         size_bytes=len(raw),
-        filename=PurePath(storage.filename).name,
-        tags=tags,
+        filename=PurePath(filename or "").name or "documento.md",
+        tags=clean_labels(front_matter.list_of(fields, "tags"), MAX_TAG_NAME_LENGTH)[:MAX_TAGS],
+        fields=fields,
     )
 
 
-def import_document(storage: FileStorage, category_id: int | None = None):
-    """Validate an upload and create the document."""
-    preview = build_preview(storage)
-    return DocumentService.create(
-        title=preview.title,
-        content_markdown=preview.content_markdown,
-        category_id=category_id,
-        tag_names=preview.tags,
-        change_summary=f"Importado de {preview.filename}",
-    )
+def clean_labels(names: list[str], max_length: int) -> list[str]:
+    """Strip markup from a list of taxonomy names, dropping the empties."""
+    cleaned = (sanitize_plain_text(name, max_length) for name in names)
+    return [name for name in cleaned if name]
+
+
+def build_preview(storage: FileStorage) -> ImportPreview:
+    """Validate and parse an upload without persisting anything.
+
+    Persisting is deliberately not here. One file and four hundred files are
+    the same operation with the same rules - identity, duplicates, partial
+    failure - and :mod:`app.services.bulk_import_service` owns all of them.
+    """
+    return parse_markdown(storage.filename, validate_upload(storage))

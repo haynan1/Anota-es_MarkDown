@@ -227,11 +227,15 @@ function initDropzone() {
   const nameLabel = zone.querySelector('[data-dropzone-name]');
   if (!input) return;
 
+  // Names the selection, not the file: dropping a folder's worth of Markdown
+  // is the normal case now, and "documento.md" under 200 files would be a lie.
   const showName = () => {
     if (!nameLabel) return;
-    const file = input.files && input.files[0];
-    nameLabel.textContent = file ? file.name : '';
-    nameLabel.hidden = !file;
+    const files = input.files;
+    const count = files ? files.length : 0;
+    nameLabel.textContent =
+      count === 0 ? '' : count === 1 ? files[0].name : `${count} arquivos selecionados`;
+    nameLabel.hidden = count === 0;
   };
 
   // No click/keydown handlers: the element is a <label for="…">, so opening

@@ -72,10 +72,9 @@ class SettingsForm(FlaskForm):
     pdf_theme = SelectField("Tema padrão do PDF", choices=_choices(PDF_THEME_LABELS))
     pdf_font = SelectField("Fonte", choices=_choices(PDF_FONT_LABELS))
     pdf_margin = SelectField("Margens", choices=_choices(PDF_MARGIN_LABELS))
-    pdf_header = StringField("Cabeçalho", validators=[Optional(), Length(max=120)])
-    pdf_footer = StringField("Rodapé", validators=[Optional(), Length(max=120)])
-    pdf_show_page_numbers = BooleanField("Exibir número de página")
-    pdf_show_generated_date = BooleanField("Exibir data de geração")
+    pdf_show_generated_date = BooleanField(
+        "Exibir data de geração no PDF do código-fonte"
+    )
 
     backup_keep_last = IntegerField(
         "Backups mantidos",
@@ -102,9 +101,6 @@ class SettingsForm(FlaskForm):
             "pdf_theme": self.pdf_theme.data,
             "pdf_font": self.pdf_font.data,
             "pdf_margin": self.pdf_margin.data,
-            "pdf_header": self.pdf_header.data or "",
-            "pdf_footer": self.pdf_footer.data or "",
-            "pdf_show_page_numbers": self.pdf_show_page_numbers.data,
             "pdf_show_generated_date": self.pdf_show_generated_date.data,
             "backup_keep_last": self.backup_keep_last.data,
         }

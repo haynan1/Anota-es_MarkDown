@@ -7,10 +7,12 @@
 
 {% block content %}
 <div class="page-head">
-  <h1 class="page-title">Importar um arquivo Markdown</h1>
+  <h1 class="page-title">Importar Markdown</h1>
   <p class="page-subtitle">
-    Aceita arquivos <code>.md</code>, <code>.markdown</code>, <code>.mdown</code> e <code>.txt</code>
-    codificados em UTF-8, com até {{ (config.MAX_MARKDOWN_BYTES // 1048576) }} MB.
+    Um arquivo, uma pasta inteira de uma vez, ou um <code>.zip</code> com todos eles.
+    Aceita <code>.md</code>, <code>.markdown</code>, <code>.mdown</code> e <code>.txt</code>
+    em UTF-8, com até {{ (config.MAX_MARKDOWN_BYTES // 1048576) }} MB por documento
+    e {{ (config.MAX_BULK_IMPORT_BYTES // 1048576) }} MB por envio.
   </p>
 </div>
 
@@ -25,28 +27,82 @@
   #}
   <label class="dropzone" for="import-file" data-dropzone>
     <span class="empty-icon">{{ icon('upload', 'icon icon-xl') }}</span>
-    <span class="empty-title">Arraste o arquivo até aqui</span>
+    <span class="empty-title">Arraste os arquivos até aqui</span>
     <span class="empty-text">ou clique para escolher no computador</span>
     <span class="dropzone-filename" data-dropzone-name hidden></span>
-    <span class="visually-hidden">Arquivo Markdown para importar</span>
-    {{ form.file(class='visually-hidden', id='import-file', accept='.md,.markdown,.mdown,.txt') }}
+    <span class="visually-hidden">Arquivos Markdown ou um arquivo ZIP para importar</span>
+    {{ form.files(class='visually-hidden', id='import-file', multiple=true,
+                  accept='.md,.markdown,.mdown,.txt,.zip') }}
   </label>
 
-  {% for error in form.file.errors %}
+  {% for error in form.files.errors %}
     <p class="field-error">{{ icon('alert', 'icon icon-sm') }}{{ error }}</p>
   {% endfor %}
 
   {{ select_field(form.category_id) }}
+  <p class="field-hint">
+    Escolher uma categoria aqui vale para todos os arquivos do envio. Deixe em
+    “Sem categoria” para que cada documento use a categoria registrada no
+    próprio arquivo, quando houver.
+  </p>
 
   <div class="form-actions">
     <button type="submit" name="action" value="preview" class="btn">
       {{ icon('eye', 'icon icon-sm') }} Pré-visualizar
     </button>
     <button type="submit" name="action" value="import" class="btn btn-primary">
-      {{ icon('upload', 'icon icon-sm') }} Importar documento
+      {{ icon('upload', 'icon icon-sm') }} Importar
     </button>
   </div>
 </form>
+
+{% if report %}
+  <section class="card section-gap" aria-labelledby="report-title">
+    <div class="card-head">
+      {{ icon('check', 'icon icon-sm') }}
+      <h2 class="card-title" id="report-title">Resultado da importação</h2>
+    </div>
+    <div class="card-pad stack stack-3">
+      <div class="row">
+        <span class="badge badge-accent tabular">{{ report.created }} importado{{ 's' if report.created != 1 }}</span>
+        {% if report.skipped %}
+          <span class="badge tabular">{{ report.skipped }} já existente{{ 's' if report.skipped != 1 }}</span>
+        {% endif %}
+        {% if report.ignored %}
+          <span class="badge tabular">{{ report.ignored }} fora do formato</span>
+        {% endif %}
+        {% if report.failed %}
+          <span class="badge tabular">{{ report.failed }} com erro</span>
+        {% endif %}
+      </div>
+
+      {% if report.skipped %}
+        <p class="small muted">
+          Documentos já existentes são reconhecidos pelo identificador gravado no
+          arquivo e mantidos como estão — importar o mesmo pacote duas vezes não
+          duplica nada.
+        </p>
+      {% endif %}
+
+      {% if report.warnings %}
+        <div class="field">
+          <span class="field-label">Avisos</span>
+          <div class="stack stack-2 small muted">
+            {% for warning in report.warnings %}<p>{{ warning }}</p>{% endfor %}
+          </div>
+        </div>
+      {% endif %}
+
+      {% if report.created %}
+        <div>
+          <a class="btn btn-sm" href="{{ url_for('documents.index', ordem='created_desc') }}">
+            {{ icon('file', 'icon icon-sm') }} Ver os documentos importados
+          </a>
+        </div>
+      {% endif %}
+    </div>
+  </section>
+{% endif %}
 
 {% if preview %}
   <section class="card section-gap" aria-labelledby="preview-title">
@@ -73,9 +129,28 @@
       </div>
 
       <p class="small subtle">
-        Envie o arquivo novamente e escolha “Importar documento” para salvar.
+        Envie o arquivo novamente e escolha “Importar” para salvar.
       </p>
     </div>
   </section>
 {% endif %}
+
+<section class="card card-pad section-gap" aria-labelledby="export-title">
+  <h2 class="card-title" id="export-title">Exportar em massa</h2>
+  <hr class="divider">
+  <div class="row">
+    <div>
+      <p class="field-label">Todos os documentos em Markdown</p>
+      <p class="small muted">
+        Um <code>.zip</code> com um arquivo <code>.md</code> por documento, organizados
+        em pastas por categoria. Cada arquivo leva no topo um bloco com título,
+        categoria, etiquetas, grupos e datas — é o que permite reimportar o pacote
+        aqui sem perder nada. A lixeira fica de fora.
+      </p>
+    </div>
+    <a class="btn push" href="{{ url_for('exports.download_all_markdown') }}">
+      {{ icon('download', 'icon icon-sm') }} Exportar tudo
+    </a>
+  </div>
+</section>
 {% endblock %}

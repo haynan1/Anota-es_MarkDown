@@ -26,6 +26,21 @@ def as_utc(value: datetime | None) -> datetime | None:
     return value.astimezone(timezone.utc)
 
 
+def parse_iso(value: str | None) -> datetime | None:
+    """Read back an ISO-8601 timestamp, in UTC, or ``None`` if unreadable.
+
+    Used wherever a date arrives from outside the database - a backup archive,
+    a Markdown front matter block. Those are untrusted inputs, so a malformed
+    value degrades to "unknown" instead of raising.
+    """
+    if not value:
+        return None
+    try:
+        return as_utc(datetime.fromisoformat(value.strip()))
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
 def resolve_zone(name: str | None) -> ZoneInfo:
     try:
         return ZoneInfo(name or DEFAULT_TIMEZONE)

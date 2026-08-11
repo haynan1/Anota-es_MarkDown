@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import PurePath
+
 from flask import (
     current_app,
     flash,
@@ -28,10 +30,11 @@ from app.repositories.document_repository import (
 )
 from app.repositories.group_repository import GroupRepository
 from app.repositories.taxonomy_repository import CategoryRepository, TagRepository
-from app.services.document_service import DocumentService
+from app.services.bulk_import_service import import_files
+from app.services.document_service import MAX_BULK_SELECTION, DocumentService
 from app.services.exceptions import ServiceError
 from app.services.group_service import GroupService
-from app.services.import_service import build_preview, import_document
+from app.services.import_service import ImportPreview, build_preview
 from app.services.listing_service import list_documents
 from app.services.media_service import enforce_content_length
 
@@ -216,11 +219,6 @@ def move_to_trash(public_uuid: str):
     return redirect(url_for("documents.index"))
 
 
-# Ceiling on a single bulk request: enough for "select every document on a
-# 100-item page", small enough that a crafted POST cannot ask the server to
-# load an unbounded set into memory.
-MAX_BULK_SELECTION = 200
-
 # Adding to a group is the one bulk action that needs a second value (which
 # group), so it is handled here rather than inside DocumentService.bulk_apply -
 # that method is deliberately about state flags on documents alone.
@@ -331,32 +329,78 @@ def _bulk_add_to_group(uuids: list[str]):
 
 @documents_bp.route("/importar", methods=["GET", "POST"])
 def import_markdown():
+    """Import one file, a whole selection, or a ZIP holding a library.
+
+    The single-file path keeps its old shape - import one document and land in
+    the editor with it open. Anything larger reports back on this page instead:
+    with 200 files in flight, the useful answer is what happened to all of
+    them, not which one happens to be first.
+    """
     if request.method == "POST":
         # The global ceiling is sized for video uploads; a markdown import
         # must not be allowed to ride on it.
-        enforce_content_length(current_app.config["MAX_DOCUMENT_UPLOAD_BYTES"])
+        enforce_content_length(current_app.config["MAX_BULK_IMPORT_BYTES"])
 
     form = ImportForm()
     form.category_id.choices = _category_choices()
     preview = None
+    report = None
 
     if form.validate_on_submit():
-        action = request.form.get("action", "import")
+        uploads = form.uploads()
         try:
-            if action == "preview":
-                preview = build_preview(form.file.data)
+            if request.form.get("action", "import") == "preview":
+                preview = _build_import_preview(uploads)
             else:
-                document = import_document(
-                    form.file.data, category_id=form.selected_category_id()
-                )
-                flash(f"“{document.title}” foi importado.", "success")
-                return redirect(url_for("editor.edit", public_uuid=document.uuid))
+                report = import_files(uploads, category_id=form.selected_category_id())
+                if report.created == 1 and report.touched == 1 and report.first:
+                    flash(f"“{report.first.title}” foi importado.", "success")
+                    return redirect(url_for("editor.edit", public_uuid=report.first.uuid))
+                flash(_import_summary(report), "success" if report.created else "error")
         except ServiceError as error:
             flash(error.message, "error")
     elif form.is_submitted():
-        flash(_first_error(form) or "Verifique o arquivo enviado.", "error")
+        flash(_first_error(form) or "Verifique os arquivos enviados.", "error")
 
-    return render_template("documents/import.html", form=form, preview=preview)
+    return render_template(
+        "documents/import.html", form=form, preview=preview, report=report
+    )
+
+
+def _build_import_preview(uploads: list) -> ImportPreview | None:
+    """Preview the first Markdown file of a selection.
+
+    A preview answers "did this file parse the way I expected"; repeating that
+    for 200 files would answer nothing. The archive has no preview at all -
+    reading a whole ZIP to describe it costs as much as importing it.
+    """
+    first = uploads[0]
+    if PurePath(first.filename or "").suffix.lower() == ".zip":
+        flash(
+            "A pré-visualização não se aplica a arquivos ZIP. "
+            "Importe o arquivo para ver o resultado.",
+            "warning",
+        )
+        return None
+
+    if len(uploads) > 1:
+        flash(
+            f"Prévia do primeiro arquivo. Os {len(uploads)} arquivos "
+            "selecionados serão importados juntos.",
+            "warning",
+        )
+    return build_preview(first)
+
+
+def _import_summary(report) -> str:
+    parts = [f"{report.created} documento(s) importado(s)"]
+    if report.skipped:
+        parts.append(f"{report.skipped} já existente(s) ignorado(s)")
+    if report.ignored:
+        parts.append(f"{report.ignored} fora do formato")
+    if report.failed:
+        parts.append(f"{report.failed} com erro")
+    return ". ".join(parts) + "."
 
 
 # ── Categories ──────────────────────────────────────────────────────────────

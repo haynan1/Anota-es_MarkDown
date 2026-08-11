@@ -16,6 +16,8 @@ documents stay - the same promise categories already make.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from sqlalchemy import bindparam
 from sqlalchemy import inspect as sa_inspect
 
@@ -40,6 +42,10 @@ MAX_DOCUMENTS_PER_OPERATION = 200
 # size of the library and turn its page into an unbounded query and an
 # unbounded render.
 MAX_DOCUMENTS_PER_GROUP = 500
+
+# Ceiling for memberships restored from a file. A document belongs to a
+# handful of groups; a header claiming thousands is malformed input.
+MAX_GROUPS_PER_DOCUMENT = 50
 
 
 def _identity_of(document: Document) -> int:
@@ -209,6 +215,32 @@ class GroupService:
         if commit:
             db.session.commit()
         return len(rows)
+
+    @staticmethod
+    def attach_by_names(document: Document, names: Sequence[str]) -> int:
+        """Put ``document`` into each named group, creating the missing ones.
+
+        The entry point for anything restoring memberships from outside the
+        database - a backup archive, a Markdown front matter block. Groups
+        travel by name in both, because a numeric id means nothing in a file
+        that may be restored into a different installation.
+
+        A name that cannot become a group (empty, too long, colliding after
+        sanitising) is skipped rather than raised: one unusable name must not
+        cost the document its other memberships.
+        """
+        attached = 0
+        for raw in list(names)[:MAX_GROUPS_PER_DOCUMENT]:
+            if not isinstance(raw, str) or not raw.strip():
+                continue
+            group = GroupRepository.get_by_name(raw)
+            if group is None:
+                try:
+                    group = GroupService.create(raw)
+                except ValidationError:
+                    continue
+            attached += GroupService.add_documents(group, [document])
+        return attached
 
     @staticmethod
     def remove_documents(group: Group, documents: list[Document]) -> int:

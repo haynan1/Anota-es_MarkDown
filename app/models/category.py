@@ -14,12 +14,17 @@ if TYPE_CHECKING:  # pragma: no cover - resolved by SQLAlchemy at runtime
 
 DEFAULT_CATEGORY_COLOR = "#4F46E5"
 
+# Column width other layers truncate against, named next to the column.
+MAX_CATEGORY_NAME_LENGTH = 80
+
 
 class Category(db.Model):
     __tablename__ = "categories"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(80), nullable=False, unique=True, index=True)
+    name: Mapped[str] = mapped_column(
+        String(MAX_CATEGORY_NAME_LENGTH), nullable=False, unique=True, index=True
+    )
     slug: Mapped[str] = mapped_column(String(90), nullable=False, unique=True, index=True)
     color: Mapped[str] = mapped_column(
         String(9), nullable=False, default=DEFAULT_CATEGORY_COLOR

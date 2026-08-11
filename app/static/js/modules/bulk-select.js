@@ -19,6 +19,12 @@ export function initBulkSelect() {
   const bar = $('[data-bulk-bar]');
   if (!bar) return;
 
+  // A programmatic submit() ignores the submitter, and with it any formaction
+  // the button carried. Captured once so every submit can restore it: without
+  // this, exporting a selection would leave the bar permanently pointed at the
+  // export route and the next "archive" would download a ZIP.
+  const defaultAction = bar.getAttribute('action');
+
   const boxes = () => $$('.doc-select');
   const selected = () => boxes().filter((box) => box.checked);
 
@@ -85,6 +91,9 @@ export function initBulkSelect() {
   function submitWith(button, chosen) {
     // Drop anything a previous, cancelled attempt may have injected.
     $$('input[data-bulk-injected]', bar).forEach((el) => el.remove());
+    // getAttribute, not .formAction: the property falls back to the form's own
+    // action, so every button would look like it had one.
+    bar.setAttribute('action', button.getAttribute('formaction') || defaultAction);
     appendHidden(bar, 'acao', button.value);
     chosen.forEach((box) => appendHidden(bar, 'uuids', box.dataset.uuid));
     bar.submit();

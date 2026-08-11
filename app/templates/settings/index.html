@@ -38,6 +38,9 @@
   <section class="card card-pad" aria-labelledby="s-pdf">
     <h2 class="card-title" id="s-pdf">Exportação em PDF</h2>
     <p class="field-hint">
+      O PDF formatado é a representação do Markdown, e nada além disso — sem capa,
+      sem cabeçalho, sem rodapé e sem numeração. Título, autoria ou qualquer outra
+      informação aparecem no PDF quando estão escritas no próprio documento.
       Motor ativo: <strong>{{ pdf_engine.active_label }}</strong>.
       {% if not pdf_engine.weasyprint_available %}
         O WeasyPrint não está disponível neste computador; a aplicação usa o motor alternativo
@@ -50,11 +53,8 @@
       {{ select_field(form.pdf_theme) }}
       {{ select_field(form.pdf_font) }}
       {{ select_field(form.pdf_margin) }}
-      {{ field(form.pdf_header, placeholder='Ex.: Nome da empresa') }}
-      {{ field(form.pdf_footer, placeholder='Ex.: Documento interno') }}
     </div>
     <div class="row">
-      {{ checkbox_field(form.pdf_show_page_numbers) }}
       {{ checkbox_field(form.pdf_show_generated_date) }}
     </div>
   </section>
