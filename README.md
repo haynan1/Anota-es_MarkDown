@@ -259,7 +259,7 @@ Copie `.env.example` para `.env` e ajuste. Os valores que mais importam:
 | `SECRET_KEY` | gerada em memória | Assina sessões e tokens CSRF. **Obrigatória em produção.** |
 | `FLASK_ENV` | `development` | `development`, `production` ou `testing` |
 | `HOST` | `127.0.0.1` | Interface de escuta. Ver [rede local](#cuidados-para-acesso-por-rede-local) |
-| `PORT` | `5000` | Porta HTTP |
+| `PORT` | `5001` | Porta HTTP |
 | `PDF_ENGINE` | `auto` | `auto`, `weasyprint` ou `xhtml2pdf` |
 | `MAX_UPLOAD_MB` | `8` | Teto de um envio avulso de documento; ultrapassar gera a página 413 |
 | `MAX_BULK_IMPORT_MB` | `64` | Teto de um envio de importação em massa (vários `.md` ou um `.zip`) |
@@ -316,7 +316,7 @@ flask pdf-engine       # mostra qual motor de PDF está ativo nesta máquina
 python run.py
 ```
 
-Abra <http://127.0.0.1:5000>.
+Abra <http://127.0.0.1:5001>.
 
 Atalhos prontos: `start.bat` ou `start.ps1` no Windows, `start.sh` no Linux.
 Eles criam o ambiente virtual, instalam dependências, aplicam migrations e
@@ -331,7 +331,7 @@ chmod +x start.sh
 ./start.sh
 ```
 
-> **A porta 5000 já pode estar ocupada.** Se outra aplicação estiver usando,
+> **A porta 5001 já pode estar ocupada.** Se outra aplicação estiver usando,
 > defina `PORT=5050` no `.env`.
 
 > `python run.py` usa o servidor de desenvolvimento do Flask. Ele é adequado
@@ -645,13 +645,13 @@ O ambiente virtual não está ativo. Rode `.\venv\Scripts\Activate.ps1` (Windows
 ou `source venv/bin/activate` (Linux).
 
 **`Address already in use` / a página abre outro sistema**
-Outra aplicação ocupa a porta 5000. Defina `PORT=5050` no `.env`.
+Outra aplicação ocupa a porta 5001. Defina `PORT=5050` no `.env`.
 Para descobrir quem está usando:
 ```powershell
-Get-NetTCPConnection -LocalPort 5000 -State Listen
+Get-NetTCPConnection -LocalPort 5001 -State Listen
 ```
 ```bash
-lsof -i :5000
+lsof -i :5001
 ```
 
 **`WeasyPrint could not import some external libraries`**

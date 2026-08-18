@@ -121,7 +121,7 @@ class Config:
     # ── Server ──────────────────────────────────────────────────────────────
     # Never default to 0.0.0.0: the app has no authentication.
     HOST = os.getenv("HOST", "127.0.0.1")
-    PORT = _env_int("PORT", 5000)
+    PORT = _env_int("PORT", 5001)
 
 
 class DevelopmentConfig(Config):

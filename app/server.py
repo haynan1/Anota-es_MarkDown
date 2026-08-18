@@ -89,7 +89,7 @@ def build_run_options(config) -> RunOptions:
        information disclosure to the whole network.
     """
     host = (config.get("HOST") or "127.0.0.1").strip()
-    port = int(config.get("PORT") or 5000)
+    port = int(config.get("PORT") or 5001)
     debug = bool(config.get("DEBUG", False))
 
     warnings: list[str] = []
