@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from datetime import timedelta
+from typing import NamedTuple
 
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import defer, joinedload, selectinload
@@ -35,8 +36,17 @@ SEARCH_SORT_OPTIONS = {SORT_RELEVANCE: "Mais relevantes", **SORT_OPTIONS}
 #: A library grows its blind spot one unfiled document at a time, and until
 #: this existed the only answerable question was "what is inside X". It can
 #: never collide with a real identifier: tag slugs leave ``safe_slug`` as
-#: ``[a-z0-9-]`` and groups are addressed by UUID, so neither can contain "@".
+#: ``[a-z0-9-]``, groups are addressed by UUID and categories by a positive
+#: integer, so none of the three can ever spell "@sem".
 WITHOUT = "@sem"
+
+
+class OrphanCounts(NamedTuple):
+    """How large the blind spot is, one number per ``WITHOUT`` filter."""
+
+    uncategorised: int
+    ungrouped: int
+    untagged: int
 
 
 @dataclass(slots=True)
@@ -51,6 +61,10 @@ class DocumentQuery:
 
     search: str = ""
     category_id: int | None = None
+    #: A field rather than a property like the two below it, and only because
+    #: ``category_id`` is an integer: a group is addressed by a string and a
+    #: tag by a slug, so both can carry ``WITHOUT`` in the value itself.
+    without_category: bool = False
     group_uuid: str = ""
     tag_slugs: tuple[str, ...] = ()
     only_favorites: bool = False
@@ -79,6 +93,7 @@ class DocumentQuery:
         return bool(
             self.is_searching
             or self.category_id
+            or self.without_category
             or self.group_uuid
             or self.tag_slugs
             or self.only_favorites
@@ -232,7 +247,12 @@ class DocumentRepository:
     def build_statement(cls, query: DocumentQuery):
         stmt = cls._apply_scope(cls._base_statement(), query.scope)
 
-        if query.category_id:
+        if query.without_category:
+            # The column is nullable and deleting a category clears it rather
+            # than cascading, so "no category" is a state documents fall into
+            # on their own - not one anybody has to choose.
+            stmt = stmt.where(Document.category_id.is_(None))
+        elif query.category_id:
             stmt = stmt.where(Document.category_id == query.category_id)
 
         if query.without_group:
@@ -363,21 +383,45 @@ class DocumentRepository:
         }
 
     @staticmethod
-    def orphan_counts() -> tuple[int, int]:
-        """Live documents that belong to no group, and to no tag.
+    def orphan_counts() -> OrphanCounts:
+        """Live documents carrying no category, no group and no tag.
 
-        One statement for both: the toolbar shows the two numbers side by
-        side, and neither is worth a round trip of its own. Counted over the
-        same set as ``GroupRepository.usage`` and ``TagRepository.usage`` -
-        everything outside the trash - so the numbers on one screen add up.
+        One statement for all three: the toolbar shows the numbers side by
+        side, and none is worth a round trip of its own. Counted over the same
+        set as ``category_usage``, ``GroupRepository.usage`` and
+        ``TagRepository.usage`` - everything outside the trash - so the numbers
+        on one screen add up.
+
+        Named rather than a bare tuple: three integers of the same type, in an
+        order only the reader enforces, is where a silent swap starts.
         """
         row = db.session.execute(
             select(
+                func.count(Document.id).filter(Document.category_id.is_(None)),
                 func.count(Document.id).filter(~Document.groups.any()),
                 func.count(Document.id).filter(~Document.tags.any()),
             ).where(Document.is_deleted.is_(False))
         ).one()
-        return int(row[0] or 0), int(row[1] or 0)
+        return OrphanCounts(int(row[0] or 0), int(row[1] or 0), int(row[2] or 0))
+
+    @staticmethod
+    def uncategorised_count() -> int:
+        """Live documents no category claims - the same number, alone.
+
+        A test on a column, unlike the two membership questions beside it in
+        ``orphan_counts``. The categories screen needs only this one, and
+        those two cost a correlated NOT EXISTS per row: worth paying where
+        all three numbers are shown, not to compute two nobody reads.
+        """
+        return int(
+            db.session.scalar(
+                select(func.count(Document.id)).where(
+                    Document.is_deleted.is_(False),
+                    Document.category_id.is_(None),
+                )
+            )
+            or 0
+        )
 
     @staticmethod
     def category_usage(limit: int = 6) -> list[tuple[Category, int]]:

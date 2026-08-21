@@ -5,11 +5,24 @@
 {% block title %}Documentos · {{ app_name }}{% endblock %}
 
 {% block content %}
+{# The filters as they stand, written once. The pager and the tag chips both
+   have to rebuild the whole query, and two copies of it is how a "next page"
+   link starts quietly widening the listing. `categoria` carries the sentinel
+   when the filter is "sem categoria": it is a value of that control, not a
+   parameter beside it. #}
+{% set filters = {'q': query.search or None,
+                  'categoria': without if query.without_category else query.category_id or None,
+                  'grupo': query.group_uuid or None,
+                  'ordem': query.sort,
+                  'favoritos': '1' if query.only_favorites else None,
+                  'escopo': query.scope if query.scope != 'active' else None,
+                  'visual': view} %}
 <div class="page-head">
   <div class="page-head-row">
     <div>
       <h1 class="page-title">
         {% if active_group %}{{ active_group.name }}
+        {% elif query.without_category %}Sem categoria
         {% elif query.without_group %}Fora de qualquer grupo
         {% elif query.without_tags %}Sem etiqueta
         {% elif query.scope == 'archived' %}Arquivados
@@ -48,76 +61,20 @@
 </div>
 
 <form class="toolbar" method="get" action="{{ url_for('documents.index') }}" id="filters-form">
-  <div class="search-field">
+  <div class="search-field toolbar-search">
     {{ icon('search', 'icon icon-sm') }}
     <label class="visually-hidden" for="doc-search">Pesquisar</label>
     <input class="input" type="search" id="doc-search" name="q" value="{{ query.search }}"
            placeholder="Pesquisar por título, conteúdo, categoria ou etiqueta…"
            data-autosubmit autocomplete="off">
+    {# The form's default button — the one Enter presses. Without it the first
+       submit button in the markup is the "Favoritos" chip, and every Enter in
+       the search box also turned favourites on. This one carries no name, so
+       it submits the filters exactly as they stand. #}
+    <button type="submit" class="visually-hidden">Pesquisar</button>
   </div>
 
-  <div class="toolbar-group">
-    <label class="visually-hidden" for="filter-category">Categoria</label>
-    <div class="select-wrap">
-      <select class="select" id="filter-category" name="categoria" data-autosubmit>
-        <option value="">Todas as categorias</option>
-        {% for category in categories %}
-          <option value="{{ category.id }}" {{ 'selected' if query.category_id == category.id }}>
-            {{ category.name }}
-          </option>
-        {% endfor %}
-      </select>
-      {{ icon('chevron-down', 'icon icon-sm') }}
-    </div>
-
-    {# "Sem grupo" is the only question a per-group list cannot ask, and it is
-       the one that finds what a library quietly loses. Same for etiquetas
-       below: both carry their count, so the size of the blind spot is
-       readable before clicking. #}
-    <label class="visually-hidden" for="filter-group">Grupo</label>
-    <div class="select-wrap">
-      <select class="select" id="filter-group" name="grupo" data-autosubmit>
-        <option value="">Todos os grupos</option>
-        <option value="{{ without }}" {{ 'selected' if query.without_group }}>
-          Sem grupo ({{ ungrouped_count|number_br }})
-        </option>
-        {% for group, total in group_usage %}
-          <option value="{{ group.uuid }}" {{ 'selected' if query.group_uuid == group.uuid }}>
-            {{ group.name }} ({{ total|number_br }})
-          </option>
-        {% endfor %}
-      </select>
-      {{ icon('chevron-down', 'icon icon-sm') }}
-    </div>
-
-    <label class="visually-hidden" for="filter-tag">Etiqueta</label>
-    <div class="select-wrap">
-      <select class="select" id="filter-tag" name="etiqueta" data-autosubmit>
-        <option value="">Todas as etiquetas</option>
-        <option value="{{ without }}" {{ 'selected' if query.without_tags }}>
-          Sem etiqueta ({{ untagged_count|number_br }})
-        </option>
-        {# Tags already in the filter are carried by the hidden inputs below;
-           offering them again would only let the same one be added twice. #}
-        {% for tag, total in tag_usage if tag.slug not in query.tag_slugs %}
-          <option value="{{ tag.slug }}">{{ tag.name }} ({{ total|number_br }})</option>
-        {% endfor %}
-      </select>
-      {{ icon('chevron-down', 'icon icon-sm') }}
-    </div>
-
-    <label class="visually-hidden" for="filter-sort">Ordenação</label>
-    <div class="select-wrap">
-      <select class="select" id="filter-sort" name="ordem" data-autosubmit>
-        {% for value, label in sort_options.items() %}
-          <option value="{{ value }}" {{ 'selected' if query.sort == value }}>{{ label }}</option>
-        {% endfor %}
-      </select>
-      {{ icon('chevron-down', 'icon icon-sm') }}
-    </div>
-  </div>
-
-  <div class="toolbar-group">
+  <div class="toolbar-actions">
     <button type="submit" name="favoritos" value="{{ '' if query.only_favorites else '1' }}"
             class="chip" aria-pressed="{{ 'true' if query.only_favorites else 'false' }}">
       {{ icon('star', 'icon icon-sm') }} Favoritos
@@ -139,6 +96,73 @@
     </div>
   </div>
 
+  <div class="toolbar-filters">
+    <label class="visually-hidden" for="filter-category">Categoria</label>
+    <div class="select-wrap">
+      <select class="select" id="filter-category" name="categoria" data-autosubmit>
+        <option value="">Todas as categorias</option>
+        {# Deleting a category clears the column instead of cascading, so a
+           document lands here without anyone choosing it - the count is how
+           much of the library has drifted out of every category. #}
+        <option value="{{ without }}" {{ 'selected' if query.without_category }}>
+          Sem categoria ({{ orphans.uncategorised|number_br }})
+        </option>
+        {% for category in categories %}
+          <option value="{{ category.id }}" {{ 'selected' if query.category_id == category.id }}>
+            {{ category.name }}
+          </option>
+        {% endfor %}
+      </select>
+      {{ icon('chevron-down', 'icon icon-sm') }}
+    </div>
+
+    {# "Sem grupo" is the only question a per-group list cannot ask, and it is
+       the one that finds what a library quietly loses. Same for etiquetas
+       below: both carry their count, so the size of the blind spot is
+       readable before clicking. #}
+    <label class="visually-hidden" for="filter-group">Grupo</label>
+    <div class="select-wrap">
+      <select class="select" id="filter-group" name="grupo" data-autosubmit>
+        <option value="">Todos os grupos</option>
+        <option value="{{ without }}" {{ 'selected' if query.without_group }}>
+          Sem grupo ({{ orphans.ungrouped|number_br }})
+        </option>
+        {% for group, total in group_usage %}
+          <option value="{{ group.uuid }}" {{ 'selected' if query.group_uuid == group.uuid }}>
+            {{ group.name }} ({{ total|number_br }})
+          </option>
+        {% endfor %}
+      </select>
+      {{ icon('chevron-down', 'icon icon-sm') }}
+    </div>
+
+    <label class="visually-hidden" for="filter-tag">Etiqueta</label>
+    <div class="select-wrap">
+      <select class="select" id="filter-tag" name="etiqueta" data-autosubmit>
+        <option value="">Todas as etiquetas</option>
+        <option value="{{ without }}" {{ 'selected' if query.without_tags }}>
+          Sem etiqueta ({{ orphans.untagged|number_br }})
+        </option>
+        {# Tags already in the filter are carried by the hidden inputs below;
+           offering them again would only let the same one be added twice. #}
+        {% for tag, total in tag_usage if tag.slug not in query.tag_slugs %}
+          <option value="{{ tag.slug }}">{{ tag.name }} ({{ total|number_br }})</option>
+        {% endfor %}
+      </select>
+      {{ icon('chevron-down', 'icon icon-sm') }}
+    </div>
+
+    <label class="visually-hidden" for="filter-sort">Ordenação</label>
+    <div class="select-wrap">
+      <select class="select" id="filter-sort" name="ordem" data-autosubmit>
+        {% for value, label in sort_options.items() %}
+          <option value="{{ value }}" {{ 'selected' if query.sort == value }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      {{ icon('chevron-down', 'icon icon-sm') }}
+    </div>
+  </div>
+
   {% if query.scope == 'archived' and not request.args.get('escopo') %}
     <input type="hidden" name="escopo" value="archived">
   {% endif %}
@@ -152,22 +176,13 @@
 </form>
 
 {% if query.tag_slugs %}
-  {# Every chip's remove link rebuilds the *whole* query minus that one tag.
-     Dropping the rest of the filters here would silently widen the listing
-     the moment a tag is removed from it. #}
-  {% set base = {'q': query.search or None,
-                 'categoria': query.category_id or None,
-                 'grupo': query.group_uuid or None,
-                 'ordem': query.sort,
-                 'favoritos': '1' if query.only_favorites else None,
-                 'escopo': query.scope if query.scope != 'active' else None,
-                 'visual': view} %}
+  {# Every chip's remove link rebuilds the whole query minus that one tag. #}
   <div class="chip-list section-gap" aria-label="Etiquetas filtradas">
     {% for slug in query.tag_slugs %}
       <span class="chip is-active">
         {{ icon('tag', 'icon icon-sm') }}{{ 'Sem etiqueta' if slug == without else slug }}
         <a href="{{ url_for('documents.index',
-                            etiqueta=query.tag_slugs|reject('equalto', slug)|list, **base) }}"
+                            etiqueta=query.tag_slugs|reject('equalto', slug)|list, **filters) }}"
            aria-label="Remover filtro {{ slug }}">{{ icon('close', 'icon icon-sm') }}</a>
       </span>
     {% endfor %}
@@ -198,18 +213,12 @@
     </div>
   {% endif %}
 
-  {{ pager(pagination, 'documents.index', {
-       'q': query.search or None,
-       'categoria': query.category_id or None,
-       'grupo': query.group_uuid or None,
-       'etiqueta': query.tag_slugs|list,
-       'ordem': query.sort,
-       'favoritos': '1' if query.only_favorites else None,
-       'escopo': query.scope if query.scope != 'active' else None,
-       'visual': view,
-     }) }}
+  {{ pager(pagination, 'documents.index', dict(filters, etiqueta=query.tag_slugs|list)) }}
 {% else %}
-  {% if query.without_group %}
+  {% if query.without_category %}
+    {{ empty_state('folder', 'Nenhum documento sem categoria',
+                   'Todos os documentos que correspondem a estes filtros já foram categorizados.') }}
+  {% elif query.without_group %}
     {{ empty_state('layers', 'Nenhum documento fora dos grupos',
                    'Todos os documentos que correspondem a estes filtros já pertencem a algum grupo.') }}
   {% elif query.without_tags %}

@@ -69,6 +69,23 @@
               </td>
             </tr>
           {% endfor %}
+          {# Not a category, which is exactly why it belongs at the foot of the
+             table: this row is the one number the list above cannot show, and
+             the only one that grows when nobody is looking. #}
+          <tr class="table-row-aside">
+            <th scope="row">
+              <span class="row row-tight">
+                {{ icon('folder', 'icon icon-sm subtle') }}
+                Sem categoria
+              </span>
+            </th>
+            <td class="tabular">
+              {% if uncategorised %}
+                <a href="{{ url_for('documents.index', categoria=without) }}">{{ uncategorised|number_br }}</a>
+              {% else %}<span class="subtle">0</span>{% endif %}
+            </td>
+            <td></td>
+          </tr>
         </tbody>
       </table>
     </div>

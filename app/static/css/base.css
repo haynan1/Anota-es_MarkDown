@@ -841,7 +841,10 @@ a:hover { text-decoration: underline; }
   border: 1px solid var(--border); border-radius: var(--radius);
   transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }
-.input::placeholder, .textarea::placeholder { color: var(--text-subtle); }
+/* A hint that outgrows its field should end in an ellipsis, not mid-word:
+   the search placeholder names four things it looks through, and narrow
+   layouts get to show only the first two. */
+.input::placeholder, .textarea::placeholder { color: var(--text-subtle); text-overflow: ellipsis; }
 .input:hover, .select:hover, .textarea:hover { border-color: var(--border-strong); }
 .input:focus, .select:focus, .textarea:focus {
   outline: none; border-color: var(--accent);
@@ -910,13 +913,51 @@ a:hover { text-decoration: underline; }
 
 /* ── Toolbar / filters ──────────────────────────────────────────────────── */
 
+/* Two deliberate rows: the search owns the first line, the four filters share
+   the second. One flex row for all of them is what squeezed the search into a
+   sliver — a <select> is as wide as its longest option, so four of them ate
+   the line and the only control carrying `min-width: 0` paid for it.
+
+   The wrapping question here is about the toolbar's own width, never the
+   window's: the sidebar collapses and expands without the viewport moving, so
+   a media query would be answering a different question. Hence @container. */
 .toolbar {
+  --toolbar-control: 40px;
+  container-type: inline-size;
   display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap;
   padding: var(--sp-4); margin-bottom: var(--sp-5);
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
 }
-.toolbar-group { display: flex; align-items: center; gap: var(--sp-2); }
-.toolbar-group + .toolbar-group { margin-left: auto; }
+
+/* One height for every control in the bar. Left to the defaults it mixes 32px
+   chips, 36px segmented buttons and 38px fields — three rhythms in one box. */
+.toolbar :is(.input, .select, .chip, .btn) { min-height: var(--toolbar-control); }
+.toolbar .btn-icon { width: var(--toolbar-control); }
+.toolbar .btn-group .btn { min-height: calc(var(--toolbar-control) - 2px); }  /* sits inside the group border */
+.toolbar .chip { padding-inline: var(--sp-4); }
+
+/* `1 1 280px`: the search shares the first line with the toggles and keeps
+   them there down to 280px of its own — below that they drop to a line of
+   their own rather than take any more from it. */
+.toolbar-search { flex: 1 1 280px; max-width: none; }
+.toolbar-actions { flex: none; margin-left: auto; display: flex; align-items: center; gap: var(--sp-2); }
+
+/* A 100% basis always starts a line of its own, and equal columns make a
+   filter's width a layout decision instead of an accident of how long someone
+   happened to name a group. */
+.toolbar-filters {
+  flex: 1 1 100%; min-width: 0;
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-2);
+}
+
+/* 704px is four 170px selects plus their gutters: below it they pair up rather
+   than shrink past the width where the chosen option is still readable. */
+@container (max-width: 704px) {
+  .toolbar-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container (max-width: 300px) {
+  .toolbar-filters { grid-template-columns: minmax(0, 1fr); }
+}
 
 /* ── Tables ─────────────────────────────────────────────────────────────── */
 
@@ -925,6 +966,11 @@ a:hover { text-decoration: underline; }
 .table th, .table td { padding: var(--sp-3) var(--sp-4); text-align: left; border-bottom: 1px solid var(--border); }
 .table th { font-weight: 600; color: var(--text-muted); font-size: var(--fs-sm); background: var(--surface-2); }
 .table tr:last-child td { border-bottom: 0; }
+
+/* A summary row that is not one of the rows above it. The sunken background
+   and the rule over it say "this is the remainder" without a second heading. */
+.table-row-aside :is(th, td) { background: var(--surface-2); border-top: 1px solid var(--border); }
+.table-row-aside th { color: var(--text-muted); font-weight: 560; }
 
 /* ── Empty states ───────────────────────────────────────────────────────── */
 
@@ -1214,7 +1260,6 @@ mark { background: var(--warning-soft); color: inherit; padding: 0 0.15em; borde
 @media (max-width: 560px) {
   .toolbar { padding: var(--sp-3); }
   .search-field { max-width: none; flex-basis: 100%; }
-  .toolbar-group + .toolbar-group { margin-left: 0; }
   .card-pad { padding: var(--sp-4); }
   .hide-sm { display: none; }
 

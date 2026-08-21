@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from app.extensions import db
 from app.repositories.document_repository import (
     SCOPE_ARCHIVED,
@@ -100,6 +102,27 @@ class TestSearch:
         response = client.get("/documentos/?q=procurada")
         assert response.status_code == 200
         assert "Encontrável".encode() in response.data
+
+    def test_pressing_enter_in_the_box_only_searches(self, client, make_document):
+        """The form's default button must be the nameless one next to the box.
+
+        Implicit submission clicks the *first* submit button in the markup and
+        sends its name and value along. With the "Favoritos" chip holding that
+        position, pressing Enter after typing a term also turned favourites on
+        and the reader got the two documents they had starred instead of the
+        search they asked for.
+        """
+        make_document(title="Encontrável", content="palavra procurada")
+        html = client.get("/documentos/?q=procurada").get_data(as_text=True)
+
+        form = html[html.index('id="filters-form"') :]
+        form = form[: form.index("</form>")]
+
+        buttons = re.findall(r"<button[^>]*type=\"submit\"[^>]*>", form)
+        assert buttons, "o formulário de filtros perdeu seus botões"
+        assert "name=" not in buttons[0], (
+            f"o botão padrão do formulário carrega um filtro: {buttons[0]}"
+        )
 
     def test_suggestions_endpoint(self, client, make_document):
         make_document(title="Sugestão de teste", content="conteúdo")

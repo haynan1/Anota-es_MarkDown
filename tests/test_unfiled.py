@@ -1,24 +1,101 @@
-"""Documents that belong to no group and documents that carry no tag.
+"""Documents carrying no category, no group and no tag.
 
 A library grows its blind spot one unfiled document at a time. Every filter on
 the listing used to be a question about membership - "what is inside this
-group", "what wears this label" - and none of them could ask the one question
-that finds what is falling through: what is inside *nothing*.
+category", "what is inside this group", "what wears this label" - and none of
+them could ask the one question that finds what is falling through: what is
+inside *nothing*.
+
+The three answers share one reserved value, so they share one test module.
 """
 
 from __future__ import annotations
+
+import re
 
 from app.repositories.document_repository import (
     WITHOUT,
     DocumentQuery,
     DocumentRepository,
 )
+from app.repositories.taxonomy_repository import CategoryRepository
+from app.services.document_service import DocumentService
 from app.services.group_service import GroupService
 from app.services.listing_service import list_documents
 
 
 def _listing(**kwargs):
     return list_documents(DocumentQuery(per_page=50, **kwargs)).pagination
+
+
+def _heading(response) -> str:
+    """The <h1> the listing chose, which is how a filter names itself.
+
+    Matched on the heading alone: every one of these phrases also appears
+    in the toolbar as the option that produces the view, so a plain
+    substring search over the page would pass without the filter running.
+    """
+    html = response.get_data(as_text=True)
+    found = re.search(r'<h1 class="page-title">(.*?)</h1>', html, re.S)
+    assert found, "a listagem perdeu o título da página"
+    return found.group(1).strip()
+
+
+class TestWithoutCategory:
+    def test_finds_only_the_documents_no_category_claimed(self, app, make_document, db):
+        guides = CategoryRepository.get_or_create("Guias", "#4F46E5")
+        db.session.flush()
+        make_document(title="Categorizado", category_id=guides.id)
+        make_document(title="Sem pasta nenhuma")
+
+        results = _listing(without_category=True)
+        assert [item.title for item in results.items] == ["Sem pasta nenhuma"]
+
+    def test_deleting_a_category_hands_its_documents_over(self, app, make_document, db):
+        """The foreign key is cleared, not cascaded - so the count moves here.
+
+        This is the whole reason the filter has to exist: nobody decides to
+        leave a document uncategorised, it happens to them.
+        """
+        temporary = CategoryRepository.get_or_create("Temporária", "#4F46E5")
+        db.session.flush()
+        make_document(title="Fica órfão", category_id=temporary.id)
+        assert _listing(without_category=True).total == 0
+
+        db.session.delete(temporary)
+        db.session.commit()
+        assert _listing(without_category=True).total == 1
+
+    def test_only_the_sentinel_means_no_category(self, app, client, make_document):
+        """`categoria` is one control, so the sentinel travels in its value.
+
+        Anything that is neither digits nor the sentinel has to fall through to
+        "all categories" rather than filter by nothing at all.
+        """
+        make_document(title="Qualquer um")
+
+        for value in ("@sem-outro", "abc", "-1", "@"):
+            response = client.get("/documentos/", query_string={"categoria": value})
+            assert "Qualquer um" in response.get_data(as_text=True), value
+            assert _heading(response) == "Documentos", value
+
+    def test_combines_with_the_other_filters(self, app, make_document):
+        make_document(title="Sem pasta e favorito", is_favorite=True)
+        make_document(title="Sem pasta e comum")
+
+        results = _listing(without_category=True, only_favorites=True)
+        assert [item.title for item in results.items] == ["Sem pasta e favorito"]
+
+    def test_stacks_with_the_other_two_blind_spots(self, app, make_document):
+        """All three at once is a real question: what is filed nowhere."""
+        tagged = make_document(title="Tem etiqueta", tag_names=["algo"])
+        GroupService.add_documents(GroupService.create("Casa"), [tagged])
+        make_document(title="Fora de tudo")
+
+        results = _listing(
+            without_category=True, group_uuid=WITHOUT, tag_slugs=(WITHOUT,)
+        )
+        assert [item.title for item in results.items] == ["Fora de tudo"]
 
 
 class TestWithoutGroup:
@@ -87,42 +164,102 @@ class TestWithoutTags:
 
 
 class TestCounts:
-    def test_orphan_counts_answers_both_questions_at_once(self, app, make_document):
-        filed = make_document(title="Arrumado", tag_names=["ok"])
+    def test_orphan_counts_answers_all_three_questions_at_once(
+        self, app, make_document, db
+    ):
+        home = CategoryRepository.get_or_create("Casa", "#4F46E5")
+        db.session.flush()
+        filed = make_document(title="Arrumado", category_id=home.id, tag_names=["ok"])
         GroupService.add_documents(GroupService.create("Casa"), [filed])
         make_document(title="Perdido")
 
-        ungrouped, untagged = DocumentRepository.orphan_counts()
-        assert (ungrouped, untagged) == (1, 1)
+        counts = DocumentRepository.orphan_counts()
+        assert (counts.uncategorised, counts.ungrouped, counts.untagged) == (1, 1, 1)
+
+    def test_the_three_numbers_are_named_and_not_positional(self, app, make_document):
+        """Three ints of one type in a row is where a silent swap starts."""
+        make_document(title="Sozinho")
+        counts = DocumentRepository.orphan_counts()
+
+        assert counts.uncategorised == counts[0]
+        assert counts.ungrouped == counts[1]
+        assert counts.untagged == counts[2]
+
+    def test_the_lone_count_agrees_with_the_record(self, app, make_document, db):
+        """Two statements, one number - the categories screen reads the cheap
+        one, so it must never disagree with the toolbar's."""
+        home = CategoryRepository.get_or_create("Casa", "#4F46E5")
+        db.session.flush()
+        make_document(title="Arrumado", category_id=home.id)
+        make_document(title="Perdido")
+        make_document(title="Perdido também")
+
+        assert DocumentRepository.uncategorised_count() == 2
+        assert (
+            DocumentRepository.uncategorised_count()
+            == DocumentRepository.orphan_counts().uncategorised
+        )
 
     def test_the_trash_is_not_counted(self, app, make_document):
-        from app.services.document_service import DocumentService
-
         document = make_document(title="Vai para a lixeira")
-        assert DocumentRepository.orphan_counts() == (1, 1)
+        assert DocumentRepository.orphan_counts() == (1, 1, 1)
 
         DocumentService.move_to_trash(document)
-        assert DocumentRepository.orphan_counts() == (0, 0)
+        assert DocumentRepository.orphan_counts() == (0, 0, 0)
 
 
 class TestListingScreen:
-    def test_the_toolbar_offers_both_filters_with_their_counts(self, client, make_document):
+    def test_the_toolbar_offers_all_three_filters_with_their_counts(
+        self, client, make_document
+    ):
         make_document(title="Solto")
 
         html = client.get("/documentos/").get_data(as_text=True)
         assert 'id="filter-tag"' in html
+        assert "Sem categoria (1)" in html
         assert "Sem grupo (1)" in html
         assert "Sem etiqueta (1)" in html
 
     def test_the_filters_name_the_view_they_produced(self, client, make_document):
         make_document(title="Solto")
 
-        assert "Fora de qualquer grupo" in client.get(
-            "/documentos/", query_string={"grupo": WITHOUT}
+        assert _heading(
+            client.get("/documentos/", query_string={"categoria": WITHOUT})
+        ) == "Sem categoria"
+        assert _heading(
+            client.get("/documentos/", query_string={"grupo": WITHOUT})
+        ) == "Fora de qualquer grupo"
+        assert _heading(
+            client.get("/documentos/", query_string={"etiqueta": WITHOUT})
+        ) == "Sem etiqueta"
+
+    def test_pagination_keeps_the_category_filter(self, client, make_document):
+        """The pager and the tag chips build the query from one description.
+
+        While they were two copies of the same dict, a filter added to one of
+        them widened the listing the moment the reader turned the page.
+        """
+        for index in range(15):
+            make_document(title=f"Solto {index}")
+
+        html = client.get(
+            "/documentos/", query_string={"categoria": WITHOUT}
         ).get_data(as_text=True)
-        assert "Sem etiqueta" in client.get(
-            "/documentos/", query_string={"etiqueta": WITHOUT}
-        ).get_data(as_text=True)
+        assert "pagina=2" in html
+        assert "categoria=%40sem" in html or "categoria=@sem" in html
+
+    def test_the_categories_screen_reports_the_same_blind_spot(
+        self, client, make_document, db
+    ):
+        """The one number a list of categories cannot show is what escaped it."""
+        guides = CategoryRepository.get_or_create("Guias", "#4F46E5")
+        db.session.flush()
+        make_document(title="Categorizado", category_id=guides.id)
+        make_document(title="Solto")
+
+        html = client.get("/documentos/categorias").get_data(as_text=True)
+        assert "Sem categoria" in html
+        assert "categoria=%40sem" in html or "categoria=@sem" in html
 
     def test_without_tags_never_travels_with_a_tag(self, client, make_document):
         """The two together are a question with no answer, so one of them wins.

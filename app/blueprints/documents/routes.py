@@ -61,6 +61,11 @@ def _build_query() -> DocumentQuery:
     if WITHOUT in tag_slugs:
         tag_slugs = (WITHOUT,)
 
+    # One control, so one parameter: "sem categoria" is a value of `categoria`,
+    # not a flag beside it. Anything that is neither the sentinel nor digits -
+    # a hand-edited URL, a stale bookmark - falls through to "all categories".
+    categoria = (args.get("categoria") or "").strip()
+
     # A search with no ordering of its own is ranked, not dated: the answer to
     # "where is that document" is the best match, never the most recent one.
     sort = args.get("ordem") or ""
@@ -69,9 +74,8 @@ def _build_query() -> DocumentQuery:
 
     return DocumentQuery(
         search=search,
-        category_id=(
-            int(args["categoria"]) if (args.get("categoria") or "").isdigit() else None
-        ),
+        category_id=int(categoria) if categoria.isdigit() else None,
+        without_category=categoria == WITHOUT,
         group_uuid=(args.get("grupo") or "").strip()[:36],
         tag_slugs=tag_slugs,
         only_favorites=args.get("favoritos") == "1",
@@ -92,10 +96,11 @@ def index():
         view = "cards"
     session["documents_view"] = view
 
-    # Both catalogues arrive with their counts: a filter that cannot say how
-    # many documents it will show is a filter you have to try to understand.
+    # Every catalogue arrives with its counts, the blind spots included: a
+    # filter that cannot say how many documents it will show is a filter you
+    # have to try in order to understand.
     group_usage = GroupRepository.usage()
-    ungrouped, untagged = DocumentRepository.orphan_counts()
+    orphans = DocumentRepository.orphan_counts()
 
     return render_template(
         "documents/index.html",
@@ -112,8 +117,7 @@ def index():
             else None
         ),
         tag_usage=TagRepository.usage(limit=100),
-        ungrouped_count=ungrouped,
-        untagged_count=untagged,
+        orphans=orphans,
         without=WITHOUT,
         sort_options=SEARCH_SORT_OPTIONS if query.is_searching else SORT_OPTIONS,
         rename_form=RenameForm(),
@@ -450,7 +454,9 @@ def categories():
         "documents/categories.html",
         form=form,
         usage=DocumentRepository.category_usage(limit=100),
+        uncategorised=DocumentRepository.uncategorised_count(),
         tag_usage=TagRepository.usage(limit=100),
+        without=WITHOUT,
         confirm_form=ConfirmForm(),
     )
 
