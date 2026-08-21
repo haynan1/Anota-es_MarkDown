@@ -198,10 +198,23 @@ function initFilters() {
   const form = $('#filters-form');
   if (!form) return;
 
+  const search = form.querySelector('input[name="q"]');
+  const order = form.querySelector('[name="ordem"]');
+  const searchOnLoad = search ? search.value : '';
+
   const submit = debounce(() => {
     // Any filter change resets pagination.
     const page = form.querySelector('input[name="pagina"]');
     if (page) page.remove();
+
+    // A new search term resets the ordering along with it. The answer to
+    // "where is that document" is the best match, and the order chosen for a
+    // previous question is not it — carrying `ordem` over is what buried the
+    // document you named under everything edited more recently. A disabled
+    // control is simply not submitted, so the server applies its own default;
+    // the page reloads a moment later with the select showing it.
+    if (order && search && search.value !== searchOnLoad) order.disabled = true;
+
     form.submit();
   }, 400);
 

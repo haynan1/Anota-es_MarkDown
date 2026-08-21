@@ -101,7 +101,10 @@ depender de internet para funcionar.
   ou selecionando vários documentos na lista.
 - Categorias com cor e etiquetas livres
 - Busca por título, conteúdo, categoria e etiqueta
-- Filtros por grupo, categoria e etiqueta; ordenação, paginação, cards ou lista
+- Filtros por grupo, categoria e etiqueta — incluindo **sem grupo** e **sem
+  etiqueta**, as duas perguntas que uma lista de grupos não sabe fazer e que
+  mostram o que o acervo está perdendo de vista; ordenação, paginação, cards
+  ou lista
 - Favoritos e arquivamento
 - **Cadeado**: protege um documento contra exclusão acidental, inclusive ao
   esvaziar a lixeira. A edição continua livre — o cadeado protege a existência,
@@ -139,7 +142,7 @@ depender de internet para funcionar.
 | Tela | Rota | O que faz |
 |:-----|:-----|:----------|
 | **Painel** | `/` | Total de documentos, palavras escritas, favoritos, arquivados, últimos modificados, categorias mais usadas |
-| **Documentos** | `/documentos/` | Lista ou cards, busca, filtros por categoria/etiqueta/favorito, ordenação, paginação e ações rápidas |
+| **Documentos** | `/documentos/` | Lista ou cards, busca, filtros por categoria/grupo/etiqueta/favorito (com “sem grupo” e “sem etiqueta”), ordenação, paginação e ações rápidas |
 | **Editor** | `/editor/<uuid>` | Título, editor, pré-visualização ao vivo, barra de ferramentas, painel de organização, exportações |
 | **Histórico** | `/documentos/<uuid>/historico` | Linha do tempo das versões, visualização, comparação e restauração |
 | **Lixeira** | `/lixeira/` | Documentos excluídos, restauração, exclusão definitiva e esvaziamento com confirmação forte |
@@ -186,10 +189,25 @@ models/        Mapeamento SQLAlchemy 2.0.
   comparado com a última versão. O autosave disparando a cada poucos segundos
   não polui o histórico.
 
-- **Busca com FTS5 e `remove_diacritics 2`.** Busca sem diferenciar acentos nem
-  maiúsculas — "codigo" encontra "código". A expressão `MATCH` é reconstruída a
-  partir de tokens, então nenhum caractere digitado pelo usuário é interpretado
-  como sintaxe do FTS. Há degradação automática para `LIKE` parametrizado.
+- **Dois índices de busca, porque "achar o documento" são duas perguntas.**
+  Um FTS5 sobre título e corpo com `remove_diacritics 2` responde por palavra,
+  sem diferenciar acentos nem maiúsculas — "codigo" encontra "código". Um
+  segundo FTS5, só de títulos e com o tokenizador `trigram`, responde por
+  *trecho*: "trofia" encontra "Hipertrofia". Um índice de palavras não teria
+  como fazer isso — ele conhece palavras inteiras e seus começos, nunca o meio
+  delas. Nenhum caractere digitado pelo usuário é interpretado como sintaxe do
+  FTS: a expressão `MATCH` é reconstruída a partir de tokens ou citada inteira,
+  com aspas escapadas e caracteres de controle descartados.
+
+- **A relevância pondera o título dez vezes acima do corpo.** `bm25` sem pesos
+  trata as duas colunas por igual, e então buscar um título devolvia todos os
+  documentos que o mencionam de passagem com o documento em si perdido no meio
+  — o que fazia a busca parecer exigir o título completo. Uma busca sem ordem
+  escolhida é ordenada por relevância, não por data.
+
+- **Degradação em camadas.** Sem o tokenizador `trigram` (SQLite anterior ao
+  3.34), a busca por palavra continua e só os trechos no meio de uma palavra
+  deixam de ser encontrados. Sem FTS5, tudo cai para `LIKE` parametrizado.
 
 - **Dois motores de PDF atrás de uma interface.** WeasyPrint quando disponível,
   xhtml2pdf sempre. Ver [Dependências do WeasyPrint](#dependências-do-weasyprint).
@@ -285,8 +303,10 @@ export FLASK_APP=run.py
 flask db upgrade
 ```
 
-Isso cria `instance/app.db` com todas as tabelas e índices. A tabela virtual
-FTS5 da busca é criada automaticamente na primeira execução da aplicação.
+Isso cria `instance/app.db` com todas as tabelas e índices. As tabelas virtuais
+FTS5 da busca são criadas automaticamente na primeira execução da aplicação —
+e o índice de títulos é preenchido no mesmo boot se o acervo já existia, sem
+migration nem reindexação manual.
 
 Se você alterar os modelos:
 
@@ -738,7 +758,14 @@ MarkDown_Projetos/
 - **Um usuário por vez.** O controle de concorrência protege contra sobrescrita
   entre abas, mas não há edição colaborativa.
 - **FTS5 depende do build do SQLite.** Se ausente, a busca cai para `LIKE` — que
-  funciona, mas diferencia acentos.
+  funciona, mas diferencia acentos. O tokenizador `trigram`, que encontra
+  trechos no meio de uma palavra, exige SQLite 3.34 (e 3.45 para ignorar
+  acentos); sem ele a busca por palavra continua inteira. **Configurações**
+  informa o que este build oferece.
+- **A busca por trecho cobre títulos, não corpos.** Um índice de trigramas
+  custa cerca de três entradas por caractere: sobre o corpo de um acervo de
+  Markdown ele multiplicaria o banco para responder uma pergunta que ninguém
+  faz de um corpo.
 - **Sem testes de navegador.** O JavaScript foi validado manualmente e por
   verificações de integração; não há Playwright ou Selenium.
 - **Os arquivos enviados não entram no backup.** O ZIP guarda documentos,

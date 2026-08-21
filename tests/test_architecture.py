@@ -174,14 +174,65 @@ class TestSeniorBaseline:
             )
 
     def test_raw_sql_never_interpolates_user_input(self):
+        """Only a table name may be interpolated into SQL; values are bound.
+
+        Read off the syntax tree rather than off a regex. The regex this
+        replaced matched a single-expression ``text("...")`` and nothing else,
+        so it silently inspected *zero* of the statements in the file - the
+        one place in the codebase where a mistake is a SQL injection. A guard
+        that passes because it found nothing to check is worse than no guard,
+        which is why the count is asserted below.
+        """
         source = (APP / "services" / "search_service.py").read_text(encoding="utf-8")
-        for match in re.finditer(r'text\(\s*f?"""?(.*?)"""?\s*\)', source, re.S):
-            statement = match.group(1)
-            # Only the table name may be interpolated; values are bound.
-            placeholders = re.findall(r"\{(\w+)\}", statement)
-            assert set(placeholders) <= {"FTS_TABLE"}, (
-                f"interpolação inesperada em SQL: {placeholders}"
-            )
+        tree = ast.parse(source)
+
+        # Module-level SQL constants, so `text(_CREATE_SQL)` is followed home
+        # instead of waved through as an opaque name.
+        constants = {
+            target.id: node.value
+            for node in tree.body
+            if isinstance(node, ast.Assign)
+            for target in node.targets
+            if isinstance(target, ast.Name)
+        }
+
+        def interpolated_names(node) -> set[str]:
+            """Every identifier this string expression splices into itself."""
+            if isinstance(node, ast.Name) and node.id in constants:
+                return interpolated_names(constants[node.id])
+            if not isinstance(node, ast.JoinedStr):
+                return set()
+            names: set[str] = set()
+            for part in node.values:
+                if not isinstance(part, ast.FormattedValue):
+                    continue
+                # Anything other than a bare name is already suspicious: a
+                # call or an attribute could carry a value in with it.
+                assert isinstance(part.value, ast.Name), (
+                    f"expressão interpolada em SQL: {ast.dump(part.value)}"
+                )
+                names.add(part.value.id)
+            return names
+
+        statements = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "text"
+            and node.args
+        ]
+
+        # The file is built around raw FTS5 SQL. If this ever reads zero, the
+        # check stopped checking rather than the SQL having gone away.
+        assert len(statements) >= 10, (
+            f"apenas {len(statements)} statements inspecionados; a regra parou de ver o arquivo"
+        )
+
+        allowed = {"FTS_TABLE", "TITLES_TABLE"}
+        for statement in statements:
+            names = interpolated_names(statement.args[0])
+            assert names <= allowed, f"interpolação inesperada em SQL: {sorted(names)}"
 
 
 class TestListingService:

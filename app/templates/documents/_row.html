@@ -17,7 +17,8 @@
       <span class="tabular">{{ document.estimated_reading_time }} min de leitura</span>
       {{ category_badge(document.category) }}
       {% for tag in document.tags[:2] %}
-        <span class="badge">{{ icon('tag', 'icon icon-sm') }}{{ tag.name }}</span>
+        <a class="badge badge-link" href="{{ url_for('documents.index', etiqueta=tag.slug) }}"
+           title="Filtrar por “{{ tag.name }}”">{{ icon('tag', 'icon icon-sm') }}{{ tag.name }}</a>
       {% endfor %}
       {% if document.is_archived %}<span class="badge">Arquivado</span>{% endif %}
     </div>

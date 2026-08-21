@@ -223,12 +223,18 @@
 
   <form method="post" action="{{ url_for('editor.edit', public_uuid=document.uuid) }}"
         id="meta-form" class="meta-drawer-form">
-    {{ form.hidden_tag() }}
+    {# `csrf_token` rather than `hidden_tag()`: that helper renders *every*
+       hidden field, so writing the revision mirror by hand below put two
+       inputs named `expected_revision` in one form. The browser submits both,
+       the server reads the first, and the first was the one the editor never
+       updates — so every save from this panel after an autosave claimed a
+       revision that was already old and came back as a conflict. #}
+    {{ form.csrf_token }}
     {# Mirrors of the live editor fields so this form still saves without JS. #}
     <input type="hidden" name="title" data-mirror-title value="{{ document.title }}">
     <textarea class="visually-hidden" name="content_markdown" data-mirror-content
               aria-hidden="true" tabindex="-1">{{ document.content_markdown }}</textarea>
-    <input type="hidden" name="expected_revision" data-mirror-revision value="{{ document.revision }}">
+    {{ form.expected_revision(**{'data-mirror-revision': ''}) }}
 
     <div class="meta-drawer-body">
       {{ select_field(form.category_id) }}

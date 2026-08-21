@@ -38,6 +38,7 @@ def index():
         confirm_form=ConfirmForm(),
         pdf_engine=engine_info(),
         search_available=search_index.available,
+        title_search_available=search_index.titles_available,
     )
 
 

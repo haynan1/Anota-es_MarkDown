@@ -178,6 +178,12 @@
         <p class="small muted">
           {% if search_available %}
             Busca de texto completo ativa (SQLite FTS5, sem diferenciar acentos ou maiúsculas).
+            {% if title_search_available %}
+              Títulos também são pesquisáveis por qualquer trecho, mesmo no meio de uma palavra.
+            {% else %}
+              Este SQLite não tem o tokenizador <code>trigram</code>: a busca encontra
+              palavras e seus começos, mas não trechos no meio delas.
+            {% endif %}
           {% else %}
             O índice FTS5 não está ativo; a busca usa consultas SQL simples.
           {% endif %}

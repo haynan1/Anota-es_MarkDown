@@ -6,6 +6,9 @@ Saves carry the ``revision`` the client last saw. If it no longer matches the
 stored one, the write is rejected with :class:`ConflictError` instead of
 silently overwriting. This is what stops a delayed autosave response from
 clobbering a newer edit.
+
+The guard is about overwriting, so a save that writes nothing never trips it:
+see :meth:`DocumentService.save`.
 """
 
 from __future__ import annotations
@@ -185,7 +188,21 @@ class DocumentService:
         create_version: bool = True,
         refresh_slug: bool = False,
     ) -> SaveResult:
-        """Persist an edit, guarded by optimistic concurrency control."""
+        """Persist an edit, guarded by optimistic concurrency control.
+
+        The guard protects against *overwriting* someone else's work, so it is
+        asked only of a write that would overwrite something. A submission
+        carrying the text unchanged - the organisation panel saving a tag, a
+        second click on Salvar - has nothing to clobber and cannot conflict
+        with anything, whatever revision it believes it is based on.
+        """
+        clean_title = DocumentService.normalize_title(title)
+        clean_body = DocumentService.validate_markdown(content_markdown)
+
+        if content_hash(clean_title, clean_body) == document.content_hash:
+            # Touch nothing: no revision bump, no version, no needless write.
+            return SaveResult(document=document, version_created=False, content_changed=False)
+
         if expected_revision is not None and expected_revision != document.revision:
             raise ConflictError(
                 "Este documento foi alterado em outro lugar depois que você "
@@ -194,11 +211,7 @@ class DocumentService:
             )
 
         previous_body = document.content_markdown
-        changed = DocumentService.apply_content(document, title, content_markdown)
-
-        if not changed:
-            # Touch nothing: no revision bump, no version, no needless write.
-            return SaveResult(document=document, version_created=False, content_changed=False)
+        DocumentService.apply_content(document, clean_title, clean_body)
 
         if refresh_slug:
             document.slug = DocumentService.build_slug(

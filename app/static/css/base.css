@@ -797,6 +797,10 @@ a:hover { text-decoration: underline; }
 .badge-warning { background: var(--warning-soft); color: var(--warning); }
 .badge-danger { background: var(--danger-soft); color: var(--danger); }
 .badge-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--category-color, var(--accent)); flex: none; }
+/* A badge that filters. It reads as a label until the pointer says otherwise —
+   the surface lifts and the text sharpens, the same gesture .chip:hover makes. */
+.badge-link { cursor: pointer; transition: background-color var(--dur) var(--ease), color var(--dur) var(--ease); }
+.badge-link:hover, .badge-link:focus-visible { background: var(--accent-soft); color: var(--accent); text-decoration: none; }
 
 .chip {
   display: inline-flex; align-items: center; gap: var(--sp-2);

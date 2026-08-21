@@ -24,7 +24,10 @@ from app.repositories.document_repository import (
     SCOPE_ACTIVE,
     SCOPE_ALL,
     SCOPE_ARCHIVED,
+    SEARCH_SORT_OPTIONS,
     SORT_OPTIONS,
+    SORT_RELEVANCE,
+    WITHOUT,
     DocumentQuery,
     DocumentRepository,
 )
@@ -45,8 +48,24 @@ VALID_VIEWS = {"cards", "list"}
 def _build_query() -> DocumentQuery:
     args = request.args
     scope = args.get("escopo", SCOPE_ACTIVE)
-    sort = args.get("ordem", "updated_desc")
     search = (args.get("q") or "").strip()[:200]
+
+    # The toolbar sends the tags already chosen plus the one just picked, so
+    # the same slug can arrive twice - deduplicated before the ceiling, or a
+    # repeat would spend one of the five slots on a filter already applied.
+    #
+    # "Sem etiqueta" is a statement about the whole set, so it cannot share the
+    # filter with a tag: asking for the documents that carry no tag *and* carry
+    # this one is a question with no answer.
+    tag_slugs = tuple(dict.fromkeys(tag for tag in args.getlist("etiqueta") if tag))[:5]
+    if WITHOUT in tag_slugs:
+        tag_slugs = (WITHOUT,)
+
+    # A search with no ordering of its own is ranked, not dated: the answer to
+    # "where is that document" is the best match, never the most recent one.
+    sort = args.get("ordem") or ""
+    if sort not in (SEARCH_SORT_OPTIONS if search else SORT_OPTIONS):
+        sort = SORT_RELEVANCE if search else "updated_desc"
 
     return DocumentQuery(
         search=search,
@@ -54,14 +73,10 @@ def _build_query() -> DocumentQuery:
             int(args["categoria"]) if (args.get("categoria") or "").isdigit() else None
         ),
         group_uuid=(args.get("grupo") or "").strip()[:36],
-        tag_slugs=tuple(tag for tag in args.getlist("etiqueta") if tag)[:5],
+        tag_slugs=tag_slugs,
         only_favorites=args.get("favoritos") == "1",
         scope=scope if scope in VALID_SCOPES else SCOPE_ACTIVE,
-        sort=(
-            sort
-            if sort in SORT_OPTIONS
-            else ("relevance" if search else "updated_desc")
-        ),
+        sort=sort,
         page=int(args["pagina"]) if (args.get("pagina") or "").isdigit() else 1,
         per_page=current_app.config["DOCUMENTS_PER_PAGE"],
     )
@@ -77,6 +92,11 @@ def index():
         view = "cards"
     session["documents_view"] = view
 
+    # Both catalogues arrive with their counts: a filter that cannot say how
+    # many documents it will show is a filter you have to try to understand.
+    group_usage = GroupRepository.usage()
+    ungrouped, untagged = DocumentRepository.orphan_counts()
+
     return render_template(
         "documents/index.html",
         pagination=result.pagination,
@@ -84,12 +104,18 @@ def index():
         view=view,
         snippets=result.snippets,
         categories=CategoryRepository.all(),
-        groups=GroupRepository.all(),
+        groups=[group for group, _ in group_usage],
+        group_usage=group_usage,
         active_group=(
-            GroupRepository.get_by_uuid(query.group_uuid) if query.group_uuid else None
+            GroupRepository.get_by_uuid(query.group_uuid)
+            if query.group_uuid and not query.without_group
+            else None
         ),
-        tag_usage=TagRepository.usage(limit=30),
-        sort_options=SORT_OPTIONS,
+        tag_usage=TagRepository.usage(limit=100),
+        ungrouped_count=ungrouped,
+        untagged_count=untagged,
+        without=WITHOUT,
+        sort_options=SEARCH_SORT_OPTIONS if query.is_searching else SORT_OPTIONS,
         rename_form=RenameForm(),
         confirm_form=ConfirmForm(),
     )

@@ -10,6 +10,8 @@
     <div>
       <h1 class="page-title">
         {% if active_group %}{{ active_group.name }}
+        {% elif query.without_group %}Fora de qualquer grupo
+        {% elif query.without_tags %}Sem etiqueta
         {% elif query.scope == 'archived' %}Arquivados
         {% elif query.only_favorites %}Favoritos
         {% else %}Documentos{% endif %}
@@ -68,14 +70,37 @@
       {{ icon('chevron-down', 'icon icon-sm') }}
     </div>
 
+    {# "Sem grupo" is the only question a per-group list cannot ask, and it is
+       the one that finds what a library quietly loses. Same for etiquetas
+       below: both carry their count, so the size of the blind spot is
+       readable before clicking. #}
     <label class="visually-hidden" for="filter-group">Grupo</label>
     <div class="select-wrap">
       <select class="select" id="filter-group" name="grupo" data-autosubmit>
         <option value="">Todos os grupos</option>
-        {% for group in groups %}
+        <option value="{{ without }}" {{ 'selected' if query.without_group }}>
+          Sem grupo ({{ ungrouped_count|number_br }})
+        </option>
+        {% for group, total in group_usage %}
           <option value="{{ group.uuid }}" {{ 'selected' if query.group_uuid == group.uuid }}>
-            {{ group.name }}
+            {{ group.name }} ({{ total|number_br }})
           </option>
+        {% endfor %}
+      </select>
+      {{ icon('chevron-down', 'icon icon-sm') }}
+    </div>
+
+    <label class="visually-hidden" for="filter-tag">Etiqueta</label>
+    <div class="select-wrap">
+      <select class="select" id="filter-tag" name="etiqueta" data-autosubmit>
+        <option value="">Todas as etiquetas</option>
+        <option value="{{ without }}" {{ 'selected' if query.without_tags }}>
+          Sem etiqueta ({{ untagged_count|number_br }})
+        </option>
+        {# Tags already in the filter are carried by the hidden inputs below;
+           offering them again would only let the same one be added twice. #}
+        {% for tag, total in tag_usage if tag.slug not in query.tag_slugs %}
+          <option value="{{ tag.slug }}">{{ tag.name }} ({{ total|number_br }})</option>
         {% endfor %}
       </select>
       {{ icon('chevron-down', 'icon icon-sm') }}
@@ -117,17 +142,32 @@
   {% if query.scope == 'archived' and not request.args.get('escopo') %}
     <input type="hidden" name="escopo" value="archived">
   {% endif %}
-  {% for slug in query.tag_slugs %}<input type="hidden" name="etiqueta" value="{{ slug }}">{% endfor %}
+  {# The select above adds one etiqueta; these carry the ones already chosen,
+     so the filters accumulate instead of replacing each other. "Sem etiqueta"
+     is exclusive, so it never travels alongside a slug. #}
+  {% if not query.without_tags %}
+    {% for slug in query.tag_slugs %}<input type="hidden" name="etiqueta" value="{{ slug }}">{% endfor %}
+  {% endif %}
   <noscript><button type="submit" class="btn btn-sm">Aplicar filtros</button></noscript>
 </form>
 
 {% if query.tag_slugs %}
+  {# Every chip's remove link rebuilds the *whole* query minus that one tag.
+     Dropping the rest of the filters here would silently widen the listing
+     the moment a tag is removed from it. #}
+  {% set base = {'q': query.search or None,
+                 'categoria': query.category_id or None,
+                 'grupo': query.group_uuid or None,
+                 'ordem': query.sort,
+                 'favoritos': '1' if query.only_favorites else None,
+                 'escopo': query.scope if query.scope != 'active' else None,
+                 'visual': view} %}
   <div class="chip-list section-gap" aria-label="Etiquetas filtradas">
     {% for slug in query.tag_slugs %}
       <span class="chip is-active">
-        {{ icon('tag', 'icon icon-sm') }}{{ slug }}
-        <a href="{{ url_for('documents.index', q=query.search or None, categoria=query.category_id or None,
-                            etiqueta=query.tag_slugs|reject('equalto', slug)|list) }}"
+        {{ icon('tag', 'icon icon-sm') }}{{ 'Sem etiqueta' if slug == without else slug }}
+        <a href="{{ url_for('documents.index',
+                            etiqueta=query.tag_slugs|reject('equalto', slug)|list, **base) }}"
            aria-label="Remover filtro {{ slug }}">{{ icon('close', 'icon icon-sm') }}</a>
       </span>
     {% endfor %}
@@ -162,13 +202,20 @@
        'q': query.search or None,
        'categoria': query.category_id or None,
        'grupo': query.group_uuid or None,
+       'etiqueta': query.tag_slugs|list,
        'ordem': query.sort,
        'favoritos': '1' if query.only_favorites else None,
        'escopo': query.scope if query.scope != 'active' else None,
        'visual': view,
      }) }}
 {% else %}
-  {% if query.has_filters %}
+  {% if query.without_group %}
+    {{ empty_state('layers', 'Nenhum documento fora dos grupos',
+                   'Todos os documentos que correspondem a estes filtros já pertencem a algum grupo.') }}
+  {% elif query.without_tags %}
+    {{ empty_state('tag', 'Nenhum documento sem etiqueta',
+                   'Todos os documentos que correspondem a estes filtros já estão etiquetados.') }}
+  {% elif query.has_filters %}
     {{ empty_state('search', 'Nada encontrado',
                    'Nenhum documento corresponde a esses filtros. Tente outros termos ou limpe a busca.') }}
     <div class="row section-gap center-row">

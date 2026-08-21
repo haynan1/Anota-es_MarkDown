@@ -4,6 +4,7 @@ from flask import flash, redirect, render_template, request, url_for
 
 from app.blueprints.documents.forms import ConfirmForm, DocumentMetadataForm
 from app.blueprints.editor import editor_bp
+from app.extensions import db
 from app.repositories.group_repository import GroupRepository
 from app.repositories.taxonomy_repository import CategoryRepository
 from app.repositories.version_repository import VersionRepository
@@ -59,9 +60,20 @@ def edit(public_uuid: str):
         form.pdf_theme.data = document.pdf_theme
         form.expected_revision.data = str(document.revision)
     elif form.validate_on_submit():
-        # Non-JS fallback: the browser posts the whole form.
+        # The organisation panel, and the non-JS path for the whole editor.
         try:
             expected = form.expected_revision.data
+            # Text first, because it is the only part that can be refused.
+            # Writing the taxonomy before knowing whether the save is allowed
+            # is how a rejected submission still managed to change the
+            # document it claimed it could not touch.
+            DocumentService.save(
+                document,
+                title=form.title.data or "",
+                content_markdown=form.content_markdown.data or "",
+                expected_revision=int(expected) if (expected or "").isdigit() else None,
+                refresh_slug=True,
+            )
             DocumentService.apply_metadata(
                 document,
                 category_id=form.selected_category_id() or 0,
@@ -70,19 +82,15 @@ def edit(public_uuid: str):
                 page_size=form.page_size.data,
                 pdf_theme=form.pdf_theme.data,
             )
+            db.session.commit()
             GroupService.set_groups_for(document, form.selected_group_uuids())
-            DocumentService.save(
-                document,
-                title=form.title.data or "",
-                content_markdown=form.content_markdown.data or "",
-                expected_revision=int(expected) if (expected or "").isdigit() else None,
-                refresh_slug=True,
-            )
             flash("Documento salvo.", "success")
             return redirect(url_for("editor.edit", public_uuid=document.uuid))
         except ConflictError as error:
+            db.session.rollback()
             flash(error.message, "error")
         except ServiceError as error:
+            db.session.rollback()
             flash(error.message, "error")
     else:
         flash("Não foi possível salvar. Verifique os campos.", "error")

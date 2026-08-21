@@ -33,8 +33,11 @@
   {% if document.category or document.tags %}
     <div class="chip-list">
       {{ category_badge(document.category) }}
+      {# A tag that cannot be clicked is decoration. This is the shortest path
+         from "I see this label" to "show me everything wearing it". #}
       {% for tag in document.tags[:3] %}
-        <span class="badge">{{ icon('tag', 'icon icon-sm') }}{{ tag.name }}</span>
+        <a class="badge badge-link" href="{{ url_for('documents.index', etiqueta=tag.slug) }}"
+           title="Filtrar por “{{ tag.name }}”">{{ icon('tag', 'icon icon-sm') }}{{ tag.name }}</a>
       {% endfor %}
       {% if document.tags|length > 3 %}
         <span class="badge">+{{ document.tags|length - 3 }}</span>

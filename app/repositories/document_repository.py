@@ -25,6 +25,19 @@ SORT_OPTIONS = {
     "title_desc": "Título (Z–A)",
 }
 
+#: Ranked order. Offered only while a search is running - there is nothing to
+#: be relevant to otherwise - and it is what a search defaults to.
+SORT_RELEVANCE = "relevance"
+SEARCH_SORT_OPTIONS = {SORT_RELEVANCE: "Mais relevantes", **SORT_OPTIONS}
+
+#: Reserved filter value meaning "the documents that have none of these".
+#:
+#: A library grows its blind spot one unfiled document at a time, and until
+#: this existed the only answerable question was "what is inside X". It can
+#: never collide with a real identifier: tag slugs leave ``safe_slug`` as
+#: ``[a-z0-9-]`` and groups are addressed by UUID, so neither can contain "@".
+WITHOUT = "@sem"
+
 
 @dataclass(slots=True)
 class DocumentQuery:
@@ -50,6 +63,16 @@ class DocumentQuery:
     @property
     def is_searching(self) -> bool:
         return bool(self.search.strip())
+
+    @property
+    def without_group(self) -> bool:
+        """Filtering for the documents no group ever claimed."""
+        return self.group_uuid == WITHOUT
+
+    @property
+    def without_tags(self) -> bool:
+        """Filtering for the documents nobody has labelled."""
+        return WITHOUT in self.tag_slugs
 
     @property
     def has_filters(self) -> bool:
@@ -212,7 +235,11 @@ class DocumentRepository:
         if query.category_id:
             stmt = stmt.where(Document.category_id == query.category_id)
 
-        if query.group_uuid:
+        if query.without_group:
+            # NOT EXISTS is the same shape as the filter below it, negated -
+            # the one question a per-group filter can never ask.
+            stmt = stmt.where(~Document.groups.any())
+        elif query.group_uuid:
             # EXISTS rather than a join: a document belongs to a group once,
             # so a join would be safe here, but keeping every membership filter
             # in the same shape as the tag filter means the statement can never
@@ -224,9 +251,12 @@ class DocumentRepository:
         if query.only_favorites:
             stmt = stmt.where(Document.is_favorite.is_(True))
 
-        for slug in query.tag_slugs:
-            # Repeated joins implement AND semantics across tags.
-            stmt = stmt.where(Document.tags.any(Tag.slug == slug))
+        if query.without_tags:
+            stmt = stmt.where(~Document.tags.any())
+        else:
+            for slug in query.tag_slugs:
+                # Repeated EXISTS implement AND semantics across tags.
+                stmt = stmt.where(Document.tags.any(Tag.slug == slug))
 
         if query.is_searching:
             if query.matched_ids is not None:
@@ -331,6 +361,23 @@ class DocumentRepository:
             "words": int(totals[5] or 0),
             "created_this_week": created_this_week or 0,
         }
+
+    @staticmethod
+    def orphan_counts() -> tuple[int, int]:
+        """Live documents that belong to no group, and to no tag.
+
+        One statement for both: the toolbar shows the two numbers side by
+        side, and neither is worth a round trip of its own. Counted over the
+        same set as ``GroupRepository.usage`` and ``TagRepository.usage`` -
+        everything outside the trash - so the numbers on one screen add up.
+        """
+        row = db.session.execute(
+            select(
+                func.count(Document.id).filter(~Document.groups.any()),
+                func.count(Document.id).filter(~Document.tags.any()),
+            ).where(Document.is_deleted.is_(False))
+        ).one()
+        return int(row[0] or 0), int(row[1] or 0)
 
     @staticmethod
     def category_usage(limit: int = 6) -> list[tuple[Category, int]]:
