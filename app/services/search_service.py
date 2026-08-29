@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Sequence
 
 from markupsafe import Markup, escape
 from sqlalchemy import bindparam, text
@@ -261,18 +262,54 @@ class SearchIndex:
         self._write_title(document.id, None if document.is_deleted else document.title)
 
     def remove_document(self, document_id: int) -> None:
+        self.remove_documents([document_id])
+
+    def remove_documents(self, document_ids: Sequence[int]) -> None:
+        """Drop a whole set of documents from both indexes.
+
+        Two statements for the batch rather than two per document: sending a
+        thousand documents to the trash used to be two thousand round trips
+        through a SAVEPOINT each. The ``IN`` list is an expanding bind
+        parameter - nothing here is ever spliced into the SQL.
+        """
+        ids = [int(document_id) for document_id in document_ids]
+        if not ids:
+            return
+
         if self.available:
             try:
                 with db.session.begin_nested():
                     db.session.execute(
-                        text(f"DELETE FROM {FTS_TABLE} WHERE document_id = :doc_id"),
-                        {"doc_id": document_id},
+                        text(
+                            f"DELETE FROM {FTS_TABLE} WHERE document_id IN :doc_ids"
+                        ).bindparams(bindparam("doc_ids", expanding=True)),
+                        {"doc_ids": ids},
                     )
             except SQLAlchemyError:  # pragma: no cover
-                logger.warning("Falha ao remover o documento %s do índice.", document_id)
+                logger.warning("Falha ao remover %s documento(s) do índice.", len(ids))
                 self._set_available(False)
 
-        self._write_title(document_id, None)
+        self._remove_titles(ids)
+
+    def _remove_titles(self, document_ids: Sequence[int]) -> None:
+        """Drop the same set from the trigram index, failing independently."""
+        if not self.titles_available or not document_ids:
+            return
+        try:
+            with db.session.begin_nested():
+                db.session.execute(
+                    text(
+                        f"DELETE FROM {TITLES_TABLE} WHERE document_id IN :doc_ids"
+                    ).bindparams(bindparam("doc_ids", expanding=True)),
+                    {"doc_ids": list(document_ids)},
+                )
+        except SQLAlchemyError:  # pragma: no cover
+            logger.warning(
+                "Falha ao remover %s título(s) do índice de trigramas.",
+                len(document_ids),
+                exc_info=True,
+            )
+            self._set_titles_available(False)
 
     def _write_title(self, document_id: int, title: str | None) -> None:
         """Refresh one title in the trigram index; ``None`` removes it.

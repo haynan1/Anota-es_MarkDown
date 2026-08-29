@@ -19,6 +19,7 @@ from app.services.media_service import (
     max_bytes_for,
 )
 from app.services.settings_service import SettingsService
+from app.utils.params import whole_int
 
 
 @editor_bp.post("/novo")
@@ -71,7 +72,7 @@ def edit(public_uuid: str):
                 document,
                 title=form.title.data or "",
                 content_markdown=form.content_markdown.data or "",
-                expected_revision=int(expected) if (expected or "").isdigit() else None,
+                expected_revision=whole_int(expected),
                 refresh_slug=True,
             )
             DocumentService.apply_metadata(

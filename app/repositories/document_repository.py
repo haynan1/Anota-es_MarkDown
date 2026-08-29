@@ -133,12 +133,16 @@ class DocumentRepository:
 
     @staticmethod
     def iter_for_export(
-        limit: int, uuids: Sequence[str] | None = None, chunk_size: int = 100
+        limit: int, ids: Sequence[int] | None = None, chunk_size: int = 100
     ) -> Iterator[Document]:
         """Stream documents ready to be written out as Markdown files.
 
-        ``uuids`` narrows the set to a selection; omitting it means every live
-        document, archived ones included and the trash excluded. ``limit`` is
+        ``ids`` narrows the set to a selection; omitting it means every live
+        document, archived ones included and the trash excluded. Primary keys
+        rather than UUIDs because a selection now reaches this layer already
+        resolved: the listing's checkboxes and its "every result" mode
+        converge on one set of identifiers before any bulk action, this one
+        included, ever sees it. ``limit`` is
         required rather than defaulted: "export everything" is the one query in
         this class with no natural bound, and the ceiling belongs in the SQL,
         not in a caller's loop that has already paid to load the rows.
@@ -170,8 +174,8 @@ class DocumentRepository:
             .limit(limit)
             .execution_options(yield_per=chunk_size)
         )
-        if uuids is not None:
-            stmt = stmt.where(Document.uuid.in_(list(uuids)))
+        if ids is not None:
+            stmt = stmt.where(Document.id.in_(list(ids)))
         return iter(db.session.scalars(stmt))
 
     @staticmethod
@@ -244,8 +248,17 @@ class DocumentRepository:
         return stmt.order_by(mapping.get(query.sort, Document.updated_at.desc()))
 
     @classmethod
-    def build_statement(cls, query: DocumentQuery):
-        stmt = cls._apply_scope(cls._base_statement(), query.scope)
+    def _apply_filters(cls, stmt, query: DocumentQuery):
+        """Narrow ``stmt`` to exactly what the listing is asking for.
+
+        Split out of :meth:`build_statement` because two different questions
+        are now asked of the same set: which documents this page shows, and -
+        when a bulk action is applied to *every result* rather than to the
+        boxes that happen to be ticked - which documents the whole set holds.
+        One definition of what a filter means, so the page a user is looking
+        at and the selection they act on can never drift apart.
+        """
+        stmt = cls._apply_scope(stmt, query.scope)
 
         if query.without_category:
             # The column is nullable and deleting a category clears it rather
@@ -291,7 +304,45 @@ class DocumentRepository:
                     | func.lower(Document.excerpt).like(pattern)
                 )
 
-        return cls._apply_sort(stmt, query)
+        return stmt
+
+    @classmethod
+    def build_statement(cls, query: DocumentQuery):
+        return cls._apply_sort(cls._apply_filters(cls._base_statement(), query), query)
+
+    @classmethod
+    def ids_matching(cls, query: DocumentQuery, limit: int) -> list[int]:
+        """Primary keys of everything the listing matches, capped at ``limit``.
+
+        Identifiers, not documents. A bulk action over a whole filtered set
+        flips a column on rows it never has to read, and loading a thousand
+        bodies and rendered HTML into the identity map to set one boolean
+        would be the most expensive possible way to write it.
+
+        Ordered exactly like the listing, so a set larger than the ceiling
+        keeps the documents the first pages were showing rather than an
+        arbitrary slice of the table.
+        """
+        stmt = cls._apply_sort(cls._apply_filters(select(Document.id), query), query)
+        return list(db.session.scalars(stmt.limit(limit)).all())
+
+    @staticmethod
+    def ids_for_uuids(
+        uuids: Sequence[str], include_deleted: bool = False
+    ) -> list[int]:
+        """Resolve a ticked selection to primary keys.
+
+        The identifier half of :meth:`get_many_by_uuids`, with the same
+        forgiveness: a UUID nobody recognises - a stale checkbox left over
+        from a document deleted in another tab - is dropped rather than
+        failing the batch.
+        """
+        if not uuids:
+            return []
+        stmt = select(Document.id).where(Document.uuid.in_(list(uuids)))
+        if not include_deleted:
+            stmt = stmt.where(Document.is_deleted.is_(False))
+        return list(db.session.scalars(stmt).all())
 
     @classmethod
     def paginate(cls, query: DocumentQuery):

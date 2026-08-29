@@ -19,7 +19,6 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from sqlalchemy import bindparam
-from sqlalchemy import inspect as sa_inspect
 
 from app.extensions import db
 from app.models import Document, Group, document_groups
@@ -32,9 +31,13 @@ from app.repositories.group_repository import MAX_GROUPS, GroupRepository
 from app.services.exceptions import NotFoundError, ValidationError
 from app.services.sanitizer import sanitize_plain_text
 from app.utils.dates import utcnow
+from app.utils.orm import identities_of, identity_of
 from app.utils.files import safe_slug
 
-# One request may not move an unbounded number of documents.
+# One request may not reorder, un-group or re-group an unbounded number of
+# documents. Adding is bounded by the group's own capacity instead - see
+# ``add_document_ids`` - because there the honest answer to "too many" is the
+# number the group can still hold, not a silently shorter list.
 MAX_DOCUMENTS_PER_OPERATION = 200
 
 # A group is a curated sequence that is rendered and reordered as one page, so
@@ -46,18 +49,6 @@ MAX_DOCUMENTS_PER_GROUP = 500
 # Ceiling for memberships restored from a file. A document belongs to a
 # handful of groups; a header claiming thousands is malformed input.
 MAX_GROUPS_PER_DOCUMENT = 50
-
-
-def _identity_of(document: Document) -> int:
-    """The primary key of ``document`` without ever going back to the database.
-
-    SQLAlchemy expires every instance on commit, so reading ``document.id`` in
-    a loop after any earlier commit issues one SELECT per document - an N+1
-    that appears and disappears depending on what the caller did first. The
-    identity key is already in the session for any persisted object.
-    """
-    identity = sa_inspect(document).identity
-    return identity[0] if identity else document.id
 
 
 class GroupService:
@@ -166,28 +157,44 @@ class GroupService:
 
     @staticmethod
     def add_documents(group: Group, documents: list[Document], commit: bool = True) -> int:
-        """Put ``documents`` at the end of the group. Returns how many were new.
+        """Put ``documents`` at the end of the group. See :meth:`add_document_ids`."""
+        return GroupService.add_document_ids(
+            group, identities_of(documents), commit=commit
+        )
+
+    @staticmethod
+    def add_document_ids(
+        group: Group, document_ids: list[int], commit: bool = True
+    ) -> int:
+        """Put a selection at the end of the group. Returns how many were new.
 
         Three statements regardless of how many documents arrive: read the
         current members, read the last position, insert the rest in one go.
         Asking "is this one already here?" per document turned a 200-document
         bulk action into 400 round trips.
+
+        Primary keys rather than documents, because the listing can now send a
+        whole filtered set here and membership never needed the rows - only
+        their identity.
+
+        Deliberately not truncated to a per-operation ceiling. A group has a
+        capacity, and a selection that would exceed it is refused with that
+        number rather than quietly clipped: "adicionei 300 dos seus 800" is a
+        result the user can act on, "adicionei 300" while believing it was 800
+        is not.
         """
-        wanted = documents[:MAX_DOCUMENTS_PER_OPERATION]
+        wanted = list(dict.fromkeys(document_ids))
         if not wanted:
             return 0
 
         existing = GroupRepository.member_ids(group.id)
         position = GroupRepository.next_position(group.id)
 
-        rows = []
-        seen: set[int] = set()
         now = utcnow()
-        for document in wanted:
-            document_id = _identity_of(document)
-            if document_id in existing or document_id in seen:
+        rows = []
+        for document_id in wanted:
+            if document_id in existing:
                 continue
-            seen.add(document_id)
             rows.append(
                 {
                     "document_id": document_id,
@@ -207,7 +214,7 @@ class GroupService:
         if len(rows) > remaining:
             raise ValidationError(
                 f"Um grupo comporta até {MAX_DOCUMENTS_PER_GROUP} documentos. "
-                f"Este já tem {len(existing)}."
+                f"Este já tem {len(existing)} e a seleção traz {len(rows)} novos."
             )
 
         db.session.execute(document_groups.insert(), rows)
@@ -244,7 +251,7 @@ class GroupService:
 
     @staticmethod
     def remove_documents(group: Group, documents: list[Document]) -> int:
-        ids = [_identity_of(document) for document in documents[:MAX_DOCUMENTS_PER_OPERATION]]
+        ids = [identity_of(document) for document in documents[:MAX_DOCUMENTS_PER_OPERATION]]
         if not ids:
             return 0
 
@@ -327,7 +334,7 @@ class GroupService:
             [
                 {
                     "target_group": group.id,
-                    "target_document": _identity_of(document),
+                    "target_document": identity_of(document),
                     "new_position": position,
                 }
                 for position, document in enumerate(ordered, start=1)

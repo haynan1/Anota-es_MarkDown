@@ -314,41 +314,119 @@ class DocumentService:
     #: Actions the listing screen can apply to a selection at once.
     BULK_ACTIONS = frozenset({"trash", "archive", "unarchive", "lock", "unlock"})
 
+    #: The column each flag action writes, and the value it writes there.
+    _BULK_FLAGS = {
+        "archive": (Document.is_archived, True),
+        "unarchive": (Document.is_archived, False),
+        "lock": (Document.is_locked, True),
+        "unlock": (Document.is_locked, False),
+    }
+
     @staticmethod
-    def bulk_apply(documents: list[Document], action: str) -> tuple[int, int]:
+    def bulk_apply_ids(document_ids: list[int], action: str) -> tuple[int, int]:
         """Apply one action to a whole selection in a single transaction.
 
         Returns ``(affected, skipped)``. Only "trash" ever skips: a locked
         document is protected against deletion, and - exactly like
         :meth:`empty_trash` - a bulk action must never be the one path that
-        bypasses that protection. Every other action commits once for the
-        whole batch instead of once per document.
+        bypasses that protection.
+
+        Written as set-based UPDATEs over primary keys rather than as a loop
+        over ORM objects. A selection can now be "every result of this filter"
+        rather than one page of checkboxes, and reading a thousand documents -
+        each carrying its Markdown body and its rendered HTML - into the
+        identity map in order to flip one boolean is the difference between an
+        instant action and a visible pause.
+
+        The ``WHERE`` clause excludes rows that already hold the target value,
+        which is what the ORM's change detection used to do for free: without
+        it, archiving a page that was half archived would bump ``updated_at``
+        on documents nothing happened to and quietly reorder "modificados
+        recentemente".
         """
         if action not in DocumentService.BULK_ACTIONS:
             raise ValidationError("Ação em massa desconhecida.")
 
-        affected = 0
-        skipped = 0
-        for document in documents:
-            if action == "trash":
-                if document.is_locked:
-                    skipped += 1
-                    continue
-                document.is_deleted = True
-                document.deleted_at = utcnow()
-                search_index.remove_document(document.id)
-            elif action == "archive":
-                document.is_archived = True
-            elif action == "unarchive":
-                document.is_archived = False
-            elif action == "lock":
-                document.is_locked = True
-            elif action == "unlock":
-                document.is_locked = False
-            affected += 1
+        ids = list(dict.fromkeys(document_ids))
+        if not ids:
+            return 0, 0
 
+        if action == "trash":
+            return DocumentService._bulk_trash(ids)
+
+        column, value = DocumentService._BULK_FLAGS[action]
+        db.session.execute(
+            db.update(Document)
+            .where(Document.id.in_(ids), column.is_(not value))
+            .values({column: value})
+        )
         db.session.commit()
-        return affected, skipped
+        # Every selected document now holds the value, whether or not this
+        # statement is what put it there: the count answers "what did I just
+        # ask for", not "how many rows did SQLite rewrite".
+        return len(ids), 0
+
+    @staticmethod
+    def _bulk_trash(ids: list[int]) -> tuple[int, int]:
+        """Send a selection to the trash, leaving locked documents behind."""
+        eligible = list(
+            db.session.scalars(
+                db.select(Document.id).where(
+                    Document.id.in_(ids),
+                    Document.is_locked.is_(False),
+                    Document.is_deleted.is_(False),
+                )
+            ).all()
+        )
+        skipped = len(ids) - len(eligible)
+        if not eligible:
+            return 0, skipped
+
+        db.session.execute(
+            db.update(Document)
+            .where(Document.id.in_(eligible))
+            .values(is_deleted=True, deleted_at=utcnow())
+        )
+        search_index.remove_documents(eligible)
+        db.session.commit()
+        return len(eligible), skipped
+
+    @staticmethod
+    def bulk_set_category(document_ids: list[int], category_id: int | None) -> int:
+        """Move a whole selection into one category, or out of every category.
+
+        Returns how many documents actually changed hands, so the caller can
+        tell "moved 12" from "all 12 were already there" - the same distinction
+        the group action makes, and the only honest answer when a bulk action
+        looks like it did nothing.
+
+        ``None`` clears the column, which is the same state a document lands in
+        when its category is deleted: unfiled is a real destination here, not
+        the absence of a choice.
+
+        The search index is untouched on purpose. It covers titles and bodies;
+        a category is neither, and reindexing a thousand documents to change a
+        foreign key would be work for a question the index never answers.
+        """
+        ids = list(dict.fromkeys(document_ids))
+        if not ids:
+            return 0
+
+        result = db.session.execute(
+            db.update(Document)
+            .where(
+                Document.id.in_(ids),
+                Document.is_deleted.is_(False),
+                # NULL-safe inequality, so clearing a category matches the rows
+                # that have one and setting a category matches the rows that
+                # have none. A plain ``!=`` is never true against NULL, and
+                # would make "mover para Sem categoria" a no-op.
+                Document.category_id.is_distinct_from(category_id),
+            )
+            .values(category_id=category_id)
+        )
+        db.session.commit()
+        return result.rowcount or 0
 
     @staticmethod
     def duplicate(document: Document) -> Document:

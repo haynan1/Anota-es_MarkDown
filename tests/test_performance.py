@@ -80,6 +80,81 @@ class TestQueryCounts:
         assert response.status_code == 200
         assert counter.count <= 15, f"{counter.count} consultas no painel"
 
+    def test_a_bulk_action_does_not_scale_queries_with_the_selection(
+        self, app, many_documents
+    ):
+        """Flipping a flag on 30 documents must cost what flipping it on 2 does.
+
+        The selection is now allowed to be a whole filtered library rather than
+        one page of checkboxes, so anything per-document in this path - a
+        SELECT to load the row, a savepoint, an UPDATE - stops being a detail
+        and becomes the feature's ceiling.
+        """
+        from app.services.document_service import DocumentService
+
+        everything = [
+            document.id
+            for document in DocumentRepository.paginate(DocumentQuery(per_page=30)).items
+        ]
+        db.session.expire_all()
+
+        with QueryCounter() as small:
+            DocumentService.bulk_apply_ids(everything[:2], "lock")
+        with QueryCounter() as large:
+            DocumentService.bulk_apply_ids(everything, "unlock")
+
+        assert large.count == small.count, (
+            f"N+1 na ação em massa: {small.count} consultas para 2 documentos, "
+            f"{large.count} para {len(everything)}"
+        )
+
+    def test_a_bulk_category_change_does_not_scale_with_the_selection(
+        self, app, many_documents
+    ):
+        from app.services.document_service import DocumentService
+
+        outra = CategoryRepository.get_or_create("Outra", "#0EA5E9")
+        db.session.commit()
+        everything = [
+            document.id
+            for document in DocumentRepository.paginate(DocumentQuery(per_page=30)).items
+        ]
+        db.session.expire_all()
+        # Read outside the counters: `expire_all` above means the first touch
+        # of the category would otherwise be a refresh charged to whichever
+        # block happened to come first.
+        target = outra.id
+
+        with QueryCounter() as small:
+            DocumentService.bulk_set_category(everything[:2], target)
+        with QueryCounter() as large:
+            DocumentService.bulk_set_category(everything, None)
+
+        assert large.count == small.count, (
+            f"N+1 ao trocar a categoria: {small.count} consultas para 2 documentos, "
+            f"{large.count} para {len(everything)}"
+        )
+
+    def test_trashing_a_whole_filter_does_not_scale_queries(self, app, many_documents):
+        """Including the search index, which used to be two writes per document."""
+        from app.services.document_service import DocumentService
+
+        everything = [
+            document.id
+            for document in DocumentRepository.paginate(DocumentQuery(per_page=30)).items
+        ]
+        db.session.expire_all()
+
+        with QueryCounter() as small:
+            DocumentService.bulk_apply_ids(everything[:2], "trash")
+        with QueryCounter() as large:
+            DocumentService.bulk_apply_ids(everything[2:], "trash")
+
+        assert large.count == small.count, (
+            f"N+1 ao mandar para a lixeira: {small.count} consultas para 2 "
+            f"documentos, {large.count} para {len(everything) - 2}"
+        )
+
     def test_group_pages_do_not_scale_queries_with_members(self, client, many_documents):
         """The group screens must stay flat as a collection grows."""
         from app.repositories.document_repository import DocumentRepository

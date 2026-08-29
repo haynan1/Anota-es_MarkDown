@@ -19,6 +19,7 @@ depender de internet para funcionar.
 - [Como iniciar a aplicação](#como-iniciar-a-aplicação)
 - [Como executar os testes](#como-executar-os-testes)
 - [Exportação em PDF](#exportação-em-pdf)
+- [Ações em massa](#ações-em-massa)
 - [Exportar e importar em massa](#exportar-e-importar-em-massa)
 - [Copiar para a Wix](#copiar-para-a-wix)
 - [Dependências do WeasyPrint](#dependências-do-weasyprint)
@@ -106,6 +107,9 @@ depender de internet para funcionar.
   mostram o que o acervo está perdendo de vista; ordenação, paginação, cards
   ou lista
 - Favoritos e arquivamento
+- **Ações em massa**: mudar a categoria, agrupar, arquivar, proteger, baixar
+  em `.md` ou mandar para a lixeira — para os documentos marcados **ou para
+  todos os resultados do filtro atual**, não só os que cabem na página
 - **Cadeado**: protege um documento contra exclusão acidental, inclusive ao
   esvaziar a lixeira. A edição continua livre — o cadeado protege a existência,
   não o conteúdo.
@@ -142,7 +146,7 @@ depender de internet para funcionar.
 | Tela | Rota | O que faz |
 |:-----|:-----|:----------|
 | **Painel** | `/` | Total de documentos, palavras escritas, favoritos, arquivados, últimos modificados, categorias mais usadas |
-| **Documentos** | `/documentos/` | Lista ou cards, busca, filtros por categoria/grupo/etiqueta/favorito (com “sem grupo” e “sem etiqueta”), ordenação, paginação e ações rápidas |
+| **Documentos** | `/documentos/` | Lista ou cards, busca, filtros por categoria/grupo/etiqueta/favorito (com “sem grupo” e “sem etiqueta”), ordenação, paginação, ações rápidas e ações em massa sobre a seleção ou sobre todos os resultados |
 | **Editor** | `/editor/<uuid>` | Título, editor, pré-visualização ao vivo, barra de ferramentas, painel de organização, exportações |
 | **Histórico** | `/documentos/<uuid>/historico` | Linha do tempo das versões, visualização, comparação e restauração |
 | **Lixeira** | `/lixeira/` | Documentos excluídos, restauração, exclusão definitiva e esvaziamento com confirmação forte |
@@ -408,13 +412,62 @@ Dois formatos, escolhidos no diálogo de exportação:
 
 ---
 
+## Ações em massa
+
+Marque documentos na lista e uma barra sobe do rodapé com tudo o que dá para
+fazer com eles de uma vez:
+
+| Ação | O que faz |
+| --- | --- |
+| **Categoria → Mover** | Coloca a seleção inteira numa categoria — ou em *Sem categoria*, que aqui é um destino como outro qualquer, não a ausência de escolha |
+| **Grupo → Agrupar** | Acrescenta a seleção ao fim de um grupo. Quem já estava lá não entra duas vezes |
+| **Baixar .md** | Empacota a seleção num `.zip` (ver [Exportar e importar em massa](#exportar-e-importar-em-massa)) |
+| **Arquivar / Desarquivar** | Tira da lista principal sem excluir; o botão acompanha o filtro em que você está |
+| **Proteger / Remover proteção** | Liga e desliga o cadeado |
+| **Mover para a lixeira** | Pergunta antes. Documentos com cadeado são ignorados e a página diz quantos |
+
+Nenhuma delas apaga nada de imediato: a lixeira é reversível e todo o resto é
+um estado que se desfaz pelo mesmo caminho.
+
+### Selecionar além da página
+
+*Selecionar todos nesta página* marca o que está à vista. Quando a página
+inteira está marcada e existe mais resultado do que ela mostra, aparece a
+oferta que interessa de verdade:
+
+> Só esta página está selecionada. **Selecionar todos os 348 resultados**
+
+A partir daí a ação vale para **todos os documentos que o filtro atual
+encontra** — busca, categoria, grupo, etiqueta, favoritos e escopo, exatamente
+como estão na tela. O navegador não envia 348 identificadores: envia os
+filtros, e o servidor refaz a mesma consulta que desenhou a página. Isso
+significa que uma seleção de 4 documentos e uma de 400 custam a mesma
+requisição, e que não existe seleção possível fora do que a tela já mostrava —
+a lixeira, por exemplo, continua inalcançável, porque nenhum filtro da lista
+chega até ela.
+
+Dois tetos, por dois motivos diferentes:
+
+| Seleção | Teto | Por quê |
+| --- | --- | --- |
+| Caixas marcadas | 200 | É o que uma requisição carrega de identificadores |
+| Todos os resultados | 2 000 | É quanto uma ação deve tocar de uma vez sem você ter visto passar |
+
+Quando o filtro encontra mais do que o teto, a oferta já diz isso antes do
+clique (*“Selecionar os 2.000 primeiros de 3.410 resultados”*) e a página avisa
+de novo depois. Uma ação em massa nunca para no meio em silêncio.
+
+---
+
 ## Exportar e importar em massa
 
 Todo o acervo entra e sai em Markdown, sem passar pelo formato de backup.
 
 **Exportar** — botão *Exportar tudo* na tela de Documentos (ou na tela de
-Importar), e *Baixar .md* na barra de seleção múltipla para levar só o que
-está marcado. Sai um `.zip` com:
+Importar), e *Baixar .md* na barra de seleção múltipla para levar só o que está
+marcado. O `.md` da barra segue a mesma seleção das outras ações em massa: se
+ela estiver em *todos os resultados*, o pacote traz o filtro inteiro, não só a
+página. Sai um `.zip` com:
 
 ```
 documentos-markdown-20260811-153000.zip

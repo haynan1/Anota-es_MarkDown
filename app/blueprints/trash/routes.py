@@ -11,15 +11,15 @@ from app.repositories.document_repository import (
 )
 from app.services.document_service import DocumentService
 from app.services.exceptions import ServiceError
+from app.utils.params import positive_int
 
 
 @trash_bp.get("/")
 def index():
-    page = request.args.get("pagina", "1")
     query = DocumentQuery(
         scope=SCOPE_TRASH,
         sort="updated_desc",
-        page=int(page) if page.isdigit() else 1,
+        page=positive_int(request.args.get("pagina")) or 1,
         per_page=current_app.config["DOCUMENTS_PER_PAGE"],
     )
     return render_template(

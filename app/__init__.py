@@ -114,6 +114,7 @@ def _register_blueprints(app: Flask) -> None:
 def _register_template_helpers(app: Flask) -> None:
     from app.services.settings_service import SettingsService
     from app.utils.dates import format_date, format_datetime, humanize
+    from app.utils.humanize import format_number_br
 
     empty_counts = {
         "total": 0, "active": 0, "favorites": 0,
@@ -158,10 +159,7 @@ def _register_template_helpers(app: Flask) -> None:
 
     @app.template_filter("number_br")
     def _number_br(value):
-        try:
-            return f"{int(value):,}".replace(",", ".")
-        except (TypeError, ValueError):
-            return value
+        return format_number_br(value)
 
 
 def _register_generated_assets(app: Flask) -> None:

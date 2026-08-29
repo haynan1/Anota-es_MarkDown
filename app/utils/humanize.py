@@ -28,3 +28,16 @@ def format_bytes(size_bytes: int | float | None) -> str:
             return f"{rounded:.1f}".replace(".", ",") + f" {unit}"
 
     return f"{size:.1f} TB"  # pragma: no cover - unreachable, loop always returns
+
+
+def format_number_br(value: int | float | str | None) -> str:
+    """Thousands separated the Brazilian way: 2000 -> "2.000".
+
+    Lives here rather than only as a Jinja filter because the same number now
+    also reaches the user through a flash message, and a ceiling written
+    "2.000" on screen and "2000" in a warning reads like two different limits.
+    """
+    try:
+        return f"{int(value):,}".replace(",", ".")
+    except (TypeError, ValueError):
+        return str(value)

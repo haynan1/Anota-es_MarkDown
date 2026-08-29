@@ -10,12 +10,13 @@ from app.services.document_service import DocumentService
 from app.services.history_service import HistoryService
 from app.services.markdown_service import render_markdown
 from app.services.search_service import search_index
+from app.utils.params import positive_int
 
 
 @history_bp.get("/<public_uuid>/historico")
 def index(public_uuid: str):
     document = DocumentService.require(public_uuid)
-    page = int(request.args.get("pagina", 1)) if request.args.get("pagina", "1").isdigit() else 1
+    page = positive_int(request.args.get("pagina")) or 1
 
     return render_template(
         "history/index.html",

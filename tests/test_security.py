@@ -92,6 +92,26 @@ class TestCsrf:
         body = client.get("/").data.decode("utf-8")
         assert 'name="csrf-token"' in body
 
+    def test_a_bulk_action_over_every_result_is_rejected_without_a_token(
+        self, csrf_app
+    ):
+        """The widest action in the app is not the one that skips the check.
+
+        "Todos os resultados" is the only request that names no document and
+        still writes to many, so it is the one worth pinning: a forged form
+        must not be able to archive - or bin - a whole library.
+        """
+        from app.services.document_service import DocumentService
+
+        with csrf_app.app_context():
+            DocumentService.create(title="Alvo", content_markdown="x")
+
+        response = csrf_app.test_client().post(
+            "/documentos/acoes-em-massa",
+            data={"acao": "trash", "selecao": "filtro", "filtros": ""},
+        )
+        assert response.status_code == 400
+
     def test_a_valid_token_is_accepted(self, csrf_app):
         client = csrf_app.test_client()
         page = client.get("/").data.decode("utf-8")

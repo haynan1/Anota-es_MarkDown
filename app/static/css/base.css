@@ -697,7 +697,31 @@ a:hover { text-decoration: underline; }
 }
 .doc-row:has(.doc-select:checked) { background: var(--accent-soft); }
 
-.bulk-select-all { margin-bottom: var(--sp-4); }
+/* The row above the list: "everything here" on the left, and - only once that
+   is true - the wider offer beside it. */
+.bulk-select-all {
+  display: flex; align-items: center; flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-4);
+  margin-bottom: var(--sp-4);
+}
+
+/* Widening a full page into the whole result set. Written in the voice of a
+   note rather than as a second control competing with the checkbox: the only
+   thing that should look clickable in it is the sentence that widens it. */
+.bulk-scope { font-size: var(--fs-sm); }
+.bulk-scope > span {
+  display: inline-flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2);
+}
+.bulk-scope[hidden], .bulk-scope > span[hidden] { display: none; }
+.bulk-scope-note { color: var(--text-subtle); }
+
+.btn-link {
+  padding: 0; border: 0; background: none;
+  color: var(--accent); font: inherit; font-weight: 580;
+  text-align: left; cursor: pointer; border-radius: var(--radius-sm);
+}
+.btn-link:hover { text-decoration: underline; }
+
 .checkbox-inline {
   display: inline-flex; align-items: center; gap: var(--sp-2);
   color: var(--text-muted); font-size: var(--fs-sm); font-weight: 560; cursor: pointer;
@@ -720,7 +744,26 @@ a:hover { text-decoration: underline; }
 .bulk-bar[hidden] { display: none; }
 .bulk-bar-count { font-size: var(--fs-sm); color: var(--text-muted); white-space: nowrap; }
 .bulk-bar-count strong { color: var(--text); font-variant-numeric: tabular-nums; }
+/* Says which of the two selections is live, because "348 selecionados" and
+   "348 selecionados · todos os resultados" are answers to different actions. */
+.bulk-bar-scope { color: var(--accent); font-weight: 560; }
+.bulk-bar-scope[hidden] { display: none; }
 .bulk-bar-actions { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+
+/* Destination controls. Choosing where a selection goes and confirming it are
+   one decision, so the select and its button are drawn as one control rather
+   than as two things that happen to sit next to each other. */
+.bulk-assign { display: inline-flex; align-items: stretch; }
+.bulk-assign .select-wrap { display: flex; }
+.bulk-assign .select { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.bulk-assign .btn {
+  margin-left: -1px;
+  border-top-left-radius: 0; border-bottom-left-radius: 0;
+}
+/* Whichever half is being touched draws its whole border over the seam. */
+.bulk-assign .select-wrap:focus-within { z-index: 1; }
+.bulk-assign .btn:hover, .bulk-assign .btn:focus-visible { position: relative; z-index: 1; }
+.bulk-assign .btn:active { transform: none; }
 
 @keyframes bulk-bar-in {
   from { opacity: 0; transform: translate(-50%, var(--sp-4)); }
@@ -1284,10 +1327,10 @@ mark { background: var(--warning-soft); color: inherit; padding: 0 0.15em; borde
   .grid-stats { gap: var(--sp-5); margin-bottom: var(--sp-6); }
   .stat-value { font-size: var(--fs-3xl); }
 
-  /* The bulk bar carries six controls now that a selection can be sent to a
-     group. As a pill it would run off both edges, so at this width it becomes
-     a panel that wraps — and the entry animation, which is built on the
-     centring transform, steps aside with it. */
+  /* The bulk bar carries a destination for categories, one for groups and
+     five more actions beside them. As a pill it would run off both edges, so
+     at this width it becomes a panel that wraps — and the entry animation,
+     which is built on the centring transform, steps aside with it. */
   .bulk-bar {
     left: var(--sp-3); right: var(--sp-3);
     transform: none; animation: none;
@@ -1298,6 +1341,13 @@ mark { background: var(--warning-soft); color: inherit; padding: 0 0.15em; borde
   .bulk-bar-actions { width: 100%; }
   .bulk-bar-actions .btn { flex: 1 1 auto; justify-content: center; }
   .select-wrap-sm { flex: 1 1 100%; max-width: none; }
+
+  /* A joined control takes the whole row and gives the width to the select:
+     the destination is the part that needs reading, the verb beside it is
+     three letters long. */
+  .bulk-assign { width: 100%; }
+  .bulk-assign .select-wrap-sm { flex: 1 1 auto; }
+  .bulk-assign .btn { flex: 0 0 auto; }
 
   /* The group row's arrows and remove button drop below the title instead of
      squeezing it into a sliver. */

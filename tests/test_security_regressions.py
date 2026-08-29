@@ -148,6 +148,38 @@ class TestMalformedHtmlDoesNotCrash:
         assert response.get_json()["ok"] is True
 
 
+class TestRequestIntegersCannotCrashAPage:
+    """A number typed into a URL is hostile input like any other.
+
+    Two ways an ordinary-looking value used to reach ``int()`` and come back a
+    500 instead of a page: a literal beyond 4300 digits, which Python has
+    refused to convert since 3.11, and a superscript such as "²", which
+    ``str.isdigit`` accepts and ``int`` does not. Both are answered in one
+    place now - :mod:`app.utils.params` - and every screen that reads a page
+    number or an identifier goes through it.
+    """
+
+    @pytest.mark.parametrize("value", ["9" * 5000, "²", "١٢٣٤٥٦٧٨٩٠١٢٣", "-1", "0", ""])
+    def test_the_parser_never_raises(self, value):
+        from app.utils.params import positive_int, whole_int
+
+        assert positive_int(value) is None or positive_int(value) > 0
+        assert whole_int(value) is None or whole_int(value) >= 0
+
+    @pytest.mark.parametrize(
+        "path",
+        ["/documentos/?pagina={}", "/lixeira/?pagina={}", "/documentos/?categoria={}"],
+    )
+    @pytest.mark.parametrize("value", ["9" * 5000, "²"])
+    def test_listing_screens_answer_with_a_page(self, client, document, path, value):
+        assert client.get(path.format(value)).status_code == 200
+
+    @pytest.mark.parametrize("value", ["9" * 5000, "²"])
+    def test_the_history_screen_answers_with_a_page(self, client, document, value):
+        response = client.get(f"/documentos/{document.uuid}/historico?pagina={value}")
+        assert response.status_code == 200
+
+
 class TestRedosResistance:
     """PYSEC-2026-2987 / PYSEC-2026-1825 - pathological regex inputs.
 

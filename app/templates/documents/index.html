@@ -17,6 +17,10 @@
                   'favoritos': '1' if query.only_favorites else None,
                   'escopo': query.scope if query.scope != 'active' else None,
                   'visual': view} %}
+{# How many documents "todos os resultados" can actually reach. Read from the
+   server's own ceiling rather than assumed by the script: an offer that
+   promises more than it will deliver is worse than no offer at all. #}
+{% set selectable_total = [pagination.total, max_filter_selection]|min %}
 <div class="page-head">
   <div class="page-head-row">
     <div>
@@ -197,6 +201,41 @@
       <input type="checkbox" data-bulk-select-all>
       Selecionar todos nesta página
     </label>
+
+    {% if pagination.total > pagination.items|length %}
+      {# The offer that turns a page of checkboxes into the whole result set.
+         It appears only once the page itself is fully ticked - before that it
+         answers a question nobody asked, and after it is the obvious next
+         one. #}
+      <span class="bulk-scope" data-bulk-scope hidden>
+        {# No offer state the checkbox beside it has already said everything
+           there is to say about what is selected, so this is the sentence that
+           widens it and nothing else. #}
+        <span data-bulk-scope-page>
+          <button type="button" class="btn-link" data-bulk-select-everything>
+            {% if pagination.total > selectable_total %}
+              Selecionar os {{ selectable_total|number_br }} primeiros de
+              {{ pagination.total|number_br }} resultados
+            {% else %}
+              Selecionar todos os {{ pagination.total|number_br }} resultados
+            {% endif %}
+          </button>
+        </span>
+        <span data-bulk-scope-all hidden>
+          <span class="bulk-scope-note">
+            {% if pagination.total > selectable_total %}
+              Os {{ selectable_total|number_br }} primeiros de
+              {{ pagination.total|number_br }} resultados estão selecionados.
+            {% else %}
+              Todos os {{ pagination.total|number_br }} resultados estão selecionados.
+            {% endif %}
+          </span>
+          <button type="button" class="btn-link" data-bulk-select-page>
+            Voltar a esta página
+          </button>
+        </span>
+      </span>
+    {% endif %}
   </div>
 
   {% if view == 'cards' %}
@@ -239,31 +278,63 @@
 {% if pagination.items %}
   {% set here = request.full_path if request.query_string else request.path %}
   <form class="bulk-bar" method="post" action="{{ url_for('documents.bulk_action') }}"
-        aria-label="Ações para os documentos selecionados" data-bulk-bar hidden>
+        aria-label="Ações para os documentos selecionados"
+        data-bulk-bar data-bulk-total="{{ selectable_total }}" hidden>
     {{ confirm_form.hidden_tag() }}
     <input type="hidden" name="next" value="{{ here }}">
+    {# The filters exactly as this page was rendered with them. When the
+       selection is "todos os resultados" the script sends this instead of a
+       thousand identifiers, and the server re-runs the same query. #}
+    <input type="hidden" name="filtros" value="{{ filters_query }}">
 
     <div class="bulk-bar-count" aria-live="polite">
       <strong data-bulk-count>0</strong>
       selecionado<span data-bulk-plural hidden>s</span>
+      <span class="bulk-bar-scope" data-bulk-bar-scope hidden>· todos os resultados</span>
     </div>
 
     <div class="bulk-bar-actions">
-      {% if groups %}
-        {# One control, two parts: choosing the group and confirming are the
-           same decision, so they sit together instead of behind a dialog. #}
-        <label class="visually-hidden" for="bulk-group">Grupo de destino</label>
-        <div class="select-wrap select-wrap-sm">
-          <select class="select select-sm" id="bulk-group" name="grupo">
-            {% for group in groups %}
-              <option value="{{ group.uuid }}">{{ group.name }}</option>
-            {% endfor %}
-          </select>
-          {{ icon('chevron-down', 'icon icon-sm') }}
+      {% if categories %}
+        {# One control, two parts: choosing the destination and confirming are
+           the same decision, so they sit together instead of behind a dialog.
+           "Sem categoria" travels as the sentinel the filter above the listing
+           already uses - the control that reads it and the control that writes
+           it must not spell it differently. #}
+        <div class="bulk-assign">
+          <label class="visually-hidden" for="bulk-category">Categoria de destino</label>
+          <div class="select-wrap select-wrap-sm">
+            <select class="select select-sm" id="bulk-category" name="categoria">
+              <option value="">Categoria…</option>
+              <option value="{{ without }}">Sem categoria</option>
+              {% for category in categories %}
+                <option value="{{ category.id }}">{{ category.name }}</option>
+              {% endfor %}
+            </select>
+            {{ icon('chevron-down', 'icon icon-sm') }}
+          </div>
+          <button type="submit" name="acao" value="category" class="btn btn-sm"
+                  data-bulk-requires="bulk-category">
+            {{ icon('folder', 'icon icon-sm') }} Mover
+          </button>
         </div>
-        <button type="submit" name="acao" value="group" class="btn btn-sm">
-          {{ icon('layers', 'icon icon-sm') }} Adicionar ao grupo
-        </button>
+      {% endif %}
+      {% if groups %}
+        <div class="bulk-assign">
+          <label class="visually-hidden" for="bulk-group">Grupo de destino</label>
+          <div class="select-wrap select-wrap-sm">
+            <select class="select select-sm" id="bulk-group" name="grupo">
+              <option value="">Grupo…</option>
+              {% for group in groups %}
+                <option value="{{ group.uuid }}">{{ group.name }}</option>
+              {% endfor %}
+            </select>
+            {{ icon('chevron-down', 'icon icon-sm') }}
+          </div>
+          <button type="submit" name="acao" value="group" class="btn btn-sm"
+                  data-bulk-requires="bulk-group">
+            {{ icon('layers', 'icon icon-sm') }} Agrupar
+          </button>
+        </div>
       {% endif %}
       {# formaction sends this one submit to the export blueprint instead of
          the bulk-action route; the script mirrors that when it submits the

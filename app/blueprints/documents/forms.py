@@ -26,6 +26,8 @@ from wtforms.validators import (
     ValidationError,
 )
 
+from app.utils.params import positive_int
+
 CATEGORY_CHOICE_EMPTY = ("", "Sem categoria")
 
 
@@ -76,8 +78,7 @@ class DocumentMetadataForm(FlaskForm):
         return [part.strip() for part in raw.split(",") if part.strip()][:20]
 
     def selected_category_id(self) -> int | None:
-        raw = (self.category_id.data or "").strip()
-        return int(raw) if raw.isdigit() else None
+        return positive_int(self.category_id.data)
 
     def selected_group_uuids(self) -> list[str]:
         return [value for value in (self.groups.data or []) if value][:50]
@@ -141,8 +142,7 @@ class ImportForm(FlaskForm):
         return [item for item in data if isinstance(item, FileStorage) and item.filename]
 
     def selected_category_id(self) -> int | None:
-        raw = (self.category_id.data or "").strip()
-        return int(raw) if raw.isdigit() else None
+        return positive_int(self.category_id.data)
 
 
 class ConfirmForm(FlaskForm):

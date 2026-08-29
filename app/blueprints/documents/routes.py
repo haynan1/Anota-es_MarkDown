@@ -21,74 +21,31 @@ from app.blueprints.documents.forms import (
 )
 from app.extensions import db
 from app.repositories.document_repository import (
-    SCOPE_ACTIVE,
-    SCOPE_ALL,
-    SCOPE_ARCHIVED,
     SEARCH_SORT_OPTIONS,
     SORT_OPTIONS,
-    SORT_RELEVANCE,
     WITHOUT,
-    DocumentQuery,
     DocumentRepository,
 )
 from app.repositories.group_repository import GroupRepository
 from app.repositories.taxonomy_repository import CategoryRepository, TagRepository
+from app.services import selection_service
 from app.services.bulk_import_service import import_files
 from app.services.document_service import MAX_BULK_SELECTION, DocumentService
 from app.services.exceptions import ServiceError
 from app.services.group_service import GroupService
 from app.services.import_service import ImportPreview, build_preview
-from app.services.listing_service import list_documents
+from app.services.listing_service import build_query, list_documents
 from app.services.media_service import enforce_content_length
+from app.services.selection_service import MAX_FILTER_SELECTION, Selection
+from app.utils.humanize import format_number_br
+from app.utils.params import positive_int
 
-VALID_SCOPES = {SCOPE_ACTIVE, SCOPE_ARCHIVED, SCOPE_ALL}
 VALID_VIEWS = {"cards", "list"}
-
-
-def _build_query() -> DocumentQuery:
-    args = request.args
-    scope = args.get("escopo", SCOPE_ACTIVE)
-    search = (args.get("q") or "").strip()[:200]
-
-    # The toolbar sends the tags already chosen plus the one just picked, so
-    # the same slug can arrive twice - deduplicated before the ceiling, or a
-    # repeat would spend one of the five slots on a filter already applied.
-    #
-    # "Sem etiqueta" is a statement about the whole set, so it cannot share the
-    # filter with a tag: asking for the documents that carry no tag *and* carry
-    # this one is a question with no answer.
-    tag_slugs = tuple(dict.fromkeys(tag for tag in args.getlist("etiqueta") if tag))[:5]
-    if WITHOUT in tag_slugs:
-        tag_slugs = (WITHOUT,)
-
-    # One control, so one parameter: "sem categoria" is a value of `categoria`,
-    # not a flag beside it. Anything that is neither the sentinel nor digits -
-    # a hand-edited URL, a stale bookmark - falls through to "all categories".
-    categoria = (args.get("categoria") or "").strip()
-
-    # A search with no ordering of its own is ranked, not dated: the answer to
-    # "where is that document" is the best match, never the most recent one.
-    sort = args.get("ordem") or ""
-    if sort not in (SEARCH_SORT_OPTIONS if search else SORT_OPTIONS):
-        sort = SORT_RELEVANCE if search else "updated_desc"
-
-    return DocumentQuery(
-        search=search,
-        category_id=int(categoria) if categoria.isdigit() else None,
-        without_category=categoria == WITHOUT,
-        group_uuid=(args.get("grupo") or "").strip()[:36],
-        tag_slugs=tag_slugs,
-        only_favorites=args.get("favoritos") == "1",
-        scope=scope if scope in VALID_SCOPES else SCOPE_ACTIVE,
-        sort=sort,
-        page=int(args["pagina"]) if (args.get("pagina") or "").isdigit() else 1,
-        per_page=current_app.config["DOCUMENTS_PER_PAGE"],
-    )
 
 
 @documents_bp.route("/")
 def index():
-    query = _build_query()
+    query = build_query(request.args, per_page=current_app.config["DOCUMENTS_PER_PAGE"])
     result = list_documents(query)
 
     view = request.args.get("visual") or session.get("documents_view") or "cards"
@@ -119,6 +76,11 @@ def index():
         tag_usage=TagRepository.usage(limit=100),
         orphans=orphans,
         without=WITHOUT,
+        # The listing's own query string, handed to the bulk form so that
+        # "todos os resultados" can be answered by re-running this very filter
+        # instead of by shipping a thousand identifiers back and forth.
+        filters_query=request.query_string.decode("utf-8", "ignore"),
+        max_filter_selection=MAX_FILTER_SELECTION,
         sort_options=SEARCH_SORT_OPTIONS if query.is_searching else SORT_OPTIONS,
         rename_form=RenameForm(),
         confirm_form=ConfirmForm(),
@@ -249,10 +211,13 @@ def move_to_trash(public_uuid: str):
     return redirect(url_for("documents.index"))
 
 
-# Adding to a group is the one bulk action that needs a second value (which
-# group), so it is handled here rather than inside DocumentService.bulk_apply -
-# that method is deliberately about state flags on documents alone.
+# Two bulk actions need a second value alongside the selection - which group,
+# which category - so they are handled here rather than inside
+# DocumentService.bulk_apply_ids, which is deliberately about state flags on
+# documents alone.
 ACTION_ADD_TO_GROUP = "group"
+ACTION_SET_CATEGORY = "category"
+ACTIONS_WITH_A_TARGET = {ACTION_ADD_TO_GROUP, ACTION_SET_CATEGORY}
 
 # Success line per action, as (singular, plural). The count is prefixed only
 # to the plural, so a one-document action reads "Documento arquivado." rather
@@ -272,36 +237,41 @@ def bulk_action():
 
     The listing checkboxes are plain HTML with no <form> of their own (nesting
     them inside the per-document action forms would be invalid markup), so the
-    client gathers the selected UUIDs into this form on submit. Everything is
-    still validated here: the action name, the selection size and, for trash,
-    the per-document lock.
+    client gathers the selected UUIDs into this form on submit. A selection can
+    also be the *whole* filtered set, in which case the client sends the
+    filters instead of the identifiers and the server resolves the set itself -
+    see :mod:`app.services.selection_service`.
+
+    Everything is still validated here: the action name, the size of the
+    selection and, for trash, the per-document lock.
     """
     if not ConfirmForm().validate_on_submit():
         flash("Sessão expirada. Tente novamente.", "error")
         return redirect(_back_to(url_for("documents.index")))
 
     action = request.form.get("acao", "")
-    if action not in DocumentService.BULK_ACTIONS and action != ACTION_ADD_TO_GROUP:
+    if action not in DocumentService.BULK_ACTIONS and action not in ACTIONS_WITH_A_TARGET:
         flash("Ação inválida.", "error")
         return redirect(_back_to(url_for("documents.index")))
 
-    uuids = [uuid for uuid in request.form.getlist("uuids") if uuid][:MAX_BULK_SELECTION]
-    if not uuids:
-        flash("Selecione ao menos um documento.", "error")
-        return redirect(_back_to(url_for("documents.index")))
-
-    if action == ACTION_ADD_TO_GROUP:
-        return _bulk_add_to_group(uuids)
-
     # Lock and unlock reach documents in any state; the other actions operate
     # only on live ones, matching what the listing can show.
-    include_deleted = action in {"lock", "unlock"}
-    documents = DocumentRepository.get_many_by_uuids(uuids, include_deleted=include_deleted)
-    if not documents:
-        flash("Nenhum documento encontrado para a seleção.", "error")
+    selection = selection_service.resolve(
+        request.form,
+        include_deleted=action in {"lock", "unlock"},
+        limit=MAX_BULK_SELECTION,
+    )
+    if not selection:
+        flash("Selecione ao menos um documento.", "error")
         return redirect(_back_to(url_for("documents.index")))
+    _warn_if_truncated(selection)
 
-    affected, skipped = DocumentService.bulk_apply(documents, action)
+    if action == ACTION_ADD_TO_GROUP:
+        return _bulk_add_to_group(selection)
+    if action == ACTION_SET_CATEGORY:
+        return _bulk_set_category(selection)
+
+    affected, skipped = DocumentService.bulk_apply_ids(selection.ids, action)
 
     if affected:
         singular, plural = _BULK_MESSAGES[action]
@@ -324,7 +294,22 @@ def bulk_action():
     return redirect(_back_to(url_for("documents.index")))
 
 
-def _bulk_add_to_group(uuids: list[str]):
+def _warn_if_truncated(selection: Selection) -> None:
+    """Say so when "todos os resultados" was more than one action may carry.
+
+    Silence here would be the only failure of this feature a user could not
+    detect on their own: the page reports success, the listing still shows
+    documents that were not touched, and nothing explains why.
+    """
+    if selection.truncated:
+        flash(
+            f"A seleção foi limitada aos {format_number_br(selection.limit)} "
+            "primeiros resultados. Refine os filtros para alcançar o restante.",
+            "warning",
+        )
+
+
+def _bulk_add_to_group(selection: Selection):
     """Put a whole selection into one group."""
     group_uuid = (request.form.get("grupo") or "").strip()
     if not group_uuid:
@@ -333,13 +318,7 @@ def _bulk_add_to_group(uuids: list[str]):
 
     try:
         group = GroupService.require(group_uuid)
-    except ServiceError as error:
-        flash(error.message, "error")
-        return redirect(_back_to(url_for("documents.index")))
-
-    documents = DocumentRepository.get_many_by_uuids(uuids)
-    try:
-        added = GroupService.add_documents(group, documents)
+        added = GroupService.add_document_ids(group, selection.ids)
     except ServiceError as error:
         flash(error.message, "error")
         return redirect(_back_to(url_for("documents.index")))
@@ -350,6 +329,47 @@ def _bulk_add_to_group(uuids: list[str]):
         flash(f"{added} documentos adicionados ao grupo “{group.name}”.", "success")
     else:
         flash(f"Os documentos selecionados já estavam em “{group.name}”.", "warning")
+
+    return redirect(_back_to(url_for("documents.index")))
+
+
+def _bulk_set_category(selection: Selection):
+    """Move a whole selection into one category, or out of every category.
+
+    "Sem categoria" is a destination like any other, and it travels as the same
+    sentinel the filter above the listing uses: the control that reads "sem
+    categoria" and the one that writes it must not spell it differently.
+    """
+    raw = (request.form.get("categoria") or "").strip()
+    if not raw:
+        flash("Escolha uma categoria para mover os documentos.", "error")
+        return redirect(_back_to(url_for("documents.index")))
+
+    category = None
+    if raw != WITHOUT:
+        category_id = positive_int(raw)
+        category = CategoryRepository.get(category_id) if category_id else None
+        if category is None:
+            flash("Categoria não encontrada.", "error")
+            return redirect(_back_to(url_for("documents.index")))
+
+    changed = DocumentService.bulk_set_category(
+        selection.ids, category.id if category else None
+    )
+
+    if category is None:
+        if changed == 1:
+            flash("Categoria removida do documento.", "success")
+        elif changed:
+            flash(f"Categoria removida de {changed} documentos.", "success")
+        else:
+            flash("Os documentos selecionados já estavam sem categoria.", "warning")
+    elif changed == 1:
+        flash(f"Documento movido para “{category.name}”.", "success")
+    elif changed:
+        flash(f"{changed} documentos movidos para “{category.name}”.", "success")
+    else:
+        flash(f"Os documentos selecionados já estavam em “{category.name}”.", "warning")
 
     return redirect(_back_to(url_for("documents.index")))
 

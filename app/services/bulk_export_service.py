@@ -228,13 +228,22 @@ def export_all() -> MarkdownArchive:
     return build_archive(DocumentRepository.iter_for_export(limit=MAX_DOCUMENTS))
 
 
-def export_selection(uuids: Sequence[str]) -> MarkdownArchive:
-    """The documents the listing had selected, in the archive's own order."""
-    wanted = [value for value in uuids if value][:MAX_SELECTION]
+def export_selection(
+    document_ids: Sequence[int], limit: int = MAX_SELECTION
+) -> MarkdownArchive:
+    """The documents the listing had selected, in the archive's own order.
+
+    Primary keys, because the selection is resolved once - by
+    :mod:`app.services.selection_service` - and every bulk action reads the
+    same resolved set. ``limit`` travels with it: ticking boxes and asking for
+    "every result" are bounded differently, and the archive must not apply the
+    smaller of the two to a selection built the other way.
+    """
+    wanted = list(dict.fromkeys(document_ids))[:limit]
     if not wanted:
-        return build_archive([], label="selecao", limit=MAX_SELECTION)
+        return build_archive([], label="selecao", limit=limit)
     return build_archive(
-        DocumentRepository.iter_for_export(limit=MAX_SELECTION, uuids=wanted),
+        DocumentRepository.iter_for_export(limit=limit, ids=wanted),
         label="selecao",
-        limit=MAX_SELECTION,
+        limit=limit,
     )

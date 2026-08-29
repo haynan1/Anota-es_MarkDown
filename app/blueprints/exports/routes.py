@@ -7,6 +7,7 @@ from flask import Response, flash, redirect, request, send_file, url_for
 from app.blueprints.documents.forms import ConfirmForm
 from app.blueprints.exports import exports_bp
 from app.models import PAGE_SIZES, PDF_THEMES
+from app.services import selection_service
 from app.services.bulk_export_service import (
     MAX_SELECTION,
     MarkdownArchive,
@@ -21,6 +22,7 @@ from app.services.pdf_service import (
     render_document_pdf,
 )
 from app.utils.files import safe_filename
+from app.utils.humanize import format_number_br
 
 
 @exports_bp.get("/<public_uuid>/markdown")
@@ -74,18 +76,33 @@ def download_all_markdown():
 
 @exports_bp.post("/markdown/selecao")
 def download_selected_markdown():
-    """The documents ticked on the listing, as one ZIP of ``.md`` files."""
+    """The documents the listing selected, as one ZIP of ``.md`` files.
+
+    Reads the selection through the same resolver the other bulk actions use,
+    so "todos os N resultados" packs the same set it would have archived. The
+    two modes keep their own ceilings: a request that carries its identifiers
+    is bounded by what a request may carry, while a request that carries only
+    the filters is bounded by how much one action should touch.
+    """
     if not ConfirmForm().validate_on_submit():
         flash("Sessão expirada. Tente novamente.", "error")
         return redirect(url_for("documents.index"))
 
-    uuids = [value for value in request.form.getlist("uuids") if value][:MAX_SELECTION]
-    if not uuids:
+    selection = selection_service.resolve(request.form, limit=MAX_SELECTION)
+    if not selection:
         flash("Selecione ao menos um documento.", "error")
         return redirect(url_for("documents.index"))
 
+    if selection.truncated:
+        flash(
+            f"O pacote traz os {format_number_br(selection.limit)} primeiros "
+            "resultados. Refine os filtros para baixar o restante.",
+            "warning",
+        )
+
     return _send_archive(
-        export_selection(uuids), "Nenhum documento encontrado para a seleção."
+        export_selection(selection.ids, limit=selection.limit),
+        "Nenhum documento encontrado para a seleção.",
     )
 
 
