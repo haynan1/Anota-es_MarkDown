@@ -123,13 +123,17 @@ export function createRenderer({ store, page, nodesHost, linksHost, labelsHost, 
   let selection = new Set();
   let draftLink = null;
 
-  /* Which faces of a node a connection uses, as one attribute on the board.
-     CSS reads it to put the connection ports on the right two sides: dragging
-     a link out of the left edge of a node whose children hang underneath it
-     is an invitation to draw the map the wrong way round. */
-  function orientation() {
-    if (store.layout === 'radial') return 'radial';
-    return isVertical(store.layout) ? 'vertical' : 'horizontal';
+  /* Which faces a connection uses, as one attribute - written on each node
+     rather than on the board, because each branch can be arranged its own
+     way. CSS reads it to put the connection ports on the right two sides:
+     dragging a link out of the left edge of a node whose children hang
+     underneath it is an invitation to draw the map the wrong way round.
+
+     A node's own arrangement, not its parent's: what this attribute governs
+     is where *its* children go. */
+  function orientation(arrangement) {
+    if (arrangement === 'radial') return 'radial';
+    return isVertical(arrangement) ? 'vertical' : 'horizontal';
   }
 
   /* -- Nodes -- */
@@ -202,6 +206,9 @@ export function createRenderer({ store, page, nodesHost, linksHost, labelsHost, 
 
     element.dataset.kind = node.kind;
     element.dataset.shape = node.shape;
+    element.dataset.orientation = orientation(store.arrangementOf(node));
+    if (node.layout) element.dataset.ownLayout = 'true';
+    else delete element.dataset.ownLayout;
     element.dataset.root = node.parent ? 'false' : 'true';
     element.dataset.selected = selection.has(node.uuid) ? 'true' : 'false';
     element.dataset.collapsed = node.collapsed ? 'true' : 'false';
@@ -300,8 +307,9 @@ export function createRenderer({ store, page, nodesHost, linksHost, labelsHost, 
 
   function renderLinks() {
     const wanted = new Set();
-    const routing = routingFor(store.layout);
-    if (page) page.dataset.orientation = orientation();
+    // Still on the board, for the arrangement a map has as a whole - the
+    // minimap and anything else that asks the board rather than a node.
+    if (page) page.dataset.orientation = orientation(store.layout);
 
     store.nodes.forEach((node) => {
       if (!node.parent) return;
@@ -312,7 +320,9 @@ export function createRenderer({ store, page, nodesHost, linksHost, labelsHost, 
       const key = `b:${node.uuid}`;
       wanted.add(key);
       const entry = linkElements.get(key) || buildLink(key, 'branch');
-      const path = branchPath(routing, parent, node);
+      const path = branchPath(
+        routingFor(store.arrangementOf(parent)), parent, node
+      );
       entry.path.setAttribute('d', path);
       entry.hit.setAttribute('d', path);
       entry.group.dataset.branch = node.uuid;

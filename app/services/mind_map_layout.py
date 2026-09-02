@@ -108,6 +108,10 @@ class LayoutNode:
     width: float
     height: float
     collapsed: bool = False
+    # The arrangement this node's own branch uses, or ``None`` to use whatever
+    # it hangs from. This is what lets one board hold every kind of map at
+    # once - see :func:`effective_layouts`.
+    layout: str | None = None
 
 
 @dataclass(slots=True)
@@ -170,10 +174,16 @@ def compute_layout(
 ) -> dict[str, tuple[float, float]]:
     """Return ``{key: (x, y)}`` - the top-left corner of every node.
 
-    ``direction`` is one of ``right`` (branches grow to the right, the classic
-    mind map), ``down`` (the same map stood on end), ``tree`` (a top-down org
-    chart, drawn with square shoulders) or ``radial`` (branches fan out around
-    the root).
+    ``direction`` is the map's own arrangement: ``right`` (branches grow to the
+    right, the classic mind map), ``down`` (the same map stood on end),
+    ``tree`` (a top-down org chart, drawn with square shoulders) or ``radial``
+    (branches fan out around the root).
+
+    A node may name its own, and then that branch is arranged that way while
+    everything above it stays as it was - an organogram hanging off a radial
+    fan hanging off a horizontal spine, all on one board. See :func:`_compose`
+    for how the pieces are fitted together, and :func:`effective_layouts` for
+    what a node ends up arranged by when it names nothing.
 
     ``down`` and ``tree`` share this arithmetic and differ in how the
     connection between a parent and a child is drawn - which is not a detail
@@ -182,9 +192,237 @@ def compute_layout(
     """
     if not nodes:
         return {}
-    if direction == "radial":
-        return _radial(nodes, origin)
-    return _orthogonal(nodes, direction, origin)
+
+    by_key = {node.key: node for node in nodes}
+    tree = build_tree(nodes)
+    return _compose(tree, by_key, direction, origin)
+
+
+def effective_layouts(
+    tree: _Tree, by_key: dict[str, LayoutNode], direction: str
+) -> dict[str, str]:
+    """What each node is actually arranged by, once inheritance is applied.
+
+    A node that names nothing is arranged by whatever its parent is arranged
+    by, and a root that names nothing is arranged by the map. That is what
+    makes "arrumar como árvore" still mean the whole map: only the branches
+    that were given an opinion of their own keep it.
+
+    Walked breadth-first and iteratively over the whole tree, folded branches
+    included. A collapsed branch is not laid out, but it is still exported,
+    still read by the outline, and still there the moment it is opened.
+    """
+    resolved: dict[str, str] = {}
+    queue: list[tuple[str, str]] = [(root, direction) for root in tree.roots]
+    while queue:
+        key, inherited = queue.pop()
+        if key in resolved:
+            continue
+        node = by_key[key]
+        own = node.layout if node.layout in BRANCH_ROUTING else None
+        mine = own or inherited
+        resolved[key] = mine
+        queue.extend((child, mine) for child in tree.children.get(key, ()))
+
+    for key in by_key:
+        resolved.setdefault(key, direction)
+    return resolved
+
+
+def _parents(tree: _Tree) -> dict[str, str]:
+    """Child to parent, taken from the tree rather than from the nodes.
+
+    ``build_tree`` promotes a node with a missing or circular parent to a root,
+    and the composition has to agree with it - a node the layout treats as a
+    root must not still be looking upwards for an arrangement to inherit.
+    """
+    parent_of: dict[str, str] = {}
+    for parent, children in tree.children.items():
+        for child in children:
+            parent_of[child] = parent
+    return parent_of
+
+
+def _compose(
+    tree: _Tree,
+    by_key: dict[str, LayoutNode],
+    direction: str,
+    origin: tuple[float, float],
+) -> dict[str, tuple[float, float]]:
+    """Lay out each differently-arranged branch on its own, then fit them.
+
+    A map with one arrangement is one region and this costs nothing. A map
+    that mixes them is a region per branch that named its own, and the
+    composition is the obvious one: each region is laid out in isolation,
+    deepest first, and then handed to the region above it as a single rigid
+    block whose size is its bounding box. The parent's own algorithm then
+    places that block exactly as it would place a node - so a radial fan
+    hanging off a tree gets the slot a large topic would have got, and the
+    tidy-tree promise that nothing overlaps survives the mixing.
+
+    The block is placed by its bounding box, and the branch inside it is then
+    shifted so its own arrangement is preserved intact. The node the block
+    belongs to therefore does *not* land on the block's corner - it lands
+    wherever its own arrangement put it, which for a radial branch is the
+    middle. That is the point: the connection from above arrives at the node,
+    and the fan opens around it.
+    """
+    parent_of = _parents(tree)
+    effective = effective_layouts(tree, by_key, direction)
+
+    # A node opens a region when it names an arrangement that differs from the
+    # one it would have inherited. Naming the one it already had changes
+    # nothing on screen, so it must not fragment the layout either - a branch
+    # split off for no reason is a branch that stops sharing its siblings'
+    # column.
+    def opens_region(key: str) -> bool:
+        own = by_key[key].layout
+        if own is None or own not in BRANCH_ROUTING:
+            return False
+        parent = parent_of.get(key)
+        inherited = effective[parent] if parent is not None else direction
+        return own != inherited
+
+    # ``None`` is the region that holds the map itself: every root that named
+    # nothing, and everything hanging off them that named nothing either.
+    walked = _breadth_first(tree)
+    region_of: dict[str, str | None] = {}
+    for key in walked:
+        parent = parent_of.get(key)
+        if opens_region(key):
+            region_of[key] = key
+        elif parent is None:
+            region_of[key] = None
+        else:
+            region_of[key] = region_of[parent]
+
+    members: dict[str | None, list[str]] = {None: []}
+    for key in walked:
+        members.setdefault(region_of[key], []).append(key)
+
+    depth = _tree_depth(tree)
+    local: dict[str | None, dict[str, tuple[float, float]]] = {}
+    span: dict[str, tuple[float, float]] = {}
+    anchor: dict[str, tuple[float, float]] = {}
+
+    # Deepest first, so a region is always fitted after the blocks it contains
+    # have a size to be fitted by.
+    for region in sorted(
+        members, key=lambda key: -1 if key is None else depth[key], reverse=True
+    ):
+        # Walked in the tree's own order rather than assembled in two passes,
+        # because the order is load-bearing: every arrangement here places
+        # siblings in the order the writer put them, and a branch that carries
+        # its own arrangement is still one of those siblings. Collecting the
+        # members first and appending the blocks afterwards sent every such
+        # branch to the end of its row.
+        sub: list[LayoutNode] = []
+        sizes: dict[str, tuple[float, float]] = {}
+        entries = tree.roots if region is None else [region]
+        stack: list[tuple[str, str | None]] = [(key, None) for key in reversed(entries)]
+        while stack:
+            key, inside = stack.pop()
+            if region_of[key] != region:
+                # A block: whatever is inside it is its own business, and this
+                # region treats it as one opaque topic the size of its box.
+                width, height = span[key]
+                sub.append(LayoutNode(key, inside, width, height, collapsed=True))
+                sizes[key] = (width, height)
+                continue
+            node = by_key[key]
+            sub.append(LayoutNode(key, inside, node.width, node.height, node.collapsed))
+            sizes[key] = (node.width, node.height)
+            if node.collapsed:
+                continue
+            stack.extend(
+                (child, key) for child in reversed(tree.children.get(key, ()))
+            )
+
+        arrangement = direction if region is None else effective[region]
+        placed = (
+            _radial(sub, (0.0, 0.0))
+            if arrangement == "radial"
+            else _orthogonal(sub, arrangement, (0.0, 0.0))
+        )
+        local[region] = placed
+
+        if region is not None:
+            box = _raw_bounds(placed, sizes)
+            anchor[region] = (box[0], box[1])
+            span[region] = (box[2] - box[0], box[3] - box[1])
+
+    positions: dict[str, tuple[float, float]] = {}
+
+    def settle(region: str | None, dx: float, dy: float) -> None:
+        inside = set(members[region])
+        for key, (x, y) in local[region].items():
+            if key in inside:
+                positions[key] = (x + dx, y + dy)
+            else:
+                # A block: shift its whole region so that its bounding box
+                # lands where this region put it.
+                block_x, block_y = anchor[key]
+                settle(key, x + dx - block_x, y + dy - block_y)
+
+    settle(None, origin[0], origin[1])
+    return positions
+
+
+def _breadth_first(tree: _Tree) -> list[str]:
+    """Every node, parents before children.
+
+    Iterative, because a deep map is not a reason to hit the recursion limit;
+    and read with a moving index rather than ``pop(0)``, because popping the
+    front of a list shifts the whole list and turns one walk of a map at its
+    ceiling into a million pointless moves.
+    """
+    order: list[str] = list(tree.roots)
+    seen: set[str] = set(tree.roots)
+    cursor = 0
+    while cursor < len(order):
+        key = order[cursor]
+        cursor += 1
+        for child in tree.children.get(key, ()):
+            if child in seen:
+                continue
+            seen.add(child)
+            order.append(child)
+    return order
+
+
+def _tree_depth(tree: _Tree) -> dict[str, int]:
+    """How deep each node sits, folded branches included."""
+    depth: dict[str, int] = {}
+    queue: list[tuple[str, int]] = [(root, 0) for root in tree.roots]
+    while queue:
+        key, level = queue.pop()
+        if key in depth:
+            continue
+        depth[key] = level
+        queue.extend((child, level + 1) for child in tree.children.get(key, ()))
+    return depth
+
+
+def _raw_bounds(
+    placed: dict[str, tuple[float, float]], sizes: dict[str, tuple[float, float]]
+) -> tuple[float, float, float, float]:
+    """The rectangle a region occupies, with no padding.
+
+    Unpadded on purpose, unlike :func:`bounding_box`: this one is fitted
+    against other branches by an algorithm that adds its own gaps, and padding
+    here would be added twice.
+    """
+    min_x = min_y = float("inf")
+    max_x = max_y = float("-inf")
+    for key, (x, y) in placed.items():
+        width, height = sizes.get(key, (0.0, 0.0))
+        min_x = min(min_x, x)
+        min_y = min(min_y, y)
+        max_x = max(max_x, x + width)
+        max_y = max(max_y, y + height)
+    if min_x == float("inf"):
+        return (0.0, 0.0, 0.0, 0.0)
+    return (min_x, min_y, max_x, max_y)
 
 
 # ── Orthogonal (right / down / tree) ────────────────────────────────────────

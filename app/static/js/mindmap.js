@@ -222,7 +222,26 @@ function boot() {
     $$('[data-layout-picker] input', dialog).forEach((input) => {
       input.checked = input.value === store.layout;
     });
+    paintMixedNote(dialog);
     openDialog(dialog);
+  }
+
+  /* A branch that was given its own arrangement does not follow the map, and
+     "arrumar" moving most of the board while two branches stay put is the
+     kind of thing that reads as a bug. So it is said, with the way out next
+     to it. */
+  function paintMixedNote(dialog) {
+    const note = $('[data-mixed-note]', dialog);
+    if (!note) return;
+    const own = actions.ownArrangements();
+    note.hidden = own === 0;
+    const count = $('[data-mixed-count]', note);
+    if (count) {
+      count.textContent =
+        own === 1
+          ? '1 ramo tem disposição própria e não vai seguir esta escolha.'
+          : `${own} ramos têm disposição própria e não vão seguir esta escolha.`;
+    }
   }
 
   function chosenLayout() {
@@ -350,6 +369,17 @@ function boot() {
       case 'mm-organize':
         confirmOrganize();
         break;
+      case 'mm-clear-branch-layouts': {
+        const cleared = actions.clearBranchLayouts();
+        notify(
+          cleared === 1
+            ? '1 ramo voltou a seguir o mapa.'
+            : `${cleared} ramos voltaram a seguir o mapa.`,
+          'info'
+        );
+        paintMixedNote($('#map-organize'));
+        break;
+      }
       case 'mm-organize-confirm': {
         // Read before closing: a closed dialog's inputs are still in the DOM,
         // but reading first is what keeps that from being something anyone

@@ -29,6 +29,16 @@ function harness({ nodes = [], layout = 'right' } = {}) {
     nodes: new Map(nodes.map((node) => [node.uuid, node])),
     edges: new Map(),
     layout,
+    /* The same rule the real store applies: a node that names nothing takes
+       what is above it, and a root that names nothing takes the map's. */
+    arrangementOf: (node) => {
+      let current = node;
+      while (current) {
+        if (current.layout) return current.layout;
+        current = current.parent ? store.nodes.get(current.parent) : null;
+      }
+      return layout;
+    },
     roots: () => [...store.nodes.values()].filter((node) => !node.parent),
     branch: (uuid) => [uuid],
     children: (uuid) =>
@@ -180,6 +190,101 @@ for (const layout of ['down', 'tree']) {
   });
   check('árvore: um ramo fechado não é atravessado',
     actions.neighbour('raiz', 'down') === null);
+}
+
+/* ── Um mapa com todos os tipos ao mesmo tempo ──────────────────────────── */
+
+/* The bug this pins: with the arrangement read off the *map*, a tree branch
+   hanging inside a horizontal map grew its subtopics to the right and its
+   arrow keys reached them with Right - both describing a map the person was
+   not looking at. What decides is the branch, not the board. */
+
+{
+  const nodes = [
+    { uuid: 'raiz', parent: null, position: 0, x: 0, y: 0, width: 180, height: 48 },
+    { uuid: 'arv', parent: 'raiz', position: 0, x: 300, y: 0, width: 180, height: 48,
+      layout: 'tree' },
+    { uuid: 'com', parent: 'raiz', position: 1, x: 300, y: 200, width: 180, height: 48 },
+  ];
+  const { actions, store } = harness({ nodes, layout: 'right' });
+
+  const underTree = actions.addChild('arv');
+  check('dentro do ramo árvore, o subtópico nasce abaixo',
+    underTree.y > 48, `y = ${underTree.y}`);
+  check('e centrado sob o pai',
+    underTree.x + underTree.width / 2 === 300 + 180 / 2, `x = ${underTree.x}`);
+
+  store.nodes.set(underTree.uuid, underTree);
+  const besideTree = actions.addChild('arv');
+  check('e o irmão dentro da árvore vai para o lado',
+    besideTree.x >= underTree.x + underTree.width && besideTree.y === underTree.y);
+
+  const besidePlain = actions.addChild('com');
+  check('no mesmo mapa, o ramo comum continua crescendo para a direita',
+    besidePlain.x > 300 + 180, `x = ${besidePlain.x}`);
+}
+
+{
+  /* As duas metades da pergunta: onde ficam meus filhos é a minha disposição,
+     onde eu fico entre meus irmãos é a do meu pai. Num ramo árvore pendurado
+     num mapa horizontal, as duas respostas são diferentes - e ambas certas. */
+  const nodes = [
+    { uuid: 'raiz', parent: null, position: 0, x: 0, y: 0, width: 180, height: 48 },
+    { uuid: 'arv', parent: 'raiz', position: 0, x: 0, y: 0, width: 180, height: 48,
+      layout: 'tree' },
+    { uuid: 'com', parent: 'raiz', position: 1, x: 0, y: 0, width: 180, height: 48 },
+    { uuid: 'f1', parent: 'arv', position: 0, x: 0, y: 0, width: 180, height: 48 },
+    { uuid: 'f2', parent: 'arv', position: 1, x: 0, y: 0, width: 180, height: 48 },
+  ];
+  const { actions } = harness({ nodes, layout: 'right' });
+
+  check('baixo entra no ramo árvore', actions.neighbour('arv', 'down') === 'f1');
+  check('esquerda volta ao pai, que é horizontal',
+    actions.neighbour('arv', 'left') === 'raiz');
+  check('e cima continua andando entre os irmãos do mapa',
+    actions.neighbour('com', 'up') === 'arv');
+
+  // Dentro da árvore as duas respostas voltam a coincidir.
+  check('dentro da árvore, cima volta ao pai', actions.neighbour('f1', 'up') === 'arv');
+  check('e direita anda entre os irmãos', actions.neighbour('f1', 'right') === 'f2');
+}
+
+{
+  /* Uma tecla, dois sentidos: com o ramo descendo e os irmãos empilhados
+     para baixo, Baixo quer dizer as duas coisas. O ramo ganha enquanto há
+     ramo, e a tecla volta para o irmão quando não há - nenhuma seta pode
+     virar uma tecla que não faz nada. */
+  const nodes = [
+    { uuid: 'raiz', parent: null, position: 0, x: 0, y: 0, width: 180, height: 48 },
+    { uuid: 'a', parent: 'raiz', position: 0, x: 0, y: 0, width: 180, height: 48,
+      layout: 'tree' },
+    { uuid: 'b', parent: 'raiz', position: 1, x: 0, y: 0, width: 180, height: 48,
+      layout: 'tree' },
+    { uuid: 'a1', parent: 'a', position: 0, x: 0, y: 0, width: 180, height: 48 },
+  ];
+  const { actions } = harness({ nodes, layout: 'right' });
+
+  check('com ramo, baixo entra nele', actions.neighbour('a', 'down') === 'a1');
+  check('sem ramo, a mesma tecla vai para o irmão',
+    actions.neighbour('b', 'down') === null, 'b é o último irmão');
+
+  const folded = harness({
+    nodes: nodes.map((node) => (node.uuid === 'a' ? { ...node, collapsed: true } : { ...node })),
+    layout: 'right',
+  }).actions;
+  check('com o ramo fechado, baixo devolve a tecla ao irmão',
+    folded.neighbour('a', 'down') === 'b');
+}
+
+{
+  /* Um nó novo tem exatamente a mesma forma que um nó vindo do servidor. Uma
+     chave ausente de um lado e vazia do outro é um modelo com duas formas, e
+     o diff acaba tropeçando nela. */
+  const { actions } = harness({ layout: 'right' });
+  const fresh = actions.addLoose({ x: 0, y: 0 });
+  check('um tópico novo declara a disposição do ramo, mesmo vazia',
+    Object.prototype.hasOwnProperty.call(fresh, 'layout') && fresh.layout === '',
+    JSON.stringify(fresh.layout));
 }
 
 if (failures) {

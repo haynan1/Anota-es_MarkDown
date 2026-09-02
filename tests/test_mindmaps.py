@@ -37,6 +37,7 @@ from app.services.mind_map_layout import (
     branch_path,
     branch_routing,
     compute_layout,
+    effective_layouts,
     free_path,
 )
 from app.services.mind_map_service import MAX_DEPTH, MindMapService
@@ -1185,11 +1186,15 @@ class TestTheBoardFacesTheWayItGrows:
             board = re.search(r"<main[^>]*data-mind-map[^>]*>", html).group(0)
             assert f'data-orientation="{expected}"' in board, layout
 
-    def test_the_canvas_writes_the_same_answer_the_server_rendered(self, canvas_js):
-        """Otherwise the first tidy into another arrangement would leave the
-        ports on the faces the page was rendered with."""
-        assert "page.dataset.orientation = orientation()" in canvas_js
-        assert "isVertical(store.layout)" in canvas_js
+    def test_each_node_carries_its_own_branch_s_orientation(self, canvas_js):
+        """Per node, not per board.
+
+        A board that mixes arrangements has the organogram's topics and the
+        fan's topics on one screen, and they do not offer the same faces. One
+        attribute on the page could only ever describe one of them.
+        """
+        assert "element.dataset.orientation = orientation(store.arrangementOf(node))" in canvas_js
+        assert "isVertical(arrangement)" in canvas_js
 
     def test_each_orientation_shows_one_pair_of_ports(self, canvas_css):
         rules = canvas_css
@@ -1197,21 +1202,401 @@ class TestTheBoardFacesTheWayItGrows:
             "sem a regra base, um mapa horizontal mostra quatro alças"
         )
         assert (
-            '.mm-page[data-orientation="vertical"] .mm-port[data-side="left"]' in rules
-            and '.mm-page[data-orientation="vertical"] .mm-port[data-side="right"] { display: none; }'
+            '.mm-node[data-orientation="vertical"] .mm-port[data-side="left"]' in rules
+            and '.mm-node[data-orientation="vertical"] .mm-port[data-side="right"] { display: none; }'
             in rules
-        ), "um mapa vertical ainda oferece as alças laterais"
-        assert '.mm-page[data-orientation="radial"] .mm-port[data-side="top"]' in rules
+        ), "um ramo vertical ainda oferece as alças laterais"
+        assert '.mm-node[data-orientation="radial"] .mm-port[data-side="top"]' in rules
 
     def test_a_folded_branch_offers_no_port_on_either_growing_face(self, canvas_css):
         """And the rule comes last, so it wins the tie against the ones above
         it - equal specificity is decided by order, and the folded node has to
         win."""
         collapsed = canvas_css.index('.mm-node[data-collapsed="true"] .mm-port')
-        oriented = canvas_css.rindex('.mm-page[data-orientation="radial"] .mm-port')
+        oriented = canvas_css.rindex('.mm-node[data-orientation="radial"] .mm-port')
         assert collapsed > oriented, "a regra do ramo fechado precisa vir depois"
         rule = canvas_css[collapsed : collapsed + 200]
         assert 'data-side="right"' in rule and 'data-side="bottom"' in rule
+
+
+class TestOneBoardHoldsEveryKind:
+    """Um ramo pode ter disposição própria - e o mapa continua sendo um mapa.
+
+    The four arrangements were a property of the map, so choosing one meant
+    giving up the other three. They are now a property of a *branch*: a node
+    can name its own, everything under it is arranged that way, and the map
+    goes on arranging everything that named nothing. An organogram hanging off
+    a radial fan hanging off a horizontal spine is one board.
+
+    What the composition has to promise is exactly what a single arrangement
+    already promised: nothing overlaps, a folded branch reserves no space,
+    every node gets a place, and a branch that named nothing still follows the
+    map when the map changes.
+    """
+
+    def spine(self, **branches):
+        """A root with one child per entry, each carrying two leaves."""
+        nodes = [LayoutNode("raiz", None, 180, 48)]
+        for name, arrangement in branches.items():
+            nodes.append(LayoutNode(name, "raiz", 180, 48, layout=arrangement))
+            nodes.extend(
+                LayoutNode(f"{name}{index}", name, 180, 48) for index in range(2)
+            )
+        return nodes
+
+    def box(self, placed, keys, size=(180, 48)):
+        xs = [placed[key][0] for key in keys]
+        ys = [placed[key][1] for key in keys]
+        return (min(xs), min(ys), max(xs) + size[0], max(ys) + size[1])
+
+    def test_a_branch_is_arranged_by_what_it_names(self):
+        placed = compute_layout(self.spine(a="tree", b=None), "right")
+
+        # The tree branch grows down out of its own node...
+        assert placed["a0"][1] > placed["a"][1]
+        assert placed["a0"][1] == placed["a1"][1], "um nível da árvore em duas alturas"
+        # ...while the branch that named nothing still grows to the right.
+        assert placed["b0"][0] > placed["b"][0]
+        assert placed["b0"][1] != placed["b1"][1]
+
+    def test_naming_the_arrangement_it_already_had_changes_nothing(self):
+        """A branch split off for no reason is a branch that stops sharing
+        its siblings' column - so saying "right" on a right map must be the
+        same as saying nothing at all."""
+        silent = compute_layout(self.spine(a=None, b=None), "right")
+        stated = compute_layout(self.spine(a="right", b=None), "right")
+
+        assert stated == silent
+
+    def test_the_map_still_moves_everything_that_named_nothing(self):
+        nodes = self.spine(a="tree", b=None)
+        across = compute_layout(nodes, "right")
+        down = compute_layout(nodes, "down")
+
+        assert down["b"] != across["b"], "o ramo sem opinião ignorou o mapa"
+        assert down["b0"] != across["b0"]
+
+    def test_a_named_branch_ignores_the_map_changing(self):
+        """Relative to its own node, which is the part that is its own: where
+        the block lands is still the map's decision."""
+        nodes = self.spine(a="tree", b=None)
+
+        shapes = []
+        for direction in ("right", "down", "radial"):
+            placed = compute_layout(nodes, direction)
+            origin = placed["a"]
+            shapes.append(
+                tuple(
+                    (round(placed[key][0] - origin[0], 3), round(placed[key][1] - origin[1], 3))
+                    for key in ("a0", "a1")
+                )
+            )
+
+        assert len(set(shapes)) == 1, f"a árvore mudou de forma com o mapa: {shapes}"
+
+    def test_a_named_branch_keeps_its_place_among_its_siblings(self):
+        """The defect this pins, found by the collapsed test above and fixed
+        before it shipped: the composition collected a region's own nodes
+        first and appended the differently-arranged blocks afterwards, so a
+        branch that named an arrangement silently jumped to the end of its
+        row. Every arrangement here promises siblings in the order the writer
+        put them, and a branch with an opinion is still one of the siblings.
+        """
+        plain = compute_layout(self.spine(a=None, b=None, c=None), "right")
+        mixed = compute_layout(self.spine(a=None, b="tree", c=None), "right")
+
+        def order(placed):
+            return sorted(("a", "b", "c"), key=lambda key: placed[key][1])
+
+        assert order(plain) == ["a", "b", "c"]
+        assert order(mixed) == ["a", "b", "c"], (
+            "o ramo com disposição própria saiu do lugar entre os irmãos"
+        )
+
+    def test_two_differently_arranged_branches_do_not_overlap(self):
+        placed = compute_layout(self.spine(a="tree", b="radial", c=None), "right")
+
+        blocks = [
+            self.box(placed, ["a", "a0", "a1"]),
+            self.box(placed, ["b", "b0", "b1"]),
+            self.box(placed, ["c", "c0", "c1"]),
+        ]
+        for first, second in ((0, 1), (0, 2), (1, 2)):
+            left, right = blocks[first], blocks[second]
+            apart = (
+                left[2] <= right[0] or right[2] <= left[0]
+                or left[3] <= right[1] or right[3] <= left[1]
+            )
+            assert apart, f"os blocos {first} e {second} se sobrepõem: {left} {right}"
+
+    def test_arrangements_nest_as_deep_as_the_map_does(self):
+        nodes = [
+            LayoutNode("raiz", None, 180, 48),
+            LayoutNode("a", "raiz", 180, 48, layout="tree"),
+            LayoutNode("a1", "a", 180, 48, layout="radial"),
+            *[LayoutNode(f"a1{index}", "a1", 180, 48) for index in range(4)],
+            LayoutNode("a2", "a", 180, 48),
+        ]
+        placed = compute_layout(nodes, "right")
+
+        assert set(placed) == {n.key for n in nodes}
+        # The tree level still shares a row - measured on the *block*, which
+        # is what the row holds. The radial node itself sits in the middle of
+        # its own fan, which is exactly the point of composing them.
+        block_top = min(placed[f"a1{index}"][1] for index in range(4))
+        block_top = min(block_top, placed["a1"][1])
+        assert block_top == placed["a2"][1]
+        # ...and the radial branch below it fans out around its own node
+        # rather than lining up with anything above.
+        centre = (placed["a1"][0] + 90, placed["a1"][1] + 24)
+        radii = {
+            round(hypot(placed[f"a1{index}"][0] + 90 - centre[0],
+                        placed[f"a1{index}"][1] + 24 - centre[1]), 3)
+            for index in range(4)
+        }
+        assert len(radii) == 1, f"o leque não é um leque: {radii}"
+
+    def test_a_folded_branch_reserves_no_space_even_when_it_names_its_own(self):
+        open_nodes = self.spine(a="radial", b=None)
+        shut_nodes = [
+            LayoutNode(n.key, n.parent, n.width, n.height,
+                       collapsed=(n.key == "a"), layout=n.layout)
+            for n in open_nodes
+        ]
+
+        opened = compute_layout(open_nodes, "right")
+        shut = compute_layout(shut_nodes, "right")
+
+        assert shut["b"] != opened["b"]
+        assert "a0" not in shut, "um ramo fechado não recebe coordenada"
+
+    def test_every_node_gets_a_place(self):
+        for direction in LAYOUTS:
+            placed = compute_layout(
+                self.spine(a="tree", b="radial", c="down", d=None), direction
+            )
+            assert len(placed) == 13, direction
+
+    def test_a_broken_graph_with_mixed_arrangements_still_lays_out(self):
+        placed = compute_layout(
+            [
+                LayoutNode("a", "b", 100, 40, layout="tree"),
+                LayoutNode("b", "a", 100, 40, layout="radial"),
+            ],
+            "right",
+        )
+        assert set(placed) == {"a", "b"}
+
+    def test_an_arrangement_nothing_can_draw_is_ignored(self):
+        """A hand-edited row must not park a branch on a name with no
+        geometry behind it."""
+        honest = compute_layout(self.spine(a=None), "right")
+        forged = compute_layout(self.spine(a="espiral"), "right")
+
+        assert forged == honest
+
+
+class TestWhatABranchInherits:
+    """A regra de herança, que três lugares aplicam e um teste compara."""
+
+    def tree_of(self, nodes):
+        from app.services.mind_map_layout import build_tree
+
+        return build_tree(nodes), {node.key: node for node in nodes}
+
+    def test_a_branch_that_names_nothing_takes_what_is_above_it(self):
+        nodes = [
+            LayoutNode("raiz", None, 180, 48),
+            LayoutNode("a", "raiz", 180, 48, layout="tree"),
+            LayoutNode("a1", "a", 180, 48),
+            LayoutNode("a2", "a1", 180, 48, layout="radial"),
+            LayoutNode("a3", "a2", 180, 48),
+            LayoutNode("b", "raiz", 180, 48),
+        ]
+        tree, by_key = self.tree_of(nodes)
+
+        resolved = effective_layouts(tree, by_key, "right")
+
+        assert resolved == {
+            "raiz": "right",
+            "a": "tree",
+            "a1": "tree",
+            "a2": "radial",
+            "a3": "radial",
+            "b": "right",
+        }
+
+    def test_a_folded_branch_still_has_an_answer(self):
+        """It is not laid out, but it is still exported, still read by the
+        outline, and still there the moment it is opened."""
+        nodes = [
+            LayoutNode("raiz", None, 180, 48, collapsed=True, layout="tree"),
+            LayoutNode("a", "raiz", 180, 48),
+        ]
+        tree, by_key = self.tree_of(nodes)
+
+        assert effective_layouts(tree, by_key, "right")["a"] == "tree"
+
+    def test_the_exporter_inherits_exactly_the_same_way(self, app, mind_map, root):
+        """Two walks of one rule.
+
+        The layout resolves inheritance over its own nodes and the SVG export
+        resolves it over database rows, because neither can use the other's
+        input. Pinned against each other here, over one tree, so a change that
+        reaches only one of them fails rather than producing an export drawn
+        unlike its board.
+        """
+        from app.services.mind_map_export import _arrangements, _index
+
+        branch = add(mind_map, parent=root.uuid, text="Ramo", layout="tree")
+        inner = add(mind_map, parent=branch, text="Dentro")
+        add(mind_map, parent=inner, text="Fundo", layout="radial")
+        add(mind_map, parent=root.uuid, text="Outro")
+        MindMapService.update(mind_map, layout="down")
+
+        nodes = MindMapRepository.nodes_of(mind_map)
+        by_id = {node.id: node.uuid for node in nodes}
+        from_export = {
+            by_id[identifier]: value
+            for identifier, value in _arrangements(mind_map, nodes, _index(nodes)).items()
+        }
+
+        from app.services.mind_map_layout import build_tree
+
+        layout_nodes = [
+            LayoutNode(
+                node.uuid,
+                by_id.get(node.parent_id) if node.parent_id else None,
+                node.width,
+                node.height,
+                node.is_collapsed,
+                node.layout,
+            )
+            for node in nodes
+        ]
+        from_layout = effective_layouts(
+            build_tree(layout_nodes),
+            {n.key: n for n in layout_nodes},
+            mind_map.layout,
+        )
+
+        assert from_export == from_layout
+        assert set(from_export.values()) == {"down", "tree", "radial"}
+
+
+class TestABranchArrangementIsStored:
+    """O que a tela manda, o servidor guarda - ou recusa."""
+
+    def test_it_survives_a_round_trip(self, app, mind_map, root):
+        branch = add(mind_map, parent=root.uuid, text="Ramo", layout="tree")
+
+        payload = MindMapService.graph_payload(mind_map)
+        stored = next(n for n in payload["nodes"] if n["uuid"] == branch)
+
+        assert stored["layout"] == "tree"
+        assert node_by_uuid(branch).layout == "tree"
+
+    def test_a_node_that_named_nothing_answers_with_an_empty_string(self, app):
+        """Not ``null``: the canvas compares this field against the server's
+        copy on every save, and a select whose "same as the map" option
+        carried ``null`` would compare unequal to its own empty string
+        forever, resending the node on every batch."""
+        mind_map = MindMapService.create("Vazio", "")
+        payload = MindMapService.graph_payload(mind_map)
+
+        assert payload["nodes"][0]["layout"] == ""
+
+    def test_it_can_be_handed_back_to_the_map(self, app, mind_map, root):
+        branch = add(mind_map, parent=root.uuid, text="Ramo", layout="radial")
+
+        MindMapService.apply_operations(
+            mind_map,
+            [{"type": "node.update", "uuid": branch, "fields": {"layout": ""}}],
+        )
+
+        assert node_by_uuid(branch).layout is None
+
+    def test_an_arrangement_nothing_can_draw_is_refused(self, app, mind_map, root):
+        branch = add(mind_map, parent=root.uuid, text="Ramo")
+
+        with pytest.raises(ValidationError):
+            MindMapService.apply_operations(
+                mind_map,
+                [{"type": "node.update", "uuid": branch, "fields": {"layout": "espiral"}}],
+            )
+
+    def test_a_hostile_type_is_refused_rather_than_stored(self, app, mind_map, root):
+        branch = add(mind_map, parent=root.uuid, text="Ramo")
+
+        for hostile in ({"a": 1}, ["tree"], 7, True):
+            with pytest.raises(ValidationError):
+                MindMapService.apply_operations(
+                    mind_map,
+                    [{"type": "node.update", "uuid": branch,
+                      "fields": {"layout": hostile}}],
+                )
+        assert node_by_uuid(branch).layout is None
+
+    def test_organising_a_mixed_map_moves_every_branch_its_own_way(
+        self, app, mind_map, root
+    ):
+        branch = add(mind_map, parent=root.uuid, text="Árvore", layout="tree")
+        below = add(mind_map, parent=branch, text="Sob a árvore")
+        plain = add(mind_map, parent=root.uuid, text="Comum")
+        beside = add(mind_map, parent=plain, text="Ao lado")
+
+        MindMapService.autolayout(mind_map, "right")
+
+        assert node_by_uuid(below).y > node_by_uuid(branch).y, "a árvore não desceu"
+        assert node_by_uuid(beside).x > node_by_uuid(plain).x, "o comum não foi ao lado"
+
+
+class TestTheBranchArrangementIsOffered:
+    """A opção existe onde a pergunta aparece."""
+
+    @pytest.fixture()
+    def canvas(self, client, mind_map):
+        response = client.get(f"/mapas/{mind_map.uuid}")
+        assert response.status_code == 200
+        return response.get_data(as_text=True)
+
+    def test_the_panel_offers_every_arrangement_and_inheriting(self, canvas):
+        select = re.search(
+            r"<select[^>]*data-inspector-layout.*?</select>", canvas, re.S
+        )
+        assert select, "o painel do tópico não oferece disposição de ramo"
+
+        markup = select.group(0)
+        assert '<option value="">' in markup, "falta a opção de seguir o mapa"
+        for value in LAYOUTS:
+            assert f'value="{value}"' in markup, value
+
+    def test_the_panel_says_what_the_branch_resolves_to(self, canvas):
+        """"Como o mapa" is an empty answer, and on a mixed board an empty
+        answer is ambiguous - from the map, or from a branch three levels up?
+
+        And it is read out with the control rather than left as loose text
+        beside it: it carries half the answer, so a screen reader that never
+        reaches it never gets that half.
+        """
+        select = re.search(
+            r"<select[^>]*data-inspector-layout[^>]*>", canvas, re.S
+        ).group(0)
+        hint = re.search(r'<p[^>]*data-branch-layout-hint[^>]*>', canvas).group(0)
+
+        assert 'aria-describedby="mm-branch-layout-hint"' in select
+        assert 'id="mm-branch-layout-hint"' in hint
+
+    def test_arranging_warns_about_the_branches_that_will_not_follow(self, canvas):
+        """Otherwise "arrumar como árvore" moves the map, leaves two branches
+        exactly where they were, and says nothing about why."""
+        note = re.search(r"<p[^>]*data-mixed-note.*?</p>", canvas, re.S)
+
+        assert note, "o diálogo não avisa sobre ramos com disposição própria"
+        assert "hidden" in note.group(0), "o aviso aparece num mapa sem ramos próprios"
+        assert 'data-action="mm-clear-branch-layouts"' in note.group(0), (
+            "o aviso precisa levar de volta"
+        )
 
 
 class TestExchange:

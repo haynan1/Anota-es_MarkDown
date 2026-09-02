@@ -14,6 +14,7 @@ from __future__ import annotations
 import sqlite3
 
 from alembic.script import ScriptDirectory
+from flask_migrate import downgrade
 
 from app import SNAPSHOTS_KEPT, bootstrap_database, create_app
 from app.extensions import db as _db
@@ -65,14 +66,27 @@ def tables(database):
         connection.close()
 
 
-def rewind(database, target):
-    """Put a database back in the state an earlier release left it in."""
+def columns(database, table):
     connection = sqlite3.connect(database)
-    for table in ("mind_map_edges", "mind_map_nodes", "mind_maps"):
-        connection.execute(f"drop table if exists {table}")
-    connection.execute("update alembic_version set version_num=?", (target,))
-    connection.commit()
-    connection.close()
+    try:
+        return {row[1] for row in connection.execute(f"pragma table_info({table})")}
+    finally:
+        connection.close()
+
+
+def rewind(application):
+    """Put a database back in the state the previous release left it in.
+
+    By running the head migration's own ``downgrade`` rather than by undoing
+    its effects by hand here. Two things follow from that. It stays correct
+    when the head moves - a hardcoded list of tables to drop describes one
+    particular migration, and quietly stops describing the schema the moment
+    another one lands, which is how a test about *being behind* ends up
+    testing nothing. And it means every release's migration is exercised in
+    both directions, which is the promise each of them makes.
+    """
+    with application.app_context():
+        downgrade(revision="-1")
 
 
 def previous(application):
@@ -94,21 +108,25 @@ def test_pending_migration_is_applied_on_startup(tmp_path):
     database = tmp_path / "behind.db"
     application = build(tmp_path, database)
     behind = previous(application)
-    rewind(database, behind)
+    rewind(application)
 
-    assert "mind_maps" not in tables(database)
+    assert revision(database) == behind
+    # Whatever the head migration adds, named concretely: a test that only
+    # compared revision numbers would pass against a migration that ran and
+    # did nothing.
+    assert "layout" not in columns(database, "mind_map_nodes")
 
     build(tmp_path, database)
 
     assert revision(database) == head(application)
-    assert "mind_maps" in tables(database)
+    assert "layout" in columns(database, "mind_map_nodes")
 
 
 def test_pending_migration_leaves_a_snapshot_behind(tmp_path):
     database = tmp_path / "snapshot.db"
     application = build(tmp_path, database)
     behind = previous(application)
-    rewind(database, behind)
+    rewind(application)
 
     build(tmp_path, database)
 
@@ -126,7 +144,7 @@ def test_snapshots_do_not_accumulate(tmp_path):
     behind = previous(application)
 
     for _ in range(SNAPSHOTS_KEPT + 2):
-        rewind(database, behind)
+        rewind(application)
         build(tmp_path, database)
 
     snapshots = list((tmp_path / "backups" / "pre-migracao").glob("*.db"))

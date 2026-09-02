@@ -27,6 +27,7 @@ from html import escape
 from xml.sax.saxutils import quoteattr
 
 from app.models import MindMap, MindMapNode
+from app.models.mind_map import LAYOUTS
 from app.services.mind_map_layout import (
     bounding_box,
     box_of,
@@ -190,12 +191,20 @@ def to_svg(mind_map: MindMap, nodes: list[MindMapNode], edges: list) -> str:
 
     # Connections first, so a line never crosses over the box it arrives at.
     parts.append('<g fill="none" stroke-linecap="round">')
-    # The line follows the arrangement it belongs to: a tree exported with the
-    # sideways curve of a horizontal map would be a picture of a different map.
-    routing = branch_routing(mind_map.layout)
+    # The line follows the arrangement it belongs to, branch by branch: a tree
+    # exported with the sideways curve of a horizontal map would be a picture
+    # of a different map. The connection belongs to the *parent's*
+    # arrangement, because the parent's arrangement is what decided where the
+    # child went - even when the child opens a differently arranged branch of
+    # its own below it.
+    arrangement = _arrangements(mind_map, nodes, tree)
     for node in nodes:
         for child in tree.children.get(node.id, []):
-            parts.append(_branch_path(node, child, mind_map.color, routing))
+            parts.append(
+                _branch_path(
+                    node, child, mind_map.color, branch_routing(arrangement[node.id])
+                )
+            )
     for edge in edges:
         source, target = by_id.get(edge.source_id), by_id.get(edge.target_id)
         if source is not None and target is not None:
@@ -233,6 +242,35 @@ def _arrow_marker() -> str:
         'markerWidth="6" markerHeight="6" orient="auto-start-reverse">'
         f'<path d="M0,0 L10,5 L0,10 z" fill="{INK_MUTED}"/></marker></defs>'
     )
+
+
+def _arrangements(
+    mind_map: MindMap, nodes: list[MindMapNode], tree: "_Index"
+) -> dict[int, str]:
+    """What each node is arranged by, inheritance applied - keyed by row id.
+
+    The same walk :func:`app.services.mind_map_layout.effective_layouts` does
+    for the layout, over rows instead of layout nodes. Two walks of one rule
+    is a drift risk worth naming: the tests pin them against each other, over
+    the same tree, so a change to inheritance that reaches only one of them
+    fails rather than producing an export drawn unlike its board.
+    """
+    resolved: dict[int, str] = {}
+    stack: list[tuple[int, str]] = [(root.id, mind_map.layout) for root in tree.roots]
+    by_id = {node.id: node for node in nodes}
+    while stack:
+        identifier, inherited = stack.pop()
+        if identifier in resolved:
+            continue
+        node = by_id.get(identifier)
+        own = node.layout if node is not None and node.layout in LAYOUTS else None
+        mine = own or inherited
+        resolved[identifier] = mine
+        stack.extend((child.id, mine) for child in tree.children.get(identifier, []))
+
+    for node in nodes:
+        resolved.setdefault(node.id, mind_map.layout)
+    return resolved
 
 
 def _branch_path(

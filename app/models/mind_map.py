@@ -244,6 +244,13 @@ class MindMapNode(db.Model):
 
     color: Mapped[str] = mapped_column(String(9), nullable=False, default="")
     shape: Mapped[str] = mapped_column(String(12), nullable=False, default="rounded")
+    # How this node's own branch arranges itself. ``None`` - the default, and
+    # what every node keeps unless someone says otherwise - means "the same as
+    # whatever I hang from", so changing the map's arrangement still moves the
+    # whole map. A value here makes this branch its own little map: an
+    # organogram hanging off a radial fan hanging off a horizontal spine, all
+    # on one board, each drawn the way its own kind is drawn.
+    layout: Mapped[str | None] = mapped_column(String(10), nullable=True)
     is_collapsed: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="0"
     )

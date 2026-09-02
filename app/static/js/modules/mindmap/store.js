@@ -32,7 +32,7 @@ import { postJSON } from '../dom.js';
 /** Fields that travel to the server unchanged, and are compared one by one. */
 const NODE_FIELDS = [
   'text', 'note', 'url', 'image_url', 'media_uuid', 'document_uuid',
-  'kind', 'shape', 'color', 'collapsed', 'x', 'y', 'width', 'height',
+  'kind', 'shape', 'color', 'collapsed', 'layout', 'x', 'y', 'width', 'height',
 ];
 const EDGE_FIELDS = ['label', 'style', 'color'];
 
@@ -87,6 +87,8 @@ export function createStore(config) {
     (graph.edges || []).forEach((edge) => edges.set(edge.uuid, normalizeEdge(edge)));
     revision = graph.revision || revision;
     if (graph.layout) layout = graph.layout;
+    childIndex = null;
+    arrangementIndex = null;
     baseline = cloneGraph(nodes, edges);
     undoStack.length = 0;
     redoStack.length = 0;
@@ -131,6 +133,9 @@ export function createStore(config) {
       height: Number(raw.height) || 48,
       color: raw.color || '',
       shape: raw.shape || 'rounded',
+      // '' means "the same as whatever this branch hangs from" - a real
+      // answer, and the one almost every node gives.
+      layout: raw.layout || '',
       collapsed: Boolean(raw.collapsed),
     };
   }
@@ -154,6 +159,7 @@ export function createStore(config) {
    * between a smooth drag and a stuttering one on a large board.
    */
   let childIndex = null;
+  let arrangementIndex = null;
   function children(uuid) {
     if (childIndex === null) {
       childIndex = new Map();
@@ -171,6 +177,39 @@ export function createStore(config) {
 
   function roots() {
     return children(null);
+  }
+
+  /**
+   * What a node is actually arranged by, once inheritance is applied.
+   *
+   * A node that names nothing is arranged by whatever its parent is arranged
+   * by, and a root that names nothing is arranged by the map. That is what
+   * keeps "arrumar" meaning the whole map: only the branches given an opinion
+   * of their own keep it.
+   *
+   * The same rule the server applies in `effective_layouts`, because both
+   * have to answer it - the server to place the nodes, the canvas to draw the
+   * lines between them on every frame of a drag.
+   */
+  function arrangements() {
+    if (arrangementIndex !== null) return arrangementIndex;
+    arrangementIndex = new Map();
+    const walk = (list, inherited) => {
+      list.forEach((node) => {
+        const mine = node.layout || inherited;
+        arrangementIndex.set(node.uuid, mine);
+        walk(children(node.uuid), mine);
+      });
+    };
+    walk(roots(), layout);
+    return arrangementIndex;
+  }
+
+  /** How `node`'s own branch is arranged - what decides where its children
+   *  go, which face they leave from, and which arrow reaches them. */
+  function arrangementOf(node) {
+    if (!node) return layout;
+    return arrangements().get(node.uuid) || layout;
   }
 
   /** A node and everything hanging off it, parents first. */
@@ -229,6 +268,7 @@ export function createStore(config) {
     }
     apply();
     if (structural) childIndex = null;
+    arrangementIndex = null;
     setStatus('dirty');
     schedule();
     emit('change', { structural });
@@ -266,6 +306,7 @@ export function createStore(config) {
     nodes = new Map(state.nodes.map((node) => [node.uuid, { ...node }]));
     edges = new Map(state.edges.map((edge) => [edge.uuid, { ...edge }]));
     childIndex = null;
+    arrangementIndex = null;
     setStatus('dirty');
     schedule();
     emit('change', { structural: true });
@@ -482,6 +523,7 @@ export function createStore(config) {
     get edges() { return edges; },
     get revision() { return revision; },
     get layout() { return layout; },
+    arrangementOf,
     get status() { return status; },
     get canUndo() { return undoStack.length > 0; },
     get canRedo() { return redoStack.length > 0; },

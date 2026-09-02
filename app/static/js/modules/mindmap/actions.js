@@ -112,6 +112,11 @@ export function createActions({ store, selection, limits, notify }) {
       color: '',
       shape: 'rounded',
       collapsed: false,
+      // Explicitly empty, not absent: `normalizeNode` gives every node the
+      // server sends an empty string here, and a locally created node with
+      // the key missing altogether would be a second shape for one model -
+      // the kind of asymmetry a diff eventually trips over.
+      layout: '',
       ...overrides,
     };
   }
@@ -132,7 +137,9 @@ export function createActions({ store, selection, limits, notify }) {
   function childPlacement(parent) {
     const siblings = store.children(parent.uuid);
 
-    if (isVertical(store.layout)) {
+    // The parent's own arrangement, not the map's: on a board that mixes
+    // them, Tab inside the organogram has to grow the organogram.
+    if (isVertical(store.arrangementOf(parent))) {
       const y = parent.y + parent.height + CHILD_GAP_Y;
       if (!siblings.length) {
         return { x: parent.x + parent.width / 2 - NEW_WIDTH / 2, y };
@@ -184,6 +191,8 @@ export function createActions({ store, selection, limits, notify }) {
     if (node.parent) return addChild(node.parent, overrides);
     // A second root goes beside the first on a map that grows downwards, and
     // below it on one that grows across - the free direction, either way.
+    // The map's arrangement, because roots are the map's to arrange: what a
+    // root says about its own branch has no bearing on where its siblings go.
     const beside = isVertical(store.layout)
       ? { x: node.x + node.width + SIBLING_GAP_X, y: node.y }
       : { x: node.x, y: node.y + node.height + SIBLING_GAP_Y };
@@ -395,6 +404,28 @@ export function createActions({ store, selection, limits, notify }) {
     return true;
   }
 
+  /** How many branches carry an arrangement of their own. */
+  function ownArrangements() {
+    return [...store.nodes.values()].filter((node) => node.layout).length;
+  }
+
+  /** Hand every branch back to the map.
+   *
+   *  One mutation, so one Ctrl+Z takes it back: clearing them one at a time
+   *  would leave someone pressing undo once per branch to recover a decision
+   *  they made once.
+   */
+  function clearBranchLayouts() {
+    const own = [...store.nodes.values()].filter((node) => node.layout);
+    if (!own.length) return 0;
+    store.mutate(() => {
+      own.forEach((node) => {
+        node.layout = '';
+      });
+    });
+    return own.length;
+  }
+
   /* ── Moving around ──────────────────────────────────────────────────── */
 
   /**
@@ -404,31 +435,44 @@ export function createActions({ store, selection, limits, notify }) {
    * out loud, and it is what makes the arrow keys navigate an outline rather
    * than a plane.
    *
-   * Which arrow does which turns with the map. On a horizontal map the branch
-   * is to the right; on a tree it is underneath. Leaving the keys fixed would
-   * mean pressing Right to reach a child sitting below the node - the arrow
-   * pointing away from the thing it selects.
+   * Which arrow does which turns with the map, and on a mixed board it turns
+   * twice over: where a node's *children* sit is decided by the node's own
+   * arrangement, and where the node itself sits among its siblings is decided
+   * by its parent's. An organogram hanging off a horizontal spine reaches its
+   * children downwards and its parent leftwards, and both are right.
+   *
+   * That is also the one place two meanings can land on one key: with the
+   * branch growing down and the siblings stacked down, Down is both "into the
+   * branch" and "next sibling". The branch wins while there is a branch, and
+   * the key falls through to the sibling when there is not - so no arrow ever
+   * becomes a key that does nothing.
    */
   function neighbour(uuid, direction) {
     const node = store.get(uuid);
     if (!node) return null;
 
-    const vertical = isVertical(store.layout);
-    const intoBranch = vertical ? 'down' : 'right';
-    const towardsRoot = vertical ? 'up' : 'left';
+    const inside = isVertical(store.arrangementOf(node));
+    const parent = node.parent ? store.get(node.parent) : null;
+    const around = isVertical(
+      parent ? store.arrangementOf(parent) : store.layout
+    );
 
-    if (direction === intoBranch) {
-      if (node.collapsed) return null;
+    const intoBranch = inside ? 'down' : 'right';
+    const towardsRoot = around ? 'up' : 'left';
+    const previousSibling = around ? 'left' : 'up';
+    const nextSibling = around ? 'right' : 'down';
+
+    if (direction === intoBranch && !node.collapsed) {
       const kids = store.children(uuid);
-      return kids.length ? kids[0].uuid : null;
+      if (kids.length) return kids[0].uuid;
     }
     if (direction === towardsRoot) return node.parent;
+    if (direction !== previousSibling && direction !== nextSibling) return null;
 
     const siblings = store.children(node.parent);
     const index = siblings.findIndex((item) => item.uuid === uuid);
     if (index < 0) return null;
-    const backwards = vertical ? 'left' : 'up';
-    const target = direction === backwards ? index - 1 : index + 1;
+    const target = direction === previousSibling ? index - 1 : index + 1;
     return siblings[target] ? siblings[target].uuid : null;
   }
 
@@ -443,6 +487,8 @@ export function createActions({ store, selection, limits, notify }) {
     moveBy,
     moveTo,
     reparent,
+    ownArrangements,
+    clearBranchLayouts,
     toggleCollapse,
     remove,
     removeSelection,

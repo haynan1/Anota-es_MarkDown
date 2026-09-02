@@ -29,6 +29,8 @@ export function createInspector(context) {
     note: $('[data-inspector-note]', root),
     url: $('[data-inspector-url]', root),
     shape: $('[data-inspector-shape]', root),
+    layout: $('[data-inspector-layout]', root),
+    layoutHint: $('[data-branch-layout-hint]', root),
     imagePreview: $('[data-image-preview]', root),
     imageEmpty: $('[data-image-empty]', root),
     imageUrlRow: $('[data-image-url-row]', root),
@@ -95,6 +97,7 @@ export function createInspector(context) {
     if (document.activeElement !== fields.note) fields.note.value = node.note;
     if (document.activeElement !== fields.url) fields.url.value = node.url;
     fields.shape.value = node.shape;
+    paintBranchLayout(node);
 
     $$('[data-swatch]', root).forEach((button) => {
       button.setAttribute(
@@ -120,6 +123,26 @@ export function createInspector(context) {
     }
   }
 
+  /**
+   * The branch's own arrangement, and what it actually resolves to.
+   *
+   * The hint is not decoration: with "Como o mapa" selected the control shows
+   * an empty answer, and on a board that mixes arrangements the empty answer
+   * is ambiguous - inherited from the map, or from a branch three levels up
+   * that was given one? So it says which, by name.
+   */
+  function paintBranchLayout(node) {
+    fields.layout.value = node.layout || '';
+    const resolved = store.arrangementOf(node);
+    // Read off the control rather than kept in a second list here: the names
+    // are the server's, and one copy of them is enough.
+    const option = [...fields.layout.options].find((item) => item.value === resolved);
+    const name = option ? option.textContent.trim() : resolved;
+    fields.layoutHint.textContent = node.layout
+      ? `Só este ramo usa ${name}.`
+      : `Segue o mapa: ${name}.`;
+  }
+
   function patch(fieldsToApply) {
     const uuid = selection.primary;
     if (!uuid) return;
@@ -132,6 +155,13 @@ export function createInspector(context) {
   fields.text.addEventListener('input', () => patchText(fields.text.value));
   fields.note.addEventListener('input', () => patchNote(fields.note.value));
   fields.shape.addEventListener('change', () => patch({ shape: fields.shape.value }));
+  fields.layout.addEventListener('change', () => {
+    patch({ layout: fields.layout.value });
+    // The whole branch moves, and so does every line inside it. Refreshing
+    // here is what puts the hint on the value that was just chosen instead of
+    // on the one before it.
+    refresh();
+  });
 
   fields.url.addEventListener('change', () => {
     const value = fields.url.value.trim();

@@ -500,19 +500,22 @@
   translate: -50% 0;
 }
 
-/* Which two faces a connection leaves from is the layout's decision, not the
-   node's. Dragging a link out of the left edge of a node whose children hang
-   underneath it is an invitation to draw the map the wrong way round, so the
-   board stamps its orientation once and every port follows. Radial shows all
-   four: it is the one arrangement where a branch really can go anywhere. */
+/* Which two faces a connection leaves from is the arrangement's decision, not
+   the node's shape. Dragging a link out of the left edge of a node whose
+   children hang underneath it is an invitation to draw the map the wrong way
+   round, so each node stamps the orientation of its own branch and its ports
+   follow. Per node, not per board: on a map that mixes arrangements, the
+   organogram's topics and the fan's topics are on the same screen and offer
+   different faces. Radial shows all four - it is the one arrangement where a
+   branch really can go anywhere. */
 .mm-port[data-side="top"],
 .mm-port[data-side="bottom"] { display: none; }
-.mm-page[data-orientation="vertical"] .mm-port[data-side="left"],
-.mm-page[data-orientation="vertical"] .mm-port[data-side="right"] { display: none; }
-.mm-page[data-orientation="vertical"] .mm-port[data-side="top"],
-.mm-page[data-orientation="vertical"] .mm-port[data-side="bottom"],
-.mm-page[data-orientation="radial"] .mm-port[data-side="top"],
-.mm-page[data-orientation="radial"] .mm-port[data-side="bottom"] { display: block; }
+.mm-node[data-orientation="vertical"] .mm-port[data-side="left"],
+.mm-node[data-orientation="vertical"] .mm-port[data-side="right"] { display: none; }
+.mm-node[data-orientation="vertical"] .mm-port[data-side="top"],
+.mm-node[data-orientation="vertical"] .mm-port[data-side="bottom"],
+.mm-node[data-orientation="radial"] .mm-port[data-side="top"],
+.mm-node[data-orientation="radial"] .mm-port[data-side="bottom"] { display: block; }
 
 .mm-node:hover .mm-port,
 .mm-node[data-selected="true"] .mm-port { opacity: 1; }
@@ -521,6 +524,20 @@
    branch offers no port on the side its children would have come out of. */
 .mm-node[data-collapsed="true"] .mm-port[data-side="right"],
 .mm-node[data-collapsed="true"] .mm-port[data-side="bottom"] { display: none; }
+
+/* A branch that carries its own arrangement says so quietly, on the node that
+   carries it - a mixed map is otherwise a map whose behaviour has no visible
+   cause, and "why does Tab go down here and right there" has no answer on
+   screen. */
+.mm-node[data-own-layout="true"]::after {
+  content: "";
+  position: absolute;
+  top: 6px; left: -3px;
+  width: 3px; height: calc(100% - 12px);
+  border-radius: var(--radius-full);
+  background: var(--mm-node-color, var(--accent));
+  opacity: 0.75;
+}
 
 /* Width handle on the trailing edge: a paragraph in a node needs a wider box,
    and nothing else on the canvas offers that. */
@@ -612,6 +629,27 @@
 @media (max-width: 560px) {
   .mm-layout-picker { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* The map has branches that will not follow the choice being made. Bordered
+   rather than tinted with a warning colour: nothing is wrong here, something
+   is merely true, and a yellow panel would say otherwise. */
+.mm-organize-mixed {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  margin: 0;
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+/* `display: flex` outranks the reset's `[hidden] { display: none }`, and the
+   note spends most of its life hidden. */
+.mm-organize-mixed[hidden] { display: none; }
 
 /* ── Marquee ────────────────────────────────────────────────────────────── */
 

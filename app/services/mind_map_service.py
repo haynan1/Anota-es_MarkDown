@@ -529,6 +529,7 @@ class MindMapService:
                     width=node.width,
                     height=node.height,
                     collapsed=node.is_collapsed,
+                    layout=node.layout,
                 )
                 for node in nodes
             ],
@@ -900,6 +901,20 @@ class _Batch:
             if shape not in NODE_SHAPES:
                 raise ValidationError("Formato inválido.")
             node.shape = shape
+        if "layout" in source:
+            layout = source.get("layout")
+            # Empty means "the same as whatever this branch hangs from", which
+            # is a real answer and the default one - not a missing value. An
+            # unknown name is refused rather than quietly stored: a node
+            # arranged by something nothing can draw would fall back to the
+            # map's arrangement on screen and still claim otherwise in the
+            # panel.
+            if layout in (None, ""):
+                node.layout = None
+            elif layout in LAYOUTS:
+                node.layout = layout
+            else:
+                raise ValidationError("Disposição de ramo inválida.")
         if "color" in source:
             node.color = _clean_color(source.get("color"), "")
         if "collapsed" in source:
@@ -1105,6 +1120,11 @@ def _node_payload(node: MindMapNode, by_id: dict[int, str]) -> dict:
         "color": node.color,
         "shape": node.shape,
         "collapsed": node.is_collapsed,
+        # ``""`` rather than ``null``: the canvas compares this field against
+        # the server's copy on every save, and a select whose "same as the
+        # map" option carried the value ``null`` would compare unequal to its
+        # own empty string forever, resending the node on every batch.
+        "layout": node.layout or "",
     }
 
 

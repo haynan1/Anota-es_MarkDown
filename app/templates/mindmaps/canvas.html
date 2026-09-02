@@ -313,6 +313,27 @@
             </div>
           </div>
 
+          {# Um mapa pode ter todos os tipos ao mesmo tempo: cada ramo escolhe.
+             "Como o mapa" é o padrão e o normal - só quem foi escolhido a dedo
+             deixa de acompanhar o mapa quando o mapa muda. #}
+          <div class="field">
+            <label class="field-label" for="mm-branch-layout">Disposição do ramo</label>
+            <div class="select-wrap">
+              {# A dica diz o que "Como o mapa" resolve, e é a metade da
+                 resposta - então ela é lida junto com o controle, não deixada
+                 como texto solto ao lado dele. #}
+              <select class="select" id="mm-branch-layout" data-inspector-layout
+                      aria-describedby="mm-branch-layout-hint">
+                <option value="">Como o mapa</option>
+                {% for value, label in layouts %}
+                  <option value="{{ value }}">{{ label }}</option>
+                {% endfor %}
+              </select>
+              {{ icon('chevron-down', 'icon icon-sm') }}
+            </div>
+            <p class="field-hint" id="mm-branch-layout-hint" data-branch-layout-hint></p>
+          </div>
+
           <hr class="mm-divider">
 
           <div class="field">
@@ -471,6 +492,16 @@
         </label>
         {% endfor %}
       </fieldset>
+      {# Sem isto, "arrumar como árvore" num mapa com ramos próprios move o
+         mapa e deixa dois ramos como estavam, sem dizer por quê - e o
+         caminho de volta está dentro do painel de um nó que a pessoa
+         provavelmente nem selecionou. #}
+      <p class="mm-organize-mixed" data-mixed-note hidden>
+        <span data-mixed-count></span>
+        <button type="button" class="btn btn-sm" data-action="mm-clear-branch-layouts">
+          Fazer todos seguirem o mapa
+        </button>
+      </p>
       <p class="subtle">
         A forma escolhida passa a ser a do mapa. Dá para desfazer as posições
         com <kbd>Ctrl</kbd> + <kbd>Z</kbd>.
