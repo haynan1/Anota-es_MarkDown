@@ -430,6 +430,11 @@ a:hover { text-decoration: underline; }
   max-width: 62ch;
   color: var(--text-muted);
   font-size: var(--fs-md);
+  /* `pretty` rather than `balance`: this is body copy that can run to several
+     lines, and balancing would even them out at the cost of the measure. What
+     it fixes is the single word left alone on the last line - the first
+     paragraph a reader meets on the page ended on "quiser." by itself. */
+  text-wrap: pretty;
 }
 .page-head-row { display: flex; align-items: flex-start; gap: var(--sp-4); flex-wrap: wrap; }
 .page-head-row .page-head-actions { margin-left: auto; display: flex; gap: var(--sp-2); flex-wrap: wrap; }
@@ -1023,8 +1028,12 @@ a:hover { text-decoration: underline; }
   background: var(--surface); border: 1px dashed var(--border-strong); border-radius: var(--radius-lg);
 }
 .empty-icon { display: grid; place-items: center; width: 56px; height: 56px; border-radius: var(--radius-lg); background: var(--surface-sunken); color: var(--text-subtle); }
-.empty-title { font-size: var(--fs-lg); font-weight: 620; }
-.empty-text { color: var(--text-muted); max-width: 44ch; }
+/* `balance` on both: a measure of 44ch and a sentence of 55 left "termo."
+   alone on its own line, which is the kind of ragged ending a reader notices
+   without knowing why. The browser distributes the lines instead of filling
+   greedily; where it is unsupported the declaration is simply ignored. */
+.empty-title { font-size: var(--fs-lg); font-weight: 620; text-wrap: balance; }
+.empty-text { color: var(--text-muted); max-width: 44ch; text-wrap: balance; }
 
 /* ── Toasts ─────────────────────────────────────────────────────────────── */
 

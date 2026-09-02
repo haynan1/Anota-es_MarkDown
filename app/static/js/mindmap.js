@@ -1,0 +1,413 @@
+/**
+ * Mapa mental: a montagem.
+ *
+ * Nothing in this file decides anything - it wires the pieces together and
+ * owns the small amount of glue that genuinely belongs between them: the
+ * render loop, the save indicator, the viewport that is remembered between
+ * visits, and the toolbar buttons that call into the modules.
+ *
+ * The board still degrades honestly. With JavaScript unavailable the canvas
+ * cannot draw, but the map is not lost: the gallery, the settings form, the
+ * Markdown and SVG exports, "salvar como documento", duplicate and delete are
+ * all plain server-rendered pages and form posts.
+ */
+
+import { $, closeDialog, debounce, openDialog, postJSON } from './modules/dom.js';
+import { toast } from './modules/toasts.js';
+import { createStore } from './modules/mindmap/store.js';
+import { createCamera, createRenderer } from './modules/mindmap/canvas.js';
+import { createActions, createSelection } from './modules/mindmap/actions.js';
+import { createInteractions } from './modules/mindmap/interactions.js';
+import { createInspector } from './modules/mindmap/inspector.js';
+import { createUploader } from './modules/mindmap/media.js';
+import { createMinimap } from './modules/mindmap/minimap.js';
+
+const VIEWPORT_SAVE_MS = 900;
+const ZOOM_STEP = 1.2;
+
+function boot() {
+  const page = $('[data-mind-map]');
+  if (!page) return;
+
+  let graph = null;
+  try {
+    graph = JSON.parse(page.dataset.graph || '{}');
+  } catch (error) {
+    graph = null;
+  }
+  if (!graph) {
+    toast('Não foi possível ler este mapa. Recarregue a página.', 'error');
+    return;
+  }
+
+  const stage = $('[data-stage]', page);
+  const world = $('[data-world]', page);
+  const nodesHost = $('[data-nodes]', page);
+  const linksHost = $('[data-links]', page);
+  const labelsHost = $('[data-link-labels]', page);
+  const marquee = $('[data-marquee]', page);
+  const hint = $('[data-hint]', page);
+  const statusOutput = $('[data-save-status]', page);
+  const statusLabel = $('[data-save-label]', page);
+  const zoomLevel = $('[data-zoom-level]', page);
+  const lostButton = $('[data-lost]', page);
+  const minimapHost = $('[data-minimap]', page);
+
+  const accent = page.dataset.accent || '#4F46E5';
+
+  /* ── Model ────────────────────────────────────────────────────────── */
+
+  const store = createStore({
+    opsUrl: page.dataset.opsUrl,
+    graphUrl: page.dataset.graphUrl,
+    layoutUrl: page.dataset.layoutUrl,
+    mediaUrl: page.dataset.mediaUrl,
+    documentUrl: page.dataset.documentUrl,
+    revision: Number(page.dataset.revision) || 1,
+  });
+
+  const camera = createCamera(page, world, stage);
+  const renderer = createRenderer({ store, nodesHost, linksHost, labelsHost, accent });
+
+  const selection = createSelection((members) => {
+    renderer.setSelection(members);
+    if (members.size) inspector.clearEdge();
+    inspector.refresh();
+    scheduleOutline();
+  });
+
+  const notify = (message, kind = 'info', options = {}) => toast(message, kind, options);
+
+  const actions = createActions({
+    store,
+    selection,
+    limits: graph.limits || { nodes: 1000, edges: 2000 },
+    notify,
+  });
+
+  const uploader = createUploader({
+    url: page.dataset.uploadUrl,
+    limit: Number(page.dataset.uploadLimit) || 0,
+    input: $('[data-file-input]', page),
+    store,
+    actions,
+    selection,
+    notify,
+    onDone: () => inspector.refresh(),
+  });
+
+  const inspector = createInspector({
+    root: page,
+    store,
+    selection,
+    actions,
+    notify,
+    uploader,
+    searchUrl: page.dataset.searchUrl,
+    onAddChild(uuid) {
+      const created = actions.addChild(uuid);
+      if (created) interactions.beginEdit(created.uuid, { fresh: true });
+    },
+    onConnectFrom(uuid) {
+      interactions.setTool('connect');
+      selection.only(uuid);
+      interactions.showHint('Clique no tópico que se conecta a este.');
+    },
+    onReveal: reveal,
+  });
+
+  const minimap = createMinimap({ host: minimapHost, canvas: $('[data-minimap-canvas]', page), store, camera, stage });
+
+  const interactions = createInteractions({
+    page,
+    stage,
+    store,
+    camera,
+    renderer,
+    selection,
+    actions,
+    marquee,
+    hint,
+    uploader,
+    onSelectEdge: (uuid) => inspector.selectEdge(uuid),
+    onEditEnd: () => inspector.refresh(),
+    undo: () => {
+      if (!store.undo()) notify('Nada para desfazer.', 'info', { timeout: 1600 });
+    },
+    redo: () => {
+      if (!store.redo()) notify('Nada para refazer.', 'info', { timeout: 1600 });
+    },
+    // The shortcut asks the same question the button does: Ctrl+Shift+O is
+    // easy to hit while reaching for Ctrl+Shift+Z.
+    organize: confirmOrganize,
+    fit,
+    reveal,
+    centrePlacement,
+  });
+
+  /* ── Render loop ──────────────────────────────────────────────────── */
+
+  let frame = null;
+  function scheduleRender() {
+    if (frame) return;
+    frame = window.requestAnimationFrame(() => {
+      frame = null;
+      renderer.render();
+      // Measuring after painting is what keeps a node as tall as its text:
+      // the browser is the only thing that knows, and the model has to learn
+      // it for layout and export to place the box correctly.
+      renderer.measure();
+      minimap.draw();
+      refreshHistoryButtons();
+      checkIfLost();
+    });
+  }
+
+  const scheduleOutline = debounce(() => inspector.renderOutline(), 120);
+
+  store.on('change', () => {
+    selection.prune((uuid) => store.nodes.has(uuid));
+    scheduleRender();
+    scheduleOutline();
+    inspector.refresh();
+  });
+
+  store.on('status', (status) => {
+    statusOutput.dataset.state = status === 'dirty' ? 'saving' : status;
+    statusLabel.textContent = {
+      saved: 'Salvo',
+      saving: 'Salvando…',
+      dirty: 'Salvando…',
+      error: 'Não salvo',
+    }[status] || 'Salvo';
+  });
+
+  store.on('conflict', () => {
+    notify(
+      'Este mapa foi alterado em outra aba. Carregamos a versão mais recente.',
+      'warning',
+      { timeout: 7000 }
+    );
+  });
+
+  /* ── Camera ───────────────────────────────────────────────────────── */
+
+  const saveViewport = debounce(() => {
+    postJSON(page.dataset.viewportUrl, {
+      x: camera.x,
+      y: camera.y,
+      zoom: camera.zoom,
+    });
+  }, VIEWPORT_SAVE_MS);
+
+  camera.onChange(({ zoom }) => {
+    zoomLevel.textContent = `${Math.round(zoom * 100)}%`;
+    minimap.draw();
+    saveViewport();
+    checkIfLost();
+  });
+
+  /* Arrumar moves every topic at once. Undo covers it, but undo only helps
+     someone who noticed - and on a large board the difference between "tidied"
+     and "lost my arrangement" takes a moment to surface. So it is asked. */
+  function confirmOrganize() {
+    const dialog = $('#map-organize');
+    if (!dialog) {
+      organize();
+      return;
+    }
+    const select = $('#map-settings select[name="layout"]');
+    const label = $('[data-organize-layout]', dialog);
+    if (label && select && select.selectedIndex >= 0) {
+      label.textContent = select.options[select.selectedIndex].text.toLowerCase();
+    }
+    openDialog(dialog);
+  }
+
+  function fit() {
+    const box = renderer.bounds();
+    if (box) camera.fit(box);
+    checkIfLost();
+  }
+
+  /* ── Losing the map ───────────────────────────────────────────────── */
+
+  // How much of the board has to remain on screen before it counts as still
+  // being there. A tenth is enough to steer back by; below that the surface
+  // reads as empty and the way home has to be offered.
+  const LOST_RATIO = 0.1;
+
+  function checkIfLost() {
+    if (!lostButton) return;
+    const box = renderer.bounds();
+    if (!box) {
+      lostButton.hidden = true;
+      return;
+    }
+    const view = stage.getBoundingClientRect();
+    const left = box.x * camera.zoom + camera.x;
+    const top = box.y * camera.zoom + camera.y;
+    const width = box.width * camera.zoom;
+    const height = box.height * camera.zoom;
+
+    const overlapX = Math.max(0, Math.min(left + width, view.width) - Math.max(left, 0));
+    const overlapY = Math.max(0, Math.min(top + height, view.height) - Math.max(top, 0));
+    // Against the visible part of the board, not against its whole area: on a
+    // map far larger than the screen, a tenth of it would never be on screen
+    // and the button would never go away.
+    const reachable = Math.min(width, view.width) * Math.min(height, view.height);
+    const visible = overlapX * overlapY;
+
+    lostButton.hidden = reachable > 0 && visible / reachable > LOST_RATIO;
+  }
+
+  /** Bring a node into view, moving the camera only if it is off screen. */
+  function reveal(uuid) {
+    const node = store.get(uuid);
+    if (!node) return;
+    const view = stage.getBoundingClientRect();
+    const screenX = node.x * camera.zoom + camera.x;
+    const screenY = node.y * camera.zoom + camera.y;
+    const margin = 80;
+    if (
+      screenX > margin && screenY > margin &&
+      screenX + node.width * camera.zoom < view.width - margin &&
+      screenY + node.height * camera.zoom < view.height - margin
+    ) {
+      return;
+    }
+    camera.moveTo(
+      view.width / 2 - (node.x + node.width / 2) * camera.zoom,
+      view.height / 2 - (node.y + node.height / 2) * camera.zoom
+    );
+  }
+
+  /** The middle of the board, in world coordinates - where a loose node goes
+   *  when it was asked for with the keyboard rather than the pointer. */
+  function centrePlacement() {
+    const view = stage.getBoundingClientRect();
+    const centre = camera.toWorld(view.left + view.width / 2, view.top + view.height / 2);
+    return { x: centre.x - 90, y: centre.y - 24 };
+  }
+
+  async function organize() {
+    notify('Arrumando o mapa…', 'info', { timeout: 1500 });
+    const ok = await store.organize(null);
+    if (!ok) {
+      notify('Não foi possível arrumar o mapa agora.', 'error');
+      return;
+    }
+    // The graph came back with new coordinates; frame it so the change is
+    // visible rather than happening somewhere off screen.
+    window.requestAnimationFrame(() => {
+      renderer.render();
+      renderer.measure();
+      fit();
+    });
+  }
+
+  function refreshHistoryButtons() {
+    const undoButton = $('[data-action="mm-undo"]', page);
+    const redoButton = $('[data-action="mm-redo"]', page);
+    if (undoButton) undoButton.disabled = !store.canUndo;
+    if (redoButton) redoButton.disabled = !store.canRedo;
+  }
+
+  /* ── Toolbar ──────────────────────────────────────────────────────── */
+
+  page.addEventListener('click', (event) => {
+    const toolButton = event.target.closest('[data-tool-button]');
+    if (toolButton) {
+      interactions.setTool(toolButton.dataset.toolButton);
+      return;
+    }
+
+    const button = event.target.closest('[data-action]');
+    if (!button) return;
+
+    switch (button.dataset.action) {
+      case 'mm-add-topic': {
+        const created = actions.addLoose(centrePlacement());
+        if (created) interactions.beginEdit(created.uuid, { fresh: true });
+        break;
+      }
+      case 'mm-add-note': {
+        const created = actions.addNote(centrePlacement());
+        if (created) interactions.beginEdit(created.uuid, { fresh: true });
+        break;
+      }
+      case 'mm-organize':
+        confirmOrganize();
+        break;
+      case 'mm-organize-confirm':
+        closeDialog($('#map-organize'));
+        organize();
+        break;
+      case 'mm-undo':
+        store.undo();
+        break;
+      case 'mm-redo':
+        store.redo();
+        break;
+      case 'mm-zoom-in':
+        camera.zoomTo(camera.zoom * ZOOM_STEP);
+        break;
+      case 'mm-zoom-out':
+        camera.zoomTo(camera.zoom / ZOOM_STEP);
+        break;
+      case 'mm-fit':
+        fit();
+        break;
+      default:
+        break;
+    }
+  });
+
+  if (zoomLevel) zoomLevel.addEventListener('click', () => camera.zoomTo(1));
+
+  /* ── Leaving the page ─────────────────────────────────────────────── */
+
+  // `pagehide` rather than `beforeunload`: it fires when a tab is discarded or
+  // put into the back/forward cache, which `beforeunload` does not, and it
+  // does not block the navigation. `keepalive` is what lets the request
+  // outlive the page.
+  window.addEventListener('pagehide', () => {
+    if (store.hasPendingChanges()) store.flush({ keepalive: true });
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden' && store.hasPendingChanges()) {
+      store.flush({ keepalive: true });
+    }
+  });
+
+  window.addEventListener('resize', debounce(() => minimap.draw(), 150));
+
+  /* ── Start ────────────────────────────────────────────────────────── */
+
+  store.adopt(graph);
+  renderer.render();
+  renderer.measure();
+
+  const saved = graph.viewport || {};
+  if (saved.zoom && (saved.x || saved.y)) {
+    camera.moveTo(saved.x, saved.y, saved.zoom);
+  } else {
+    fit();
+  }
+  camera.write();
+
+  const first = store.roots()[0];
+  if (first) selection.only(first.uuid);
+  inspector.refresh();
+  minimap.draw();
+  refreshHistoryButtons();
+  checkIfLost();
+  stage.focus({ preventScroll: true });
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', boot);
+} else {
+  boot();
+}

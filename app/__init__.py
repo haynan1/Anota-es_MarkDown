@@ -96,6 +96,7 @@ def _register_blueprints(app: Flask) -> None:
     from app.blueprints.groups import groups_bp
     from app.blueprints.history import history_bp
     from app.blueprints.media import media_bp
+    from app.blueprints.mindmaps import mindmaps_bp
     from app.blueprints.settings import settings_bp
     from app.blueprints.trash import trash_bp
 
@@ -108,6 +109,7 @@ def _register_blueprints(app: Flask) -> None:
     app.register_blueprint(exports_bp)
     app.register_blueprint(settings_bp)
     app.register_blueprint(media_bp)
+    app.register_blueprint(mindmaps_bp)
     app.register_blueprint(api_bp)
 
 

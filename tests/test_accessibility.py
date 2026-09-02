@@ -19,6 +19,7 @@ PAGES = [
     "/documentos/categorias",
     "/documentos/importar",
     "/grupos/",
+    "/mapas/",
 ]
 
 
@@ -341,3 +342,71 @@ class TestMotionAndContrast:
         assert ".btn-icon" in css
         assert "min-height: 38px" in css
         assert "min-height: 32px" in css
+
+
+class TestTheCanvasIsReachableWithoutAMouse:
+    """The canvas is a picture, and a picture is unreachable with a screen
+    reader. These pin the three things that make it usable anyway: the board
+    announces itself, every icon-only tool is named, and the outline exists as
+    the same map in text.
+
+    Its URL carries a UUID, so it cannot join PAGES - which is exactly why it
+    was never checked by any of the tests above.
+    """
+
+    @pytest.fixture()
+    def canvas(self, client, app):
+        from app.services.mind_map_service import MindMapService
+
+        mind_map = MindMapService.create("Mapa acessível", "")
+        response = client.get(f"/mapas/{mind_map.uuid}")
+        assert response.status_code == 200
+        return response.data.decode("utf-8")
+
+    def test_the_board_announces_what_it_is(self, canvas):
+        assert 'role="application"' in canvas
+        board = re.search(r'<div class="mm-stage"[^>]*>', canvas).group(0)
+        assert "aria-label=" in board
+
+    def test_the_board_is_a_tab_stop(self, canvas):
+        """Without it the keyboard shortcuts have nothing to be pressed into."""
+        board = re.search(r'<div class="mm-stage"[^>]*>', canvas).group(0)
+        assert "tabindex=" in board
+
+    def test_every_tool_is_named(self, canvas):
+        for match in re.finditer(r"<button\b([^>]*)>(.*?)</button>", canvas, re.S):
+            attrs, inner = match.group(1), match.group(2)
+            text_content = re.sub(r"<[^>]+>", "", inner).strip()
+            assert (
+                "aria-label=" in attrs or "aria-labelledby=" in attrs or text_content
+            ), f"botão sem nome acessível no canvas: {attrs[:80]}"
+
+    def test_the_toolbar_declares_itself_a_toolbar(self, canvas):
+        toolbar = re.search(r'<div class="mm-toolbar"[^>]*>', canvas).group(0)
+        assert 'role="toolbar"' in toolbar
+        assert "aria-label=" in toolbar
+
+    def test_the_active_tool_is_announced(self, canvas):
+        """Which tool is selected must not be carried by colour alone."""
+        assert 'aria-pressed="true"' in canvas
+
+    def test_the_outline_is_the_texts_version_of_the_picture(self, canvas):
+        panel = re.search(r"<aside[^>]*data-outline-panel[^>]*>", canvas).group(0)
+        assert "aria-label=" in panel
+
+    def test_decorative_svgs_are_hidden_from_assistive_tech(self, canvas):
+        for svg in re.findall(r"<svg\b[^>]*>", canvas):
+            if 'width="0"' in svg:  # the sprite itself
+                continue
+            assert 'aria-hidden="true"' in svg or 'role="img"' in svg, (
+                f"svg sem tratamento no canvas: {svg[:80]}"
+            )
+
+    def test_the_page_has_one_h1(self, canvas):
+        """The map's own name. The canvas had none at all, so its two h2
+        panels opened a heading hierarchy that started nowhere."""
+        assert len(re.findall(r"<h1\b", canvas)) == 1
+
+    def test_the_board_is_a_main_landmark(self, canvas):
+        """This screen replaces base.html's shell, so it brings its own."""
+        assert re.search(r'<main[^>]*id="main-content"', canvas)

@@ -12,13 +12,19 @@ export function csrfToken() {
 /**
  * POST JSON with CSRF, returning `{ ok, status, data }`.
  * Never throws on an HTTP error - callers decide how to react.
+ *
+ * `keepalive` lets a save survive the page it was fired from: the browser
+ * finishes the request after the tab is gone. It is the only way to persist a
+ * last edit on `pagehide` while still sending the CSRF header, which
+ * `navigator.sendBeacon` cannot do.
  */
-export async function postJSON(url, payload, { signal } = {}) {
+export async function postJSON(url, payload, { signal, keepalive = false } = {}) {
   try {
     const response = await fetch(url, {
       method: 'POST',
       credentials: 'same-origin',
       signal,
+      keepalive,
       headers: {
         'Content-Type': 'application/json',
         'X-CSRFToken': csrfToken(),

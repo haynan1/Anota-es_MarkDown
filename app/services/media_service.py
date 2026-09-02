@@ -541,13 +541,73 @@ def delete_for_documents(document_ids: list[int]) -> int:
     return len(assets)
 
 
-def prune_orphans(max_age_hours: int = 24) -> tuple[int, int]:
-    """Delete assets no document references any more.
+def is_referenced(asset: MediaAsset, bodies: list[str], on_canvas: set[int]) -> bool:
+    """Whether anything in the application still points at ``asset``.
 
-    An upload that was never saved into a document — or whose reference was
-    edited away — has no owner. The age guard keeps a file that was uploaded
-    seconds ago, while its editor tab is still open and unsaved, from being
-    swept up.
+    Two owners, two mechanisms. A document references a picture by URL inside
+    its Markdown, so the body is searched for the UUID. A mind map node
+    references one by foreign key, so the set of referenced ids is read from
+    the canvas. Both are asked, because an upload may well be on a map *and*
+    pasted into a document.
+    """
+    if asset.id in on_canvas:
+        return True
+    return any(asset.uuid in (body or "") for body in bodies)
+
+
+def release_assets(asset_ids: set[int]) -> int:
+    """Delete the named assets, unless something still references them.
+
+    Called after a map is purged: its nodes are gone, so a picture that was
+    only on that canvas now has no owner and its file would linger forever.
+    A picture also pasted into a document, or copied onto a second map, is
+    kept - the reference that survives is what decides.
+
+    The caller commits; this runs inside the same transaction as the purge.
+    """
+    from app.models import Document
+
+    if not asset_ids:
+        return 0
+
+    assets = db.session.scalars(
+        db.select(MediaAsset).where(MediaAsset.id.in_(asset_ids))
+    ).all()
+    if not assets:
+        return 0
+
+    bodies = list(db.session.scalars(db.select(Document.content_markdown)).all())
+    on_canvas = _canvas_references()
+
+    removed = 0
+    for asset in assets:
+        if is_referenced(asset, bodies, on_canvas):
+            continue
+        _unlink(asset)
+        db.session.delete(asset)
+        removed += 1
+    return removed
+
+
+def _canvas_references() -> set[int]:
+    """Asset ids held by mind map nodes.
+
+    Imported where it is used rather than at module scope: media is the lower
+    layer of the two, and a picture must not need to know about canvases in
+    order to exist.
+    """
+    from app.repositories.mind_map_repository import MindMapRepository
+
+    return MindMapRepository.referenced_asset_ids()
+
+
+def prune_orphans(max_age_hours: int = 24) -> tuple[int, int]:
+    """Delete assets nothing references any more.
+
+    An upload that was never saved into a document, never placed on a map — or
+    whose reference was edited away — has no owner. The age guard keeps a file
+    that was uploaded seconds ago, while its editor tab is still open and
+    unsaved, from being swept up.
 
     Returns ``(rows_removed, files_removed)``.
     """
@@ -563,12 +623,14 @@ def prune_orphans(max_age_hours: int = 24) -> tuple[int, int]:
     # One pass over the corpus rather than a LIKE per asset. Documents in the
     # trash count as references: the trash is reversible, and pruning their
     # media would restore a document with broken images. Only a purge — which
-    # calls delete_for_documents directly — ends a reference.
-    bodies = db.session.scalars(db.select(Document.content_markdown)).all()
+    # calls delete_for_documents directly — ends a reference. Maps in the trash
+    # count for the same reason: their nodes are still there.
+    bodies = list(db.session.scalars(db.select(Document.content_markdown)).all())
+    on_canvas = _canvas_references()
     referenced = {
         asset.uuid
         for asset in candidates
-        if any(asset.uuid in (body or "") for body in bodies)
+        if is_referenced(asset, bodies, on_canvas)
     }
 
     removed_files = 0

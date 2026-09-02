@@ -223,3 +223,23 @@ def sanitize_plain_text(value: str, max_length: int | None = None) -> str:
     if max_length is not None and len(cleaned) > max_length:
         cleaned = cleaned[:max_length].rstrip()
     return cleaned
+
+
+def sanitize_multiline_text(value: str, max_length: int | None = None) -> str:
+    """Strip every tag from ``value`` while keeping its line breaks.
+
+    :func:`sanitize_plain_text` collapses whitespace, which is right for a
+    title and wrong for a paragraph: a note written on a mind map node is
+    several lines and has to come back as several lines. Tags still go, so the
+    result is safe to render as text anywhere.
+    """
+    cleaned = bleach.clean(
+        pre_strip_dangerous(value or ""), tags=set(), attributes={}, strip=True
+    )
+    cleaned = cleaned.replace("\r\n", "\n").replace("\r", "\n")
+    # Trailing spaces per line, and no more than one blank line in a row.
+    cleaned = "\n".join(line.rstrip() for line in cleaned.split("\n"))
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+    if max_length is not None and len(cleaned) > max_length:
+        cleaned = cleaned[:max_length].rstrip()
+    return cleaned

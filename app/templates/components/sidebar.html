@@ -60,6 +60,11 @@
       {{ icon('layers') }}<span class="nav-label">Grupos</span>
     </a>
 
+    <a class="nav-item" href="{{ url_for('mindmaps.index') }}" data-tooltip="Mapas mentais"
+       {% if request.blueprint == 'mindmaps' %}aria-current="page"{% endif %}>
+      {{ icon('mindmap') }}<span class="nav-label">Mapas mentais</span>
+    </a>
+
     <a class="nav-item" href="{{ url_for('documents.categories') }}" data-tooltip="Categorias e etiquetas"
        {% if request.endpoint == 'documents.categories' %}aria-current="page"{% endif %}>
       {{ icon('folder') }}<span class="nav-label">Categorias e etiquetas</span>

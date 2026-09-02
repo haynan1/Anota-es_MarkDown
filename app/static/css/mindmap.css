@@ -1,0 +1,971 @@
+/* ==========================================================================
+   Markdown Studio — mapas mentais
+
+   The canvas is the one screen in this application that is a *space* rather
+   than a document, and it is styled accordingly: a sunken ground, tools that
+   float over it on glass, and content that casts a shadow onto it. Everything
+   still comes from the same tokens as the rest of the app, so the board is
+   recognisably the same product in both themes.
+
+   Nothing here uses an inline style. Positions, sizes and node colours arrive
+   through custom properties written from JavaScript via the CSSOM, which the
+   Content-Security-Policy allows and a `style` attribute would not.
+   ========================================================================== */
+
+/* ── Page shell ─────────────────────────────────────────────────────────── */
+
+.mm-page {
+  --mm-header: 56px;
+  --mm-panel-width: 320px;
+  /* Written by the renderer on every zoom change, so the grid keeps its
+     physical rhythm instead of ballooning with the world transform. */
+  --mm-grid-size: 28px;
+  --mm-grid-offset-x: 0px;
+  --mm-grid-offset-y: 0px;
+  --mm-accent: var(--accent);
+
+  /* What is in front of what, declared once. Seven independent numbers is how
+     a floating control ends up drawn over the sheet that is supposed to have
+     replaced it. Docked, a panel is a column and overlaps nothing - hence the
+     low value; as a sheet on a narrow screen it covers the board, and has to
+     clear the controls floating on it. */
+  --mm-z-panel: 20;
+  --mm-z-controls: 25;
+  --mm-z-hint: 26;
+  --mm-z-sheet: 28;
+  --mm-z-header: 30;
+
+  display: grid;
+  grid-template-rows: var(--mm-header) minmax(0, 1fr);
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+
+.mm-header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-3);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  z-index: var(--mm-z-header);
+}
+
+/* Semantic only: `font: inherit` because an h1 would otherwise arrive at 2em
+   and shove the header apart, and `min-width: 0` so the title inside it can
+   still shorten with an ellipsis instead of pushing the toolbar off. */
+.mm-title-heading {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  font: inherit;
+}
+
+.mm-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--fs-md);
+  font-weight: 620;
+  letter-spacing: -0.012em;
+  cursor: pointer;
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.mm-title:hover { background: var(--surface-2); border-color: var(--border); }
+
+.mm-title-text {
+  /* `max-width` caps the title; `min-width: 0` is what lets it actually give
+     way. Without the second one the name held its full width, pushed the
+     header past the viewport on a phone, and pushed the actions off the
+     right-hand edge - a cap is not the same thing as permission to shrink. */
+  min-width: 0;
+  max-width: min(42vw, 460px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mm-title-dot {
+  width: 10px; height: 10px; flex: none;
+  border-radius: var(--radius-full);
+  background: var(--category-color, var(--accent));
+}
+.mm-title-pencil { opacity: 0; transition: opacity var(--dur) var(--ease); }
+.mm-title:hover .mm-title-pencil,
+.mm-title:focus-visible .mm-title-pencil { opacity: 0.6; }
+
+.mm-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  margin-left: auto;
+  /* The title is the thing that yields; these are fixed-size controls and
+     shrinking them would only clip their icons. */
+  flex: none;
+}
+
+/* The overflow menu in this header opens downwards; the shared component was
+   written for a bar sitting at the bottom of a card. */
+.menu-panel-down { top: calc(100% + 6px); bottom: auto; }
+
+/* ── Save status ────────────────────────────────────────────────────────── */
+
+.mm-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-left: var(--sp-2);
+  padding: var(--sp-1) var(--sp-3);
+  border-radius: var(--radius-full);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: var(--fs-2xs);
+  font-weight: 560;
+  white-space: nowrap;
+}
+.mm-status .spinner,
+.mm-status .mm-status-icon { display: none; }
+.mm-status[data-state="saved"] .mm-status-icon { display: block; color: var(--success); }
+.mm-status[data-state="saving"] .spinner { display: block; }
+.mm-status[data-state="error"] { background: var(--danger-soft); color: var(--danger); }
+.mm-status[data-state="error"] .mm-status-icon { display: none; }
+
+.spinner {
+  width: 13px; height: 13px;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent);
+  border-radius: var(--radius-full);
+  animation: mm-spin 700ms linear infinite;
+}
+@keyframes mm-spin { to { transform: rotate(360deg); } }
+
+/* ── Body & panels ──────────────────────────────────────────────────────── */
+
+.mm-body {
+  position: relative;
+  display: grid;
+  /* Explicit columns below, not auto-placement: a closed panel leaves its
+     column empty, and auto-placement would slide the board into it and let an
+     `auto` track collapse the board to nothing. The same three columns serve
+     the narrow layout, where the panels leave the flow to become sheets and
+     their tracks fall to zero width on their own. */
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-height: 0;
+}
+
+.mm-panel {
+  display: flex;
+  flex-direction: column;
+  width: var(--mm-panel-width);
+  min-height: 0;
+  background: var(--surface);
+  z-index: var(--mm-z-panel);
+}
+/* `display` above outranks the `hidden` attribute, which is a UA rule: without
+   this the panels never close, they only stop refreshing their contents. The
+   shell carries the same companion for every component that sets `display` on
+   something it also hides. */
+.mm-panel[hidden] { display: none; }
+.mm-panel-left { grid-column: 1; border-right: 1px solid var(--border); }
+.mm-panel-right { grid-column: 3; border-left: 1px solid var(--border); }
+
+.mm-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-3) var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--border);
+}
+.mm-panel-title {
+  font-size: var(--fs-2xs);
+  font-weight: 680;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-subtle);
+}
+.mm-panel-body { flex: 1; min-height: 0; padding: var(--sp-4); }
+.mm-panel-empty {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+}
+
+/* ── The stage ──────────────────────────────────────────────────────────── */
+
+.mm-stage {
+  grid-column: 2;
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
+  background:
+    radial-gradient(
+      circle at 1px 1px,
+      color-mix(in srgb, var(--text-subtle) 34%, transparent) 1px,
+      transparent 0
+    );
+  background-size: var(--mm-grid-size) var(--mm-grid-size);
+  background-position: var(--mm-grid-offset-x) var(--mm-grid-offset-y);
+  background-color: var(--surface-sunken);
+  touch-action: none;
+  cursor: default;
+}
+.mm-stage:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.mm-stage[data-tool="pan"],
+.mm-stage[data-space="true"] { cursor: grab; }
+.mm-stage[data-panning="true"] { cursor: grabbing; }
+.mm-stage[data-tool="connect"] { cursor: crosshair; }
+
+.mm-world {
+  position: absolute;
+  top: 0; left: 0;
+  width: 0; height: 0;
+  transform-origin: 0 0;
+  /* Written by the renderer: translate(x, y) scale(z). */
+  transform: translate(var(--mm-x, 0px), var(--mm-y, 0px)) scale(var(--mm-zoom, 1));
+}
+
+/* A drag is a continuous gesture; transitions on the thing being dragged turn
+   it into a rubber band that arrives after the pointer. */
+.mm-page[data-interacting="true"] .mm-node { transition: none; }
+
+/* A 1x1 element that draws in world coordinates: the board has no fixed size,
+   so reserving an SVG the size of the canvas is not possible. Two things have
+   to hold for that to work, and both are stated here rather than left to
+   presentation attributes, which any rule in the shell outranks.
+
+   `max-width: none` — the shell resets `img, svg { max-width: 100% }`, and
+   this SVG is positioned against the 0x0 world, so that reset resolved to
+   `max-width: 0`. A zero width on an outermost `svg` does not merely shrink
+   it: it disables rendering of the element. The links were never drawn.
+
+   `overflow: visible` — everything it draws lies outside its own viewport. */
+.mm-links {
+  position: absolute;
+  top: 0; left: 0;
+  max-width: none;
+  overflow: visible;
+  pointer-events: none;
+}
+.mm-link { fill: none; stroke-linecap: round; }
+.mm-link-branch { stroke: var(--mm-link-color, var(--border-strong)); stroke-width: 2.5; opacity: 0.75; }
+.mm-link-free {
+  stroke: var(--mm-link-color, var(--text-subtle));
+  stroke-width: 1.75;
+  opacity: 0.9;
+}
+.mm-link-free[data-style="dashed"] { stroke-dasharray: 7 6; }
+.mm-link.is-selected { stroke: var(--accent); stroke-width: 3; opacity: 1; }
+.mm-link-hit { stroke: transparent; stroke-width: 16; pointer-events: stroke; cursor: pointer; }
+.mm-link-label {
+  fill: var(--text-muted);
+  font-size: 11px;
+  font-family: var(--font-ui);
+  text-anchor: middle;
+  pointer-events: none;
+}
+.mm-link-label-plate { fill: var(--surface); stroke: var(--border); }
+
+/* The line drawn while a connection is being dragged out of a port. */
+.mm-draft-link {
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-dasharray: 6 5;
+  fill: none;
+  pointer-events: none;
+}
+
+.mm-nodes { position: absolute; top: 0; left: 0; }
+
+/* ── Nodes ──────────────────────────────────────────────────────────────── */
+
+.mm-node {
+  position: absolute;
+  top: 0; left: 0;
+  transform: translate(var(--mm-node-x, 0px), var(--mm-node-y, 0px));
+  width: var(--mm-node-w, 180px);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  /* Optical insets, not layout spacing, which is why they are named here
+     instead of coming off the 4px scale: a shape has to fit a label inside
+     its own outline, and an ellipse or a diamond spends its corners doing it.
+     Snapped to the scale, a diamond either clips its text or doubles in size.
+     Declared as one family so the four shapes stay one decision. */
+  --mm-pad-y: 10px;
+  --mm-pad-x: 14px;
+
+  padding: var(--mm-pad-y) var(--mm-pad-x);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+  cursor: grab;
+  user-select: none;
+  transition:
+    box-shadow var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    transform 90ms var(--ease);
+}
+.mm-node:hover { box-shadow: var(--shadow-md); }
+.mm-node:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+/* A coloured node borrows its hue for the border and a wash of the surface,
+   rather than being flooded with it: a board of eight saturated rectangles is
+   a board nobody can read. The root is the exception - it is meant to shout. */
+.mm-node[data-colored="true"] {
+  border-color: color-mix(in srgb, var(--mm-node-color) 55%, transparent);
+  background: color-mix(in srgb, var(--mm-node-color) 12%, var(--surface));
+}
+.mm-node[data-colored="true"]::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 12%;
+  width: 3px; height: 76%;
+  border-radius: var(--radius-full);
+  background: var(--mm-node-color);
+}
+
+.mm-node[data-root="true"] {
+  border-color: transparent;
+  background: var(--mm-node-color, var(--accent));
+  color: #FFFFFF;
+  box-shadow: var(--shadow-md);
+}
+.mm-node[data-root="true"]::before { display: none; }
+.mm-node[data-root="true"] .mm-node-label { font-size: var(--fs-lg); font-weight: 660; }
+.mm-node[data-root="true"] .mm-node-badge { color: rgba(255, 255, 255, 0.85); }
+
+.mm-node[data-selected="true"] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft), var(--shadow-md);
+}
+.mm-node[data-dragging="true"] { opacity: 0.9; box-shadow: var(--shadow-lg); cursor: grabbing; }
+/* The ring that says "drop here and this becomes the parent". */
+.mm-node[data-drop="true"] {
+  border-color: var(--success);
+  box-shadow: 0 0 0 3px var(--success-soft), var(--shadow-md);
+}
+.mm-node[data-connect="true"] { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.mm-node[data-found="true"] { box-shadow: 0 0 0 3px var(--warning-soft), var(--shadow-md); }
+
+/* Shapes. Radius carries three of them; the diamond needs a clip and the
+   padding to survive it. */
+.mm-node[data-shape="pill"] { border-radius: var(--radius-full); --mm-pad-x: 20px; }
+.mm-node[data-shape="rect"] { border-radius: 3px; }
+.mm-node[data-shape="ellipse"] {
+  border-radius: 50% / 50%;
+  --mm-pad-y: 16px;
+  --mm-pad-x: 24px;
+}
+.mm-node[data-shape="diamond"] {
+  clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+  border-radius: 0;
+  --mm-pad-y: 22px;
+  --mm-pad-x: 30px;
+}
+.mm-node[data-shape="diamond"]::before { display: none; }
+
+.mm-node-label {
+  font-size: var(--fs-sm);
+  font-weight: 550;
+  line-height: 1.35;
+  text-align: center;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  cursor: text;
+}
+.mm-node-label:empty::before {
+  content: "Sem título";
+  color: var(--text-subtle);
+  font-style: italic;
+}
+.mm-node-label[contenteditable="true"] {
+  outline: none;
+  cursor: text;
+  min-width: 40px;
+}
+.mm-node[data-editing="true"] {
+  cursor: text;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft), var(--shadow-lg);
+}
+
+.mm-node-media {
+  margin: -2px -4px 2px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface-sunken);
+  line-height: 0;
+}
+.mm-node-media img {
+  display: block;
+  width: 100%;
+  max-height: 240px;
+  object-fit: cover;
+}
+
+.mm-node-badges {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--text-subtle);
+}
+.mm-node-badges:empty { display: none; }
+.mm-node-badge { display: inline-flex; color: inherit; }
+.mm-node-badge:hover { color: var(--accent); }
+
+.mm-node[data-kind="note"] {
+  background: color-mix(in srgb, var(--warning) 16%, var(--surface));
+  border-color: color-mix(in srgb, var(--warning) 35%, transparent);
+  border-radius: 4px 4px 4px 14px;
+}
+.mm-node[data-kind="note"] .mm-node-label {
+  text-align: left;
+  font-size: var(--fs-xs);
+  font-weight: 500;
+}
+
+/* Collapse handle: a count, so a folded branch says how much it is hiding. */
+.mm-node-toggle {
+  position: absolute;
+  right: -11px;
+  top: 50%;
+  translate: 0 -50%;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-full);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  z-index: 2;
+  transition: transform var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+/* Hidden on a topic with nothing under it - and `display` above outranks the
+   attribute, so it has to be said here. Without this every leaf on the board
+   wore a dead collapse button, half outside its own right edge, cutting the
+   silhouette of every card on screen. */
+.mm-node-toggle[hidden] { display: none; }
+.mm-node-toggle:hover { color: var(--accent); border-color: var(--accent); transform: scale(1.1); }
+.mm-node[data-collapsed="true"] .mm-node-toggle {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+}
+
+/* Ports. Invisible until the node is approached, so a resting board is nodes
+   and lines and nothing else. */
+.mm-port {
+  position: absolute;
+  top: 50%;
+  translate: 0 -50%;
+  width: 13px; height: 13px;
+  border: 2px solid var(--accent);
+  border-radius: var(--radius-full);
+  background: var(--surface);
+  opacity: 0;
+  cursor: crosshair;
+  transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease);
+  z-index: 3;
+}
+.mm-port[data-side="left"] { left: -7px; }
+.mm-port[data-side="right"] { right: -7px; }
+.mm-node:hover .mm-port,
+.mm-node[data-selected="true"] .mm-port { opacity: 1; }
+.mm-port:hover { transform: scale(1.25); background: var(--accent); }
+.mm-node[data-collapsed="true"] .mm-port[data-side="right"] { display: none; }
+
+/* Width handle on the trailing edge: a paragraph in a node needs a wider box,
+   and nothing else on the canvas offers that. */
+.mm-handle {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 12px; height: 12px;
+  border-radius: 3px;
+  background:
+    linear-gradient(135deg, transparent 45%, var(--border-strong) 45%,
+                    var(--border-strong) 55%, transparent 55%);
+  opacity: 0;
+  cursor: ew-resize;
+  transition: opacity var(--dur) var(--ease);
+}
+.mm-node:hover .mm-handle, .mm-node[data-selected="true"] .mm-handle { opacity: 1; }
+
+/* ── Marquee ────────────────────────────────────────────────────────────── */
+
+.mm-marquee {
+  position: absolute;
+  z-index: 5;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  background: var(--accent-soft);
+  pointer-events: none;
+  translate: var(--mm-marquee-x, 0px) var(--mm-marquee-y, 0px);
+  width: var(--mm-marquee-w, 0px);
+  height: var(--mm-marquee-h, 0px);
+}
+
+/* ── Floating controls ──────────────────────────────────────────────────── */
+
+.mm-toolbar,
+.mm-zoom,
+.mm-minimap {
+  position: absolute;
+  z-index: var(--mm-z-controls);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: blur(12px) saturate(140%);
+  box-shadow: var(--shadow-md);
+}
+
+.mm-toolbar {
+  left: var(--sp-4);
+  /* The stage starts below the header, so the offset is measured from the
+     board. It used to add --mm-header back, which is what a control
+     positioned against the whole page has to do. */
+  top: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--sp-2);
+}
+.mm-tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px; height: 38px;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.mm-tool:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
+.mm-tool:disabled { opacity: 0.35; cursor: not-allowed; }
+.mm-tool.is-on { background: var(--accent-soft); color: var(--accent); }
+.mm-tool-sep {
+  height: 1px;
+  margin: var(--sp-1) var(--sp-2);
+  background: var(--border);
+}
+
+.mm-zoom {
+  right: var(--sp-4);
+  bottom: var(--sp-4);
+  display: flex;
+  align-items: center;
+  padding: var(--sp-1);
+}
+.mm-zoom-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px; height: 32px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.mm-zoom-button:hover { background: var(--surface-2); color: var(--text); }
+.mm-zoom-level {
+  min-width: 54px;
+  height: 32px;
+  padding: 0 var(--sp-2);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--fs-2xs);
+  font-weight: 620;
+  cursor: pointer;
+}
+.mm-zoom-level:hover { background: var(--surface-2); }
+
+.mm-minimap {
+  left: var(--sp-4);
+  bottom: var(--sp-4);
+  width: 200px;
+  height: 130px;
+  padding: 0;
+  overflow: hidden;
+  cursor: pointer;
+}
+.mm-minimap-canvas { display: block; width: 100%; height: 100%; }
+.mm-minimap-node { fill: var(--text-subtle); opacity: 0.55; }
+.mm-minimap-node[data-root="true"] { fill: var(--accent); opacity: 0.9; }
+.mm-minimap-view { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+
+/* The way home. Sits above the board on the same glass as the tools, centred
+   where the map is not - the point being that the surface is empty, so there
+   is nothing here to cover. */
+.mm-lost {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  z-index: var(--mm-z-hint);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: blur(12px) saturate(140%);
+  box-shadow: var(--shadow-md);
+  color: var(--text);
+  font-size: var(--fs-xs);
+  font-weight: 560;
+  cursor: pointer;
+  /* Fades in rather than appearing: it arrives while the hand is still
+     panning, and a hard cut there reads as a glitch. */
+  animation: mm-lost-in 220ms var(--ease) both;
+  transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.mm-lost[hidden] { display: none; }
+.mm-lost:hover { border-color: var(--accent); }
+.mm-lost:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+@keyframes mm-lost-in {
+  from { opacity: 0; translate: -50% calc(-50% + 6px); }
+  to { opacity: 1; translate: -50% -50%; }
+}
+
+/* A transient line of guidance: "solte para tornar filho", "clique no
+   segundo tópico". Never a toast — the answer belongs where the hands are. */
+.mm-hint {
+  position: absolute;
+  left: 50%;
+  bottom: var(--sp-4);
+  translate: -50% 0;
+  z-index: var(--mm-z-hint);
+  padding: var(--sp-2) var(--sp-4);
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--text) 88%, transparent);
+  color: var(--bg);
+  font-size: var(--fs-2xs);
+  font-weight: 560;
+  box-shadow: var(--shadow-md);
+  pointer-events: none;
+}
+
+/* ── Inspector ──────────────────────────────────────────────────────────── */
+
+.mm-inspector-form { display: flex; flex-direction: column; gap: var(--sp-4); }
+/* Both forms - the topic's and the connection's - are hidden until
+   something is selected, and `display` above would keep them on screen. */
+.mm-inspector-form[hidden] { display: none; }
+.mm-textarea { resize: vertical; min-height: 62px; line-height: 1.5; }
+.mm-divider { height: 1px; margin: 0; border: 0; background: var(--border); }
+
+.mm-swatches { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.mm-swatch {
+  width: 26px; height: 26px;
+  border: 2px solid transparent;
+  border-radius: var(--radius-full);
+  background: var(--category-color, var(--surface-2));
+  cursor: pointer;
+  transition: transform var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.mm-swatch:hover { transform: scale(1.12); }
+.mm-swatch[aria-pressed="true"] {
+  border-color: var(--text);
+  box-shadow: 0 0 0 2px var(--surface) inset;
+}
+.mm-swatch-none {
+  background:
+    linear-gradient(135deg, transparent 44%, var(--danger) 44%,
+                    var(--danger) 56%, transparent 56%),
+    var(--surface-2);
+  border-color: var(--border);
+}
+
+.mm-image-slot {
+  display: grid;
+  place-items: center;
+  min-height: 96px;
+  padding: var(--sp-2);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.mm-image-preview { max-height: 180px; border-radius: var(--radius-sm); }
+.mm-image-empty, .mm-doc-empty {
+  margin: 0;
+  color: var(--text-subtle);
+  font-size: var(--fs-2xs);
+}
+.mm-image-actions { flex-wrap: wrap; }
+
+.mm-doc-slot { margin-bottom: var(--sp-2); }
+.mm-doc-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  font-size: var(--fs-xs);
+  font-weight: 550;
+}
+/* Same reason as the panels: hidden when the topic has no document linked. */
+.mm-doc-link[hidden] { display: none; }
+.mm-inspector-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+
+.mm-doc-results {
+  list-style: none;
+  max-height: 320px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.mm-doc-result {
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.mm-doc-result:hover { background: var(--surface-2); border-color: var(--border); }
+.mm-doc-result-title { display: block; font-size: var(--fs-sm); font-weight: 570; }
+.mm-doc-result-excerpt {
+  display: block;
+  color: var(--text-muted);
+  font-size: var(--fs-2xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Outline ────────────────────────────────────────────────────────────── */
+
+.mm-outline-list { list-style: none; display: flex; flex-direction: column; gap: 1px; }
+.mm-outline-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: 5px var(--sp-2);
+  padding-left: calc(var(--sp-2) + var(--mm-outline-depth, 0) * var(--sp-3));
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  text-align: left;
+  cursor: pointer;
+}
+.mm-outline-item:hover { background: var(--surface-2); color: var(--text); }
+.mm-outline-item[aria-current="true"] {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  color: var(--text);
+  font-weight: 570;
+}
+.mm-outline-dot {
+  width: 6px; height: 6px; flex: none;
+  border-radius: var(--radius-full);
+  background: var(--mm-node-color, var(--border-strong));
+}
+.mm-outline-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── Shortcut list ──────────────────────────────────────────────────────── */
+
+.mm-shortcuts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--sp-2) var(--sp-4);
+  align-items: baseline;
+  margin: 0;
+}
+.mm-shortcuts dt { text-align: right; }
+.mm-shortcuts dd { margin: 0; color: var(--text-muted); font-size: var(--fs-xs); }
+kbd {
+  display: inline-block;
+  padding: 2px 6px;
+  border: 1px solid var(--border-strong);
+  border-bottom-width: 2px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  line-height: 1.4;
+}
+
+/* ── Gallery ────────────────────────────────────────────────────────────── */
+
+.mm-gallery-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+}
+.mm-gallery-search { position: relative; display: flex; align-items: center; flex: 1 1 260px; }
+.mm-gallery-search .icon {
+  position: absolute;
+  left: var(--sp-3);
+  color: var(--text-subtle);
+  pointer-events: none;
+}
+.mm-gallery-search .input { padding-left: calc(var(--sp-3) * 2 + 15px); }
+.mm-scope { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+
+.mm-card {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+.mm-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
+
+/* A drawn mark, not a screenshot: rendering every board on every gallery load
+   is a cost that only shows up once someone has two hundred maps. */
+.mm-card-canvas {
+  position: relative;
+  display: block;
+  height: 104px;
+  background:
+    radial-gradient(
+      circle at 1px 1px,
+      color-mix(in srgb, var(--text-subtle) 30%, transparent) 1px,
+      transparent 0
+    )
+    0 0 / 14px 14px,
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--category-color, var(--accent)) 14%, var(--surface-2)),
+      var(--surface-2)
+    );
+  border-bottom: 1px solid var(--border);
+}
+.mm-card-canvas:hover { text-decoration: none; }
+.mm-card-spine {
+  position: absolute;
+  left: 26px; top: 50%;
+  width: 44px; height: 2px;
+  translate: 0 -50%;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--category-color, var(--accent)) 60%, transparent);
+}
+.mm-card-node {
+  position: absolute;
+  border-radius: var(--radius-full);
+  background: var(--category-color, var(--accent));
+}
+.mm-card-node-1 { left: 18px; top: 50%; width: 16px; height: 16px; translate: 0 -50%; }
+.mm-card-node-2 { left: 68px; top: 34%; width: 9px; height: 9px; opacity: 0.75; }
+.mm-card-node-3 { left: 68px; top: 62%; width: 9px; height: 9px; opacity: 0.55; }
+.mm-card-count {
+  position: absolute;
+  right: var(--sp-3);
+  bottom: var(--sp-2);
+  color: var(--text-subtle);
+  font-size: var(--fs-2xs);
+  font-weight: 640;
+}
+
+.mm-card-body { flex: 1; display: flex; flex-direction: column; gap: 6px; padding: var(--sp-4); }
+.mm-card-head { display: flex; align-items: center; gap: var(--sp-2); }
+.mm-card-title {
+  color: var(--text);
+  font-size: var(--fs-md);
+  font-weight: 620;
+  letter-spacing: -0.012em;
+}
+.mm-card-title:hover { color: var(--accent); text-decoration: none; }
+.mm-card-star { color: var(--warning); margin-left: auto; }
+.mm-card-text {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  line-height: 1.55;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.mm-card-meta {
+  margin-top: auto;
+  color: var(--text-subtle);
+  font-size: var(--fs-2xs);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.mm-card-actions {
+  display: flex;
+  gap: var(--sp-1);
+  padding: var(--sp-2) var(--sp-3);
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+/* ── Narrow screens ─────────────────────────────────────────────────────── */
+
+@media (max-width: 960px) {
+  /* The panels stop being columns and become sheets over the board: at this
+     width a 320px column leaves no canvas at all. Leaving the flow empties
+     their tracks, so the board's own column takes the whole width without the
+     grid needing to be redefined. */
+  .mm-panel {
+    position: absolute;
+    top: 0; bottom: 0;
+    width: min(320px, 86vw);
+    /* Above the toolbar and the zoom controls: a sheet lying over the board
+       lies over what floats on it too. Left at the docked value, the toolbar
+       drew on top of the outline and clipped the first characters of every
+       topic in it. */
+    z-index: var(--mm-z-sheet);
+    box-shadow: var(--shadow-lg);
+  }
+  .mm-panel-left { left: 0; }
+  .mm-panel-right { right: 0; }
+  .mm-minimap { display: none; }
+  .mm-title-text { max-width: 40vw; }
+  /* On a phone the word costs more than it says: the icon and the live region
+     still announce the state, in colour and to a screen reader both. */
+  .mm-status { margin-left: 0; padding: var(--sp-1) var(--sp-2); }
+  .mm-status [data-save-label] { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mm-card:hover { transform: none; }
+  .spinner { animation-duration: 1.6s; }
+}

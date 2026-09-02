@@ -88,6 +88,18 @@
               aria-label="Exportar em PDF" title="Exportar em PDF">
         {{ icon('printer') }}
       </button>
+      {# A document with headings is already an outline; this turns it into a
+         board without anyone retyping it. A form, not a link: it creates a
+         map, and a link would be followed by prefetch and tab restore alike. #}
+      <form method="post" action="{{ url_for('mindmaps.from_document', document_uuid=document.uuid) }}"
+            class="inline-form">
+        {{ confirm_form.hidden_tag() }}
+        <button type="submit" class="btn btn-ghost btn-icon"
+                aria-label="Criar mapa mental a partir deste documento"
+                title="Criar mapa mental a partir deste documento">
+          {{ icon('mindmap') }}
+        </button>
+      </form>
       <button type="button" class="btn btn-ghost btn-icon" data-action="toggle-fullscreen"
               aria-label="Alternar tela cheia" title="Tela cheia" aria-pressed="false">
         {{ icon('expand') }}

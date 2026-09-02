@@ -1,0 +1,158 @@
+{% extends 'base.html' %}
+{% from 'components/macros.html' import icon, field, select_field, empty_state, action_button %}
+
+{% set topbar_title = 'Mapas mentais' %}
+{% block title %}Mapas mentais · {{ app_name }}{% endblock %}
+{% block styles %}<link rel="stylesheet" href="{{ url_for('static', filename='css/mindmap.css') }}">{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="page-head-row">
+    <div>
+      <h1 class="page-title">Mapas mentais</h1>
+      <p class="page-subtitle">
+        Pense em duas dimensões. Ramifique uma ideia, ligue o que se relaciona,
+        coloque imagens e links — e leve tudo de volta para o Markdown quando quiser.
+      </p>
+    </div>
+  </div>
+</div>
+
+<section class="card card-pad section-gap" aria-labelledby="new-map">
+  <h2 class="card-title" id="new-map">Novo mapa</h2>
+  <form method="post" class="stack stack-3">
+    {{ form.hidden_tag() }}
+    <div class="form-grid">
+      {{ field(form.title, placeholder='Ex.: Lançamento do produto, Arquitetura do sistema, Aula 3') }}
+      {{ select_field(form.layout) }}
+    </div>
+    <div class="form-grid">
+      {{ field(form.description, placeholder='Uma linha sobre o que este mapa organiza') }}
+      <div class="field">
+        {{ form.color.label(class='field-label') }}
+        <div class="row row-tight">
+          {{ form.color(class='color-input', type='color') }}
+          <span class="field-hint">Cor do tópico central e dos ramos.</span>
+        </div>
+        {% for error in form.color.errors %}
+          <span class="field-error">{{ icon('alert', 'icon icon-sm') }}{{ error }}</span>
+        {% endfor %}
+      </div>
+    </div>
+    <div>
+      <button type="submit" class="btn btn-primary">{{ icon('plus', 'icon icon-sm') }} Criar mapa</button>
+    </div>
+  </form>
+</section>
+
+{# `section-gap` for the distance above: the bar starts a new section after
+   the "Novo mapa" card, and the shell already owns what that distance is.
+   Without it the search field sat flush against the card's bottom edge. #}
+<div class="mm-gallery-bar section-gap">
+  <form method="get" class="mm-gallery-search" role="search">
+    {{ icon('search', 'icon icon-sm') }}
+    <label class="visually-hidden" for="map-search">Pesquisar mapas</label>
+    <input class="input" type="search" id="map-search" name="q" value="{{ search }}"
+           placeholder="Pesquisar mapas…" autocomplete="off">
+    {% if favorites %}<input type="hidden" name="favoritos" value="1">{% endif %}
+    {% if trashed %}<input type="hidden" name="escopo" value="lixeira">{% endif %}
+  </form>
+
+  <nav class="mm-scope" aria-label="Filtrar mapas">
+    <a class="chip {{ 'chip-on' if not trashed and not favorites }}"
+       href="{{ url_for('mindmaps.index', q=search or None) }}">
+      Todos <span class="tabular">{{ counts.total }}</span>
+    </a>
+    <a class="chip {{ 'chip-on' if favorites }}"
+       href="{{ url_for('mindmaps.index', favoritos=1, q=search or None) }}">
+      {{ icon('star', 'icon icon-sm') }} Favoritos <span class="tabular">{{ counts.favorites }}</span>
+    </a>
+    <a class="chip {{ 'chip-on' if trashed }}"
+       href="{{ url_for('mindmaps.index', escopo='lixeira', q=search or None) }}">
+      {{ icon('trash', 'icon icon-sm') }} Lixeira <span class="tabular">{{ counts.trashed }}</span>
+    </a>
+  </nav>
+</div>
+
+{% if maps %}
+  <div class="grid grid-cards">
+    {% for item in maps %}
+      <article class="mm-card" data-color="{{ item.color }}">
+        {#
+          The thumbnail is a constellation, not a screenshot: three rings and a
+          spine drawn from the map's own colour. A real preview would mean
+          rendering every map on every gallery load, which is the kind of cost
+          that only shows up once someone has two hundred of them.
+        #}
+        <a class="mm-card-canvas" href="{{ url_for('mindmaps.canvas', public_uuid=item.uuid) }}"
+           aria-label="Abrir {{ item.title }}">
+          <span class="mm-card-spine" aria-hidden="true"></span>
+          <span class="mm-card-node mm-card-node-1" aria-hidden="true"></span>
+          <span class="mm-card-node mm-card-node-2" aria-hidden="true"></span>
+          <span class="mm-card-node mm-card-node-3" aria-hidden="true"></span>
+          <span class="mm-card-count tabular">{{ node_counts.get(item.id, 0) }}</span>
+        </a>
+
+        <div class="mm-card-body">
+          <div class="mm-card-head">
+            <a class="mm-card-title" href="{{ url_for('mindmaps.canvas', public_uuid=item.uuid) }}">
+              {{ item.title }}
+            </a>
+            {% if item.is_favorite %}
+              {{ icon('star', 'icon icon-sm mm-card-star', 'Favorito') }}
+            {% endif %}
+          </div>
+
+          {% if item.description %}
+            <p class="mm-card-text">{{ item.description }}</p>
+          {% else %}
+            <p class="mm-card-text subtle">Sem descrição.</p>
+          {% endif %}
+
+          <p class="mm-card-meta">
+            <span class="tabular">{{ node_counts.get(item.id, 0) }}</span>
+            tópico{{ 's' if node_counts.get(item.id, 0) != 1 }}
+            <span aria-hidden="true">·</span>
+            {{ layout_labels[item.layout] }}
+            <span aria-hidden="true">·</span>
+            <span>{{ item.updated_at|since }}</span>
+          </p>
+        </div>
+
+        <div class="mm-card-actions">
+          {% if trashed %}
+            {{ action_button(url_for('mindmaps.restore', public_uuid=item.uuid), confirm_form,
+                             'restore', 'Restaurar mapa') }}
+            {{ action_button(url_for('mindmaps.purge', public_uuid=item.uuid), confirm_form,
+                             'trash', 'Excluir definitivamente',
+                             confirm='Excluir “' ~ item.title ~ '” para sempre? Esta ação não pode ser desfeita.',
+                             danger=true) }}
+          {% else %}
+            {{ action_button(url_for('mindmaps.toggle_favorite', public_uuid=item.uuid), confirm_form,
+                             'star', 'Remover dos favoritos' if item.is_favorite else 'Marcar como favorito') }}
+            {{ action_button(url_for('mindmaps.duplicate', public_uuid=item.uuid), confirm_form,
+                             'copy', 'Duplicar mapa') }}
+            <a class="btn btn-ghost btn-icon btn-sm"
+               href="{{ url_for('mindmaps.download_markdown', public_uuid=item.uuid) }}"
+               title="Baixar como Markdown" aria-label="Baixar como Markdown">
+              {{ icon('download') }}
+            </a>
+            {{ action_button(url_for('mindmaps.delete', public_uuid=item.uuid), confirm_form,
+                             'trash', 'Mover para a lixeira',
+                             confirm='Mover “' ~ item.title ~ '” para a lixeira de mapas?') }}
+          {% endif %}
+        </div>
+      </article>
+    {% endfor %}
+  </div>
+{% elif trashed %}
+  {{ empty_state('trash', 'A lixeira de mapas está vazia',
+                 'Mapas removidos ficam aqui até você excluí-los definitivamente.') }}
+{% elif search %}
+  {{ empty_state('search', 'Nenhum mapa encontrado',
+                 'Nenhum mapa corresponde a esta busca. Tente outro termo.') }}
+{% else %}
+  {{ empty_state('mindmap', 'Nenhum mapa ainda',
+                 'Crie o primeiro mapa acima. Ele já nasce com o tópico central pronto — depois é só apertar Tab.') }}
+{% endif %}
+{% endblock %}

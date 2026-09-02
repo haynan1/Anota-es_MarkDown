@@ -1,0 +1,498 @@
+{% extends 'base.html' %}
+{% from 'components/macros.html' import icon, field, select_field %}
+
+{% block title %}{{ mind_map.display_title }} · Mapa mental · {{ app_name }}{% endblock %}
+{% block styles %}<link rel="stylesheet" href="{{ url_for('static', filename='css/mindmap.css') }}">{% endblock %}
+
+{#
+  The canvas replaces the standard shell, exactly as the editor does: the board
+  is the screen, and a sidebar next to it would be a permanent 264px hole in
+  the thinking space. The way back is the arrow at top left.
+#}
+{% block layout %}
+{# A `main` landmark, not a div: this block replaces base.html's shell, and
+   the shell is where `<main id="main-content">` normally comes from. Without
+   it assistive technology has no "jump to the content" target on the one
+   screen that is nothing but content. #}
+<main class="mm-page" id="main-content" data-mind-map
+     data-uuid="{{ mind_map.uuid }}"
+     data-revision="{{ mind_map.revision }}"
+     data-max-nodes="{{ max_nodes }}"
+     data-ops-url="{{ url_for('mindmaps.operations', public_uuid=mind_map.uuid) }}"
+     data-graph-url="{{ url_for('mindmaps.graph', public_uuid=mind_map.uuid) }}"
+     data-viewport-url="{{ url_for('mindmaps.viewport', public_uuid=mind_map.uuid) }}"
+     data-layout-url="{{ url_for('mindmaps.autolayout', public_uuid=mind_map.uuid) }}"
+     data-upload-url="{{ url_for('media.upload') }}"
+     {# URL shapes rather than URLs. The graph carries identities, so the
+        canvas builds an address by swapping the placeholder - which keeps
+        route names out of JavaScript and `url_for` out of the service. #}
+     data-media-url="{{ url_for('media.serve', public_uuid='00000000-0000-0000-0000-000000000000') }}"
+     data-document-url="{{ url_for('editor.edit', public_uuid='00000000-0000-0000-0000-000000000000') }}"
+     data-search-url="{{ url_for('api.search_suggestions') }}"
+     data-upload-limit="{{ upload_limit }}"
+     data-accent="{{ mind_map.color }}"
+     {# Single quotes, deliberately: `tojson` escapes < > & and the single
+        quote but not the double one, which inside a double-quoted attribute
+        would end the attribute and scatter the rest of the graph as bogus
+        ones. Same reasoning as the editor's upload limits. #}
+     data-graph='{{ graph|tojson }}'>
+
+  <header class="mm-header">
+    <a class="btn btn-ghost btn-icon" href="{{ url_for('mindmaps.index') }}"
+       aria-label="Voltar para os mapas" title="Voltar para os mapas">
+      {{ icon('arrow-left') }}
+    </a>
+
+    {# The map's name is the page's heading, and the control that renames it.
+       Wrapped rather than restyled: every other screen in the app gives a
+       screen reader one h1 to land on, and the canvas had none at all - so
+       its two h2 panels opened a hierarchy that started nowhere. #}
+    <h1 class="mm-title-heading">
+      <button type="button" class="mm-title" data-action="open-dialog" data-target="map-settings"
+              title="Editar nome, cor e disposição">
+        <span class="mm-title-dot" data-color="{{ mind_map.color }}" aria-hidden="true"></span>
+        <span class="mm-title-text">{{ mind_map.display_title }}</span>
+        {{ icon('edit', 'icon icon-sm mm-title-pencil') }}
+      </button>
+    </h1>
+
+    <output class="mm-status" data-save-status data-state="saved" aria-live="polite">
+      <span class="spinner" aria-hidden="true"></span>
+      {{ icon('check', 'icon icon-sm mm-status-icon') }}
+      <span data-save-label>Salvo</span>
+    </output>
+
+    <div class="mm-header-actions">
+      <button type="button" class="btn btn-ghost btn-icon" data-action="mm-outline"
+              aria-label="Estrutura do mapa" title="Estrutura do mapa"
+              aria-expanded="false" aria-controls="mm-outline-panel">
+        {{ icon('list') }}
+      </button>
+      <button type="button" class="btn btn-ghost btn-icon" data-action="mm-inspector"
+              aria-label="Painel do tópico" title="Painel do tópico"
+              aria-expanded="false" aria-controls="mm-inspector-panel">
+        {{ icon('tag') }}
+      </button>
+      <button type="button" class="btn btn-ghost btn-icon" data-action="open-dialog"
+              data-target="map-help" aria-label="Atalhos do teclado" title="Atalhos do teclado">
+        {{ icon('info') }}
+      </button>
+
+      <details class="menu">
+        <summary class="btn btn-ghost btn-icon" aria-label="Mais ações do mapa" title="Mais ações">
+          {{ icon('more') }}
+        </summary>
+        <div class="menu-panel menu-panel-down">
+          <a class="menu-item" href="{{ url_for('mindmaps.download_markdown', public_uuid=mind_map.uuid) }}">
+            {{ icon('download', 'icon icon-sm') }} Baixar como Markdown
+          </a>
+          <a class="menu-item" href="{{ url_for('mindmaps.download_svg', public_uuid=mind_map.uuid) }}">
+            {{ icon('image', 'icon icon-sm') }} Baixar desenho (SVG)
+          </a>
+
+          <form method="post" action="{{ url_for('mindmaps.to_document', public_uuid=mind_map.uuid) }}">
+            {{ confirm_form.hidden_tag() }}
+            <button type="submit" class="menu-item">
+              {{ icon('file-plus', 'icon icon-sm') }} Salvar como documento
+            </button>
+          </form>
+
+          <form method="post" action="{{ url_for('mindmaps.duplicate', public_uuid=mind_map.uuid) }}">
+            {{ confirm_form.hidden_tag() }}
+            <button type="submit" class="menu-item">
+              {{ icon('copy', 'icon icon-sm') }} Duplicar mapa
+            </button>
+          </form>
+
+          <form method="post" action="{{ url_for('mindmaps.delete', public_uuid=mind_map.uuid) }}"
+                data-confirm="Mover “{{ mind_map.title }}” para a lixeira de mapas?">
+            {{ confirm_form.hidden_tag() }}
+            <button type="submit" class="menu-item menu-item-danger">
+              {{ icon('trash', 'icon icon-sm') }} Mover para a lixeira
+            </button>
+          </form>
+        </div>
+      </details>
+    </div>
+  </header>
+
+  <div class="mm-body">
+    {# ── Estrutura ────────────────────────────────────────────────────────
+       The outline is not decoration. A canvas is a picture, and a picture is
+       unreachable with a screen reader; this list is the same map as text,
+       navigable with the keyboard and always in sync with the board. #}
+    <aside class="mm-panel mm-panel-left" id="mm-outline-panel" data-outline-panel hidden
+           aria-label="Estrutura do mapa">
+      <div class="mm-panel-head">
+        <h2 class="mm-panel-title">Estrutura</h2>
+        <button type="button" class="btn btn-ghost btn-icon btn-sm" data-action="mm-outline"
+                aria-label="Fechar estrutura">{{ icon('close', 'icon icon-sm') }}</button>
+      </div>
+      <div class="mm-panel-body scroll-y" data-outline></div>
+    </aside>
+
+    <div class="mm-stage" data-stage tabindex="0" role="application"
+         aria-label="Tela do mapa mental. Use Tab para criar um subtópico, Enter para um tópico irmão e as setas para navegar."
+         data-tool="select">
+      <div class="mm-world" data-world>
+        {# Links below nodes so a curve never crosses the box it arrives at.
+           `overflow: visible` on a 1x1 SVG lets it draw in world coordinates
+           without reserving a canvas-sized element. #}
+        <svg class="mm-links" data-links width="1" height="1" overflow="visible"
+             aria-hidden="true" focusable="false"></svg>
+        <div class="mm-nodes" data-nodes></div>
+        {# Labels above the nodes, curves below them. A connection's name is an
+           annotation on the board and has to be readable over whatever it
+           passes; drawn in the layer below, any label whose midpoint landed on
+           a topic was hidden behind it. #}
+        <svg class="mm-links mm-labels" data-link-labels width="1" height="1"
+             aria-hidden="true" focusable="false"></svg>
+      </div>
+
+      <div class="mm-marquee" data-marquee hidden aria-hidden="true"></div>
+
+      <p class="mm-hint" data-hint hidden></p>
+
+      {# Appears only when the board has been left behind. A canvas that pans
+         forever will eventually be panned into nothing, and the way back has
+         to be offered where the eye already is - not hunted for among the
+         zoom controls. #}
+      <button type="button" class="mm-lost" data-action="mm-fit" data-chrome data-lost hidden>
+        {{ icon('frame', 'icon icon-sm') }} Voltar ao mapa
+      </button>
+
+      {# The floating controls live inside the stage, not beside it: their
+         containing block has to be the board so they follow its left edge
+         when a panel opens. As children of the page they were positioned
+         against the whole window and sat on top of the outline. #}
+      <div class="mm-toolbar" data-chrome role="toolbar" aria-label="Ferramentas do mapa">
+        <button type="button" class="mm-tool is-on" data-tool-button="select"
+                aria-pressed="true" title="Selecionar (V)" aria-label="Selecionar">
+          {{ icon('pointer') }}
+        </button>
+        <button type="button" class="mm-tool" data-tool-button="pan"
+                aria-pressed="false" title="Mover a tela (H ou barra de espaço)" aria-label="Mover a tela">
+          {{ icon('hand') }}
+        </button>
+        <button type="button" class="mm-tool" data-tool-button="connect"
+                aria-pressed="false" title="Conectar tópicos (C)" aria-label="Conectar tópicos">
+          {{ icon('connect') }}
+        </button>
+
+        <span class="mm-tool-sep" aria-hidden="true"></span>
+
+        <button type="button" class="mm-tool" data-action="mm-add-topic"
+                title="Novo tópico solto (N)" aria-label="Novo tópico solto">
+          {{ icon('plus') }}
+        </button>
+        <button type="button" class="mm-tool" data-action="mm-add-note"
+                title="Nova anotação" aria-label="Nova anotação">
+          {{ icon('sticky') }}
+        </button>
+        <button type="button" class="mm-tool" data-action="mm-upload"
+                title="Inserir imagem" aria-label="Inserir imagem">
+          {{ icon('image') }}
+        </button>
+
+        <span class="mm-tool-sep" aria-hidden="true"></span>
+
+        <button type="button" class="mm-tool" data-action="mm-organize"
+                title="Arrumar automaticamente (Ctrl+Shift+O)" aria-label="Arrumar automaticamente">
+          {{ icon('wand') }}
+        </button>
+        <button type="button" class="mm-tool" data-action="mm-undo" disabled
+                title="Desfazer (Ctrl+Z)" aria-label="Desfazer">
+          {{ icon('undo') }}
+        </button>
+        <button type="button" class="mm-tool" data-action="mm-redo" disabled
+                title="Refazer (Ctrl+Shift+Z)" aria-label="Refazer">
+          {{ icon('redo') }}
+        </button>
+      </div>
+
+      {# ── Zoom e minimapa ──────────────────────────────────────────────────── #}
+      <div class="mm-zoom" data-chrome role="group" aria-label="Aproximação">
+        <button type="button" class="mm-zoom-button" data-action="mm-zoom-out"
+                aria-label="Afastar" title="Afastar (−)">{{ icon('zoom-out', 'icon icon-sm') }}</button>
+        <button type="button" class="mm-zoom-level tabular" data-zoom-level
+                aria-label="Voltar para 100%" title="Voltar para 100% (0)">100%</button>
+        <button type="button" class="mm-zoom-button" data-action="mm-zoom-in"
+                aria-label="Aproximar" title="Aproximar (+)">{{ icon('zoom-in', 'icon icon-sm') }}</button>
+        <button type="button" class="mm-zoom-button" data-action="mm-fit"
+                aria-label="Enquadrar o mapa" title="Enquadrar (F)">{{ icon('frame', 'icon icon-sm') }}</button>
+      </div>
+
+      <div class="mm-minimap" data-chrome data-minimap hidden>
+        <svg class="mm-minimap-canvas" data-minimap-canvas viewBox="0 0 200 130"
+             preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false"></svg>
+      </div>
+    </div>
+
+    {# ── Inspetor ─────────────────────────────────────────────────────── #}
+    <aside class="mm-panel mm-panel-right" id="mm-inspector-panel" data-inspector-panel hidden
+           aria-label="Painel do tópico selecionado">
+      <div class="mm-panel-head">
+        <h2 class="mm-panel-title">Tópico</h2>
+        <button type="button" class="btn btn-ghost btn-icon btn-sm" data-action="mm-inspector"
+                aria-label="Fechar painel">{{ icon('close', 'icon icon-sm') }}</button>
+      </div>
+
+      <div class="mm-panel-body scroll-y">
+        {# A connection is a first-class object: it can be named, restyled and
+           removed. Without this panel the only thing a free link could do is
+           exist. #}
+        <div class="mm-inspector-form" data-edge-form hidden>
+          <div class="field">
+            <label class="field-label" for="mm-edge-label">Rótulo da conexão</label>
+            <input class="input" type="text" id="mm-edge-label" data-edge-label
+                   maxlength="120" placeholder="Ex.: depende de, contradiz, alimenta"
+                   autocomplete="off">
+          </div>
+          <div class="field">
+            <label class="field-label" for="mm-edge-style">Traço</label>
+            <div class="select-wrap">
+              <select class="select" id="mm-edge-style" data-edge-style>
+                <option value="curve">Curva</option>
+                <option value="line">Reta</option>
+                <option value="dashed">Tracejada</option>
+              </select>
+              {{ icon('chevron-down', 'icon icon-sm') }}
+            </div>
+          </div>
+          <div class="mm-inspector-actions">
+            <button type="button" class="btn btn-sm btn-danger" data-action="mm-edge-delete">
+              {{ icon('trash', 'icon icon-sm') }} Remover conexão
+            </button>
+          </div>
+        </div>
+
+        <p class="mm-panel-empty" data-inspector-empty>
+          Selecione um tópico na tela para editar o texto, a cor, a imagem e os links.
+        </p>
+
+        <div class="mm-inspector-form" data-inspector-form hidden>
+          <div class="field">
+            <label class="field-label" for="mm-text">Texto</label>
+            <textarea class="input mm-textarea" id="mm-text" data-inspector-text rows="2"
+                      maxlength="500" placeholder="Do que trata este tópico"></textarea>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="mm-note">Anotação</label>
+            <textarea class="input mm-textarea" id="mm-note" data-inspector-note rows="4"
+                      maxlength="4000"
+                      placeholder="O texto longo por trás do rótulo curto"></textarea>
+            <span class="field-hint">Aparece no painel e vai junto na exportação.</span>
+          </div>
+
+          <div class="field">
+            <span class="field-label">Cor</span>
+            <div class="mm-swatches" role="group" aria-label="Cor do tópico">
+              <button type="button" class="mm-swatch mm-swatch-none" data-swatch=""
+                      title="Sem cor" aria-label="Sem cor"></button>
+              {% for value, label in palette %}
+                <button type="button" class="mm-swatch" data-swatch="{{ value }}"
+                        data-color="{{ value }}" title="{{ label }}" aria-label="{{ label }}"></button>
+              {% endfor %}
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="mm-shape">Formato</label>
+            <div class="select-wrap">
+              <select class="select" id="mm-shape" data-inspector-shape>
+                {% for value, label in shapes %}
+                  <option value="{{ value }}">{{ label }}</option>
+                {% endfor %}
+              </select>
+              {{ icon('chevron-down', 'icon icon-sm') }}
+            </div>
+          </div>
+
+          <hr class="mm-divider">
+
+          <div class="field">
+            <label class="field-label" for="mm-url">Link</label>
+            <div class="row row-tight">
+              <input class="input" type="url" id="mm-url" data-inspector-url
+                     placeholder="https://…" maxlength="500" autocomplete="off">
+              <button type="button" class="btn btn-ghost btn-icon" data-action="mm-open-url"
+                      aria-label="Abrir link em nova aba" title="Abrir link">
+                {{ icon('link') }}
+              </button>
+            </div>
+            <span class="field-hint">Aceita http, https e mailto.</span>
+          </div>
+
+          <div class="field">
+            <span class="field-label">Imagem</span>
+            <div class="mm-image-slot" data-image-slot>
+              <img class="mm-image-preview" data-image-preview alt="" hidden>
+              <p class="mm-image-empty" data-image-empty>Nenhuma imagem neste tópico.</p>
+            </div>
+            <div class="row row-tight mm-image-url-row" data-image-url-row hidden>
+              <input class="input" type="url" data-image-url aria-label="Endereço da imagem"
+                     placeholder="https://…/imagem.png" maxlength="500" autocomplete="off">
+              <button type="button" class="btn btn-sm btn-primary" data-action="mm-image-url-apply">
+                Aplicar
+              </button>
+            </div>
+
+            <div class="row row-tight mm-image-actions">
+              <button type="button" class="btn btn-sm" data-action="mm-upload">
+                {{ icon('upload', 'icon icon-sm') }} Enviar imagem
+              </button>
+              <button type="button" class="btn btn-sm" data-action="mm-image-url">
+                {{ icon('link', 'icon icon-sm') }} Por endereço
+              </button>
+              <button type="button" class="btn btn-sm btn-danger" data-action="mm-image-clear" hidden>
+                {{ icon('trash', 'icon icon-sm') }} Remover
+              </button>
+            </div>
+            <span class="field-hint">
+              PNG, JPG, GIF ou WebP. Também dá para arrastar o arquivo direto para a tela.
+            </span>
+          </div>
+
+          <div class="field">
+            <span class="field-label">Documento vinculado</span>
+            <div class="mm-doc-slot" data-doc-slot>
+              <a class="mm-doc-link" data-doc-link href="#" hidden>
+                {{ icon('file', 'icon icon-sm') }}<span data-doc-title></span>
+              </a>
+              <p class="mm-doc-empty" data-doc-empty>Nenhum documento vinculado.</p>
+            </div>
+            <div class="row row-tight">
+              <button type="button" class="btn btn-sm" data-action="open-dialog" data-target="map-doc-picker">
+                {{ icon('search', 'icon icon-sm') }} Vincular documento
+              </button>
+              <button type="button" class="btn btn-sm btn-danger" data-action="mm-doc-clear" hidden>
+                {{ icon('close', 'icon icon-sm') }} Desvincular
+              </button>
+            </div>
+          </div>
+
+          <hr class="mm-divider">
+
+          <div class="mm-inspector-actions">
+            <button type="button" class="btn btn-sm" data-action="mm-add-child">
+              {{ icon('branch', 'icon icon-sm') }} Subtópico
+            </button>
+            <button type="button" class="btn btn-sm" data-action="mm-connect-from">
+              {{ icon('connect', 'icon icon-sm') }} Conectar a…
+            </button>
+            <button type="button" class="btn btn-sm btn-danger" data-action="mm-delete">
+              {{ icon('trash', 'icon icon-sm') }} Excluir ramo
+            </button>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  {# ── Diálogos ─────────────────────────────────────────────────────────── #}
+  <dialog class="modal" id="map-settings" aria-labelledby="map-settings-title">
+    <form method="post" action="{{ url_for('mindmaps.update', public_uuid=mind_map.uuid) }}">
+      {{ form.hidden_tag() }}
+      <div class="modal-head">
+        <h2 class="modal-title" id="map-settings-title">Configurações do mapa</h2>
+      </div>
+      <div class="modal-body stack stack-3">
+        {{ field(form.title) }}
+        {{ field(form.description, placeholder='Uma linha sobre o que este mapa organiza') }}
+        <div class="form-grid">
+          {{ select_field(form.layout) }}
+          <div class="field">
+            {{ form.color.label(class='field-label') }}
+            {{ form.color(class='color-input', type='color') }}
+          </div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn" data-action="close-dialog">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Salvar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="modal" id="map-doc-picker" aria-labelledby="map-doc-title">
+    <div class="modal-head">
+      <h2 class="modal-title" id="map-doc-title">Vincular um documento</h2>
+    </div>
+    <div class="modal-body stack stack-3">
+      <p>
+        O tópico passa a apontar para o documento. Abrir o mapa e abrir o texto
+        viram a mesma coisa.
+      </p>
+      <div class="field">
+        <label class="field-label" for="mm-doc-search">Pesquisar</label>
+        <input class="input" type="search" id="mm-doc-search" data-doc-search
+               placeholder="Título do documento…" autocomplete="off">
+      </div>
+      <ul class="mm-doc-results" data-doc-results></ul>
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="btn" data-action="close-dialog">Fechar</button>
+    </div>
+  </dialog>
+
+  {# Arrumar move todos os tópicos de uma vez. É desfazível, mas o desfazer só
+     ajuda quem percebeu o que aconteceu - e num mapa grande a diferença entre
+     "arrumou" e "perdi meu arranjo" leva um tempo até aparecer. #}
+  <dialog class="modal" id="map-organize" aria-labelledby="map-organize-title">
+    <div class="modal-head">
+      <h2 class="modal-title" id="map-organize-title">Arrumar automaticamente?</h2>
+    </div>
+    <div class="modal-body stack stack-2">
+      <p>
+        Todos os tópicos vão para as posições que a disposição
+        <strong data-organize-layout>atual</strong> calcula. O arranjo manual
+        que existe hoje é substituído.
+      </p>
+      <p class="subtle">Dá para desfazer com <kbd>Ctrl</kbd> + <kbd>Z</kbd>.</p>
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="btn" data-action="close-dialog">Cancelar</button>
+      <button type="button" class="btn btn-primary" data-action="mm-organize-confirm">
+        {{ icon('wand', 'icon icon-sm') }} Arrumar
+      </button>
+    </div>
+  </dialog>
+
+  <dialog class="modal" id="map-help" aria-labelledby="map-help-title">
+    <div class="modal-head">
+      <h2 class="modal-title" id="map-help-title">Atalhos</h2>
+    </div>
+    <div class="modal-body">
+      <dl class="mm-shortcuts">
+        <dt><kbd>Tab</kbd></dt><dd>Novo subtópico</dd>
+        <dt><kbd>Enter</kbd></dt><dd>Novo tópico irmão</dd>
+        <dt><kbd>F2</kbd> ou duplo clique</dt><dd>Editar o texto do tópico</dd>
+        <dt>Triplo clique na tela</dt><dd>Novo tópico solto ali</dd>
+        <dt><kbd>Delete</kbd></dt><dd>Excluir o ramo selecionado</dd>
+        <dt><kbd>Setas</kbd></dt><dd>Navegar entre tópicos</dd>
+        <dt><kbd>Shift</kbd> + <kbd>Setas</kbd></dt><dd>Mover o tópico</dd>
+        <dt><kbd>Ctrl</kbd> + <kbd>Z</kbd></dt><dd>Desfazer</dd>
+        <dt><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>Z</kbd></dt><dd>Refazer</dd>
+        <dt><kbd>Ctrl</kbd> + <kbd>D</kbd></dt><dd>Duplicar o tópico</dd>
+        <dt><kbd>Espaço</kbd> + arrastar</dt><dd>Mover a tela</dd>
+        <dt><kbd>Ctrl</kbd> + roda</dt><dd>Aproximar e afastar</dd>
+        <dt><kbd>F</kbd></dt><dd>Enquadrar o mapa</dd>
+        <dt><kbd>0</kbd></dt><dd>Voltar para 100%</dd>
+        <dt><kbd>V</kbd> · <kbd>H</kbd> · <kbd>C</kbd></dt><dd>Selecionar · Mover · Conectar</dd>
+      </dl>
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="btn btn-primary" data-action="close-dialog">Entendi</button>
+    </div>
+  </dialog>
+
+  {# Outside the inspector so the picker keeps working while the panel is
+     closed - the toolbar button opens the same file dialog. #}
+  <input type="file" class="visually-hidden" data-file-input accept="image/*">
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/mindmap.js') }}" type="module"></script>
+{% endblock %}
