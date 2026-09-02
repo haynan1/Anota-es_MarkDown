@@ -99,9 +99,11 @@ class Config:
     EXPORT_DIR = Path(os.getenv("EXPORT_DIR") or (INSTANCE_DIR / "exports"))
     UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR") or (INSTANCE_DIR / "uploads"))
 
-    # Create missing tables on startup so a fresh clone just runs. Migrations
-    # remain the canonical schema path; set AUTO_CREATE_DB=0 when generating
-    # them, so Alembic can diff against an empty database.
+    # Let the application reconcile its own schema on startup: build it on a
+    # fresh clone, and apply pending migrations on one that just pulled new
+    # code. Migrations remain the canonical schema path - this only runs them
+    # for you. Set AUTO_CREATE_DB=0 when generating a migration, so Alembic
+    # can diff against a database nobody moved underneath it.
     AUTO_CREATE_DB = _env_bool("AUTO_CREATE_DB", True)
 
     # ── Behaviour ───────────────────────────────────────────────────────────

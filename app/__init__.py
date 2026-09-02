@@ -13,7 +13,7 @@ from app.config import resolve_config
 from app.errors import register_error_handlers
 from app.extensions import csrf, db, migrate
 from app.security import register_security
-from app.utils.files import ensure_directory
+from app.utils.files import ensure_directory, unique_path
 
 
 def create_app(
@@ -187,25 +187,141 @@ def _register_cli(app: Flask) -> None:
 
 
 def bootstrap_database(app: Flask) -> None:
-    """Create tables on first run and make sure the search index exists.
+    """Bring the schema up to the version this code expects, then serve.
 
     Called by serving entry points only, never during ``create_app``.
-    Migrations remain the canonical schema path (``flask db upgrade``); this
-    exists so a fresh clone runs without a setup step.
+
+    A database arrives here in one of four states, and only one of them used
+    to be handled:
+
+    * **empty** - a fresh clone. Build the schema from the models and stamp it
+      at the migration head, so the first ``flask db upgrade`` has a baseline
+      instead of trying to create tables that are already there.
+    * **behind** - an install that pulled new code. Upgrade it. This is the
+      state that matters: a feature whose migration was never applied answers
+      *Internal Server Error* on its very first request, and the person who
+      just pulled has no reason to suspect the database. The file is copied
+      first, so an interrupted migration is never the end of the story.
+    * **current** - nothing to do.
+    * **unstamped** - tables present, no Alembic version: a schema built
+      before migrations existed. Left untouched and reported, because
+      guessing which revision it matches would apply the wrong upgrade to
+      real data.
+
+    ``AUTO_CREATE_DB=0`` opts out of all of it and hands the schema back to
+    ``flask db``, which is what generating a migration needs.
     """
     from sqlalchemy import inspect
 
     from app.services.search_service import search_index
 
     try:
-        inspector = inspect(db.engine)
-        if app.config.get("AUTO_CREATE_DB", True) and not inspector.has_table("documents"):
-            db.create_all()
-            app.logger.info("Banco de dados criado.")
+        if app.config.get("AUTO_CREATE_DB", True):
+            _reconcile_schema(app)
 
         # The FTS5 virtual table lives outside the ORM metadata, so it is
         # created here regardless of how the schema itself was built.
-        if inspector.has_table("documents"):
+        if inspect(db.engine).has_table("documents"):
             search_index.ensure()
     except SQLAlchemyError:  # pragma: no cover - never block startup on this
         app.logger.exception("Não foi possível preparar o banco de dados.")
+
+
+def _reconcile_schema(app: Flask) -> None:
+    """Move the database to the migration head, or explain why it cannot be."""
+    from alembic.migration import MigrationContext
+    from alembic.script import ScriptDirectory
+    from flask_migrate import stamp, upgrade
+    from sqlalchemy import inspect
+
+    head = ScriptDirectory.from_config(migrate.get_config()).get_current_head()
+    with db.engine.connect() as connection:
+        current = MigrationContext.configure(connection).get_current_revision()
+
+    if not inspect(db.engine).has_table("documents"):
+        db.create_all()
+        if head:
+            stamp(revision=head)
+        app.logger.info("Banco de dados criado na revisão %s.", head or "inicial")
+        return
+
+    if current == head:
+        return
+
+    if current is None:
+        app.logger.warning(
+            "O banco existe mas não está versionado pelo Alembic. Rode "
+            "'flask db stamp <revisão>' seguido de 'flask db upgrade' antes "
+            "de usar recursos novos."
+        )
+        return
+
+    snapshot = _snapshot_database(app, label=current)
+    if snapshot:
+        app.logger.info("Cópia do banco antes da migração: %s", snapshot)
+
+    app.logger.info("Atualizando o banco de %s para %s.", current, head)
+    upgrade()
+    app.logger.info("Banco atualizado para %s.", head)
+
+
+# How many pre-migration snapshots to keep. Enough to walk back a bad upgrade,
+# few enough that a database measured in tens of megabytes does not quietly
+# fill the disk one release at a time.
+SNAPSHOTS_KEPT = 3
+
+
+def _snapshot_database(app: Flask, label: str) -> Path | None:
+    """Copy a SQLite database aside before migrating it.
+
+    Uses SQLite's online backup API rather than copying the file: the
+    connection runs in WAL mode, so the ``.db`` on its own can be missing the
+    most recent writes. Returns ``None`` for anything that is not SQLite - a
+    server database has its own backup story and is not ours to copy.
+
+    These live in their own directory rather than among the ZIP backups. They
+    are not the same thing: a backup is a portable export the user asked for,
+    this is a raw file kept in case a migration goes wrong, and mixing them
+    would put a 50 MB file nobody chose in a list of files somebody did.
+    """
+    import sqlite3
+    from datetime import datetime, timezone
+
+    url = db.engine.url
+    if url.get_backend_name() != "sqlite" or not url.database:
+        return None
+
+    source = Path(url.database)
+    if not source.exists():
+        return None
+
+    directory = ensure_directory(Path(app.config["BACKUP_DIR"]) / "pre-migracao")
+    stamped = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    # Through unique_path: the name has a resolution of one second, and two
+    # starts inside the same second would otherwise overwrite the copy the
+    # first one took - losing exactly the state worth keeping.
+    target = unique_path(directory, f"{source.stem}-{label}-{stamped}.db")
+
+    try:
+        with sqlite3.connect(source) as origin, sqlite3.connect(target) as copy:
+            origin.backup(copy)
+    except (sqlite3.Error, OSError):
+        app.logger.exception("Não foi possível copiar o banco antes da migração.")
+        return None
+
+    # Pruned after the copy succeeds, never before: the newest snapshot is the
+    # one worth keeping, and it does not exist until this point.
+    # By modification time, not by name: the revision sits in the middle of the
+    # filename, so an alphabetical sort groups by revision and only then by
+    # date - which would delete the newest snapshot of the newest revision.
+    # ``target`` is held out rather than ranked, because Windows timestamps are
+    # coarse enough that the copy just taken can tie with the one before it.
+    others = (path for path in directory.glob("*.db") if path != target)
+    by_age = sorted(others, key=lambda item: item.stat().st_mtime, reverse=True)
+    for stale in by_age[SNAPSHOTS_KEPT - 1 :]:
+        try:
+            stale.unlink()
+        except OSError:  # pragma: no cover - a locked file is not worth failing over
+            app.logger.warning("Não foi possível remover a cópia antiga %s", stale.name)
+
+    return target
