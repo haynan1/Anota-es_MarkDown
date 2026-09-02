@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import pathlib
 import re
+import json
 import shutil
 import subprocess
 import threading
@@ -24,14 +25,26 @@ from math import hypot
 import pytest
 
 from app.models import MindMap, MindMapEdge, MindMapNode
+from app.models.mind_map import LAYOUT_HINTS, LAYOUT_LABELS, LAYOUTS
 from app.repositories.mind_map_repository import MindMapRepository
 from app.services.exceptions import ConflictError, NotFoundError, ValidationError
 from app.services.mind_map_export import parse_outline, to_markdown, to_svg
-from app.services.mind_map_layout import LayoutNode, bounding_box, compute_layout
+from app.services.mind_map_layout import (
+    BRANCH_ROUTING,
+    Box,
+    LayoutNode,
+    bounding_box,
+    branch_path,
+    branch_routing,
+    compute_layout,
+    free_path,
+)
 from app.services.mind_map_service import MAX_DEPTH, MindMapService
 
 
-PLACEMENT_SUITE = pathlib.Path(__file__).resolve().parent / "js" / "mindmap-placement.test.mjs"
+JS_DIR = pathlib.Path(__file__).resolve().parent / "js"
+PLACEMENT_SUITE = JS_DIR / "mindmap-placement.test.mjs"
+ROUTING_SUITE = JS_DIR / "mindmap-routing.test.mjs"
 
 
 def new_id() -> str:
@@ -804,6 +817,403 @@ class TestLayout:
 # ── Exportação e importação ─────────────────────────────────────────────────
 
 
+class TestTheTreeGrowsDown:
+    """A árvore: a disposição que faltava, e a que o resto do produto sugeria.
+
+    ``right`` and ``down`` were already here, but ``down`` was drawn with the
+    sideways curve of a horizontal map - branches leaving the left and right
+    faces of nodes whose children sat underneath them. Every arrangement that
+    was not ``right`` therefore *looked* like a horizontal map that had been
+    shuffled, which is what "só consigo fazer para a direita ou para a
+    esquerda" describes. ``tree`` is the arrangement people mean by the word,
+    and the routing is what makes it - and ``down``, and ``radial`` - true.
+    """
+
+    def make(self, count=2, **sizes):
+        width = sizes.get("width", 180.0)
+        height = sizes.get("height", 48.0)
+        return [
+            LayoutNode("raiz", None, width, height),
+            *[
+                LayoutNode(f"f{index}", "raiz", width, height)
+                for index in range(count)
+            ],
+        ]
+
+    def test_a_child_sits_below_its_parent(self):
+        placed = compute_layout(
+            [
+                LayoutNode("raiz", None, 180, 48),
+                LayoutNode("filho", "raiz", 180, 48),
+                LayoutNode("neto", "filho", 180, 48),
+            ],
+            "tree",
+        )
+
+        assert placed["filho"][1] > placed["raiz"][1]
+        assert placed["neto"][1] > placed["filho"][1]
+
+    def test_a_parent_is_centred_over_its_children(self):
+        """What separates an org chart from a list of rows."""
+        placed = compute_layout(self.make(count=4), "tree")
+
+        centres = [placed[f"f{index}"][0] + 90 for index in range(4)]
+        assert placed["raiz"][0] + 90 == pytest.approx(
+            (min(centres) + max(centres)) / 2
+        )
+
+    def test_siblings_stand_side_by_side_without_touching(self):
+        placed = compute_layout(self.make(count=6), "tree")
+
+        spans = sorted(
+            (placed[f"f{index}"][0], placed[f"f{index}"][0] + 180) for index in range(6)
+        )
+        for (_, right), (left, _) in zip(spans, spans[1:]):
+            assert left >= right, "dois irmãos se sobrepõem"
+
+    def test_a_whole_level_shares_one_row(self):
+        """The shared bus under a parent only exists because of this: every
+        node of a level on one line means every elbow turns at one height."""
+        placed = compute_layout(self.make(count=5), "tree")
+
+        rows = {placed[f"f{index}"][1] for index in range(5)}
+        assert len(rows) == 1, f"um nível em {len(rows)} alturas"
+
+    def test_a_collapsed_branch_reserves_no_space(self):
+        """The promise the other three layouts already make."""
+        nodes = [
+            LayoutNode("raiz", None, 180, 48),
+            LayoutNode("a", "raiz", 180, 48),
+            *[LayoutNode(f"a{index}", "a", 180, 48) for index in range(4)],
+            LayoutNode("b", "raiz", 180, 48),
+        ]
+        expanded = compute_layout(nodes, "tree")
+        nodes[1] = LayoutNode("a", "raiz", 180, 48, collapsed=True)
+        folded = compute_layout(nodes, "tree")
+
+        assert folded["b"][0] < expanded["b"][0]
+
+    def test_a_broken_graph_still_lays_out(self):
+        placed = compute_layout(
+            [LayoutNode("a", "b", 100, 40), LayoutNode("b", "a", 100, 40)], "tree"
+        )
+        assert set(placed) == {"a", "b"}
+
+    def test_it_is_offered_everywhere_the_others_are(self):
+        assert "tree" in LAYOUTS
+        assert LAYOUT_LABELS["tree"] and LAYOUT_HINTS["tree"]
+        assert set(LAYOUT_LABELS) == set(LAYOUTS) == set(LAYOUT_HINTS)
+
+    def test_the_settings_form_offers_it(self, client, mind_map):
+        html = client.get(f"/mapas/{mind_map.uuid}").get_data(as_text=True)
+        select = re.search(r'<select[^>]*name="layout".*?</select>', html, re.S)
+
+        assert select, "o formulário do mapa não oferece disposição"
+        for value in LAYOUTS:
+            assert f'value="{value}"' in select.group(0), value
+
+    def test_organising_a_real_map_stacks_the_child_below(self, app, mind_map, root):
+        child = add(mind_map, parent=root.uuid, text="Ramo", x=900, y=0)
+
+        MindMapService.autolayout(mind_map, "tree")
+
+        assert node_by_uuid(child).y > node_by_uuid(root.uuid).y
+
+    def test_the_arrangement_chosen_becomes_the_map_s(self, app, mind_map, root):
+        """"Arrumar como árvore" is also "esta é uma árvore" - otherwise the
+        next tidy, the next export and the next reload all disagree with what
+        is on screen."""
+        add(mind_map, parent=root.uuid, text="Ramo")
+
+        MindMapService.autolayout(mind_map, "tree")
+
+        assert mind_map.layout == "tree"
+        assert MindMapService.graph_payload(mind_map)["layout"] == "tree"
+
+    def test_an_unknown_arrangement_keeps_the_one_the_map_has(
+        self, app, mind_map, root
+    ):
+        """A forged request must not be able to park a map on a layout that
+        nothing knows how to draw."""
+        add(mind_map, parent=root.uuid, text="Ramo")
+        MindMapService.autolayout(mind_map, "tree")
+
+        MindMapService.autolayout(mind_map, "arvore-de-natal")
+
+        assert mind_map.layout == "tree"
+
+    def test_the_route_refuses_it_the_same_way(self, client, mind_map, root):
+        add(mind_map, parent=root.uuid, text="Ramo")
+
+        response = client.post(
+            f"/api/mapas/{mind_map.uuid}/organizar",
+            json={"layout": {"nested": "árvore"}},
+        )
+
+        assert response.status_code == 200
+        assert response.get_json()["graph"]["layout"] in LAYOUTS
+
+
+class TestALinkFollowsTheArrangement:
+    """A ligação não é enfeite sobre a disposição - é a mesma decisão.
+
+    Every layout here computed sensible coordinates and then handed them to
+    one connector: the cubic that leaves a node's right face and arrives at
+    the next one's left. On a vertical map that draws branches sideways out of
+    a parent whose children are underneath it; on a radial one it draws an
+    S-curve where the point is the angle.
+    """
+
+    def test_every_arrangement_has_a_routing(self):
+        assert set(BRANCH_ROUTING) == set(LAYOUTS)
+        assert len(set(BRANCH_ROUTING.values())) == len(LAYOUTS), (
+            "duas disposições desenhando igual seriam uma disposição só"
+        )
+
+    def test_an_unknown_arrangement_still_draws(self):
+        """A map saved before a layout existed, or a hand-edited row."""
+        assert branch_routing("nao-existe") == "horizontal"
+
+    def test_the_vertical_curve_leaves_the_bottom_face(self):
+        path = branch_path("vertical", Box(0, 0, 180, 48), Box(240, 124, 180, 48))
+
+        assert path.startswith("M90.0,48.0"), path
+        assert path.endswith("330.0,124.0"), path
+
+    def test_the_elbow_turns_halfway_between_the_rows(self):
+        path = branch_path("elbow", Box(0, 0, 180, 48), Box(240, 124, 180, 48))
+
+        assert path.startswith("M90.0,48.0")
+        assert path.endswith("L330.0,124.0")
+        assert "86.0" in path, "a dobra fica no meio dos 48 aos 124"
+
+    def test_siblings_share_one_horizontal_run(self):
+        parent = Box(0, 0, 180, 48)
+        left = branch_path("elbow", parent, Box(-300, 124, 180, 48))
+        right = branch_path("elbow", parent, Box(300, 124, 180, 48))
+
+        def turn(path):
+            return re.findall(r"-?\d+\.\d+", path)[3]
+
+        assert turn(left) == turn(right)
+
+    def test_an_only_child_gets_a_straight_drop(self):
+        path = branch_path("elbow", Box(0, 0, 180, 48), Box(0, 124, 180, 48))
+
+        assert "Q" not in path, "um filho único não merece uma curva"
+        assert set(re.findall(r"-?\d+\.\d+,", path)) == {"90.0,"}
+
+    def test_the_elbow_reverses_when_the_child_was_dragged_above(self):
+        """Hand-dragged nodes are the normal state of a board, and a link that
+        crosses the box it comes out of is how a tidy map turns into a knot."""
+        path = branch_path("elbow", Box(0, 300, 180, 48), Box(0, 0, 180, 48))
+
+        assert path.startswith("M90.0,300.0"), path
+        assert path.endswith("90.0,48.0"), path
+
+    def test_a_spoke_starts_and_ends_on_the_boxes(self):
+        parent, child = Box(0, 0, 180, 48), Box(0, 400, 180, 48)
+        path = branch_path("spoke", parent, child)
+
+        assert path == "M90.0,48.0 L90.0,400.0"
+
+    def test_a_spoke_between_two_stacked_nodes_is_not_a_division_by_zero(self):
+        assert branch_path("spoke", Box(0, 0, 10, 10), Box(0, 0, 10, 10))
+
+    def test_no_path_ever_carries_negative_zero(self):
+        """`-0.0` in a `d` is valid SVG and a smell in a diff - and it is the
+        one value the two implementations round differently."""
+        paths = [
+            branch_path(routing, Box(-90, -24, 180, 48), Box(-90, 100, 180, 48))
+            for routing in set(BRANCH_ROUTING.values())
+        ]
+        paths.append(free_path("curve", Box(-90, -24, 180, 48), Box(-90, 100, 180, 48)))
+
+        for path in paths:
+            assert "-0.0" not in path, path
+
+
+class TestTheExportDrawsTheSameMap:
+    """O SVG e a tela são o mesmo desenho, não dois que quase concordam."""
+
+    def branch_paths(self, svg):
+        return [
+            match
+            for match in re.findall(r'<path d="([^"]+)" stroke="[^"]+" stroke-width="2"', svg)
+        ]
+
+    def test_a_tree_is_exported_with_elbows(self, app, mind_map, root):
+        add(mind_map, parent=root.uuid, text="Ramo")
+        MindMapService.autolayout(mind_map, "tree")
+
+        svg = to_svg(
+            mind_map,
+            MindMapRepository.nodes_of(mind_map),
+            MindMapRepository.edges_of(mind_map),
+        )
+
+        paths = self.branch_paths(svg)
+        assert paths, "o SVG saiu sem ligações"
+        assert all("C" not in path for path in paths), paths
+
+    def test_the_same_map_exports_differently_under_each_arrangement(
+        self, app, mind_map, root
+    ):
+        add(mind_map, parent=root.uuid, text="Ramo")
+        nodes = MindMapRepository.nodes_of(mind_map)
+        edges = MindMapRepository.edges_of(mind_map)
+
+        drawings = set()
+        for layout in LAYOUTS:
+            mind_map.layout = layout
+            drawings.add(tuple(self.branch_paths(to_svg(mind_map, nodes, edges))))
+
+        assert len(drawings) == len(LAYOUTS), (
+            "duas disposições exportando o mesmo desenho"
+        )
+
+    def test_the_exported_path_is_the_one_the_canvas_would_draw(
+        self, app, mind_map, root
+    ):
+        child = add(mind_map, parent=root.uuid, text="Ramo")
+        MindMapService.autolayout(mind_map, "tree")
+
+        nodes = {node.uuid: node for node in MindMapRepository.nodes_of(mind_map)}
+        svg = to_svg(mind_map, list(nodes.values()), [])
+
+        parent, kid = nodes[root.uuid], nodes[child]
+        expected = branch_path(
+            "elbow",
+            Box(parent.x, parent.y, parent.width, parent.height),
+            Box(kid.x, kid.y, kid.width, kid.height),
+        )
+        assert f'd="{expected}"' in svg
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node não está instalado")
+class TestBothLanguagesDrawTheSameLine:
+    """O contrato entre os dois desenhistas.
+
+    The canvas redraws a link on every frame of a drag, so the geometry has to
+    exist in the browser; the SVG export has to produce the identical drawing,
+    so it exists in Python too. That is a duplication, and the honest way to
+    hold a duplication is to make something read both: the Node suite emits
+    its whole case table with the paths it produced, and this recomputes every
+    one of them here. Change either side alone and this fails, naming the case.
+    """
+
+    def table(self):
+        result = subprocess.run(  # noqa: S603 - fixed argv, no shell, no user input
+            [shutil.which("node"), str(ROUTING_SUITE)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=60,
+            check=False,
+        )
+        assert result.returncode == 0, f"\n{result.stdout}\n{result.stderr}"
+        return json.loads(result.stdout)
+
+    def test_every_branch_is_drawn_identically(self):
+        for case in self.table()["branches"]:
+            here = branch_path(
+                case["routing"], Box(**case["parent"]), Box(**case["child"])
+            )
+            assert here == case["d"], (
+                f"{case['routing']}: python {here!r} contra javascript {case['d']!r}"
+            )
+
+    def test_every_association_is_drawn_identically(self):
+        for case in self.table()["free"]:
+            here = free_path(
+                case["style"], Box(**case["source"]), Box(**case["target"])
+            )
+            assert here == case["d"], case
+
+    def test_both_sides_map_a_layout_to_the_same_routing(self):
+        for layout, routing in self.table()["routings"].items():
+            assert branch_routing(layout) == routing, layout
+
+
+class TestTheBoardFacesTheWayItGrows:
+    """As alças de ligação ficam nas faces por onde o mapa cresce.
+
+    A node offered a port on its left and right whatever the arrangement. On a
+    tree that is an invitation to draw the map the wrong way round: the two
+    handles a person can grab point at the two directions nothing on that
+    board lives in. The layout decides which faces are the live ones, the
+    board carries the answer as one attribute, and the CSS follows it.
+
+    Read from the files rather than from a browser, the way the other
+    invariants in this suite are: what is pinned is that the attribute is
+    written, that all four ports exist to be shown, and that each orientation
+    hides exactly the pair it should.
+    """
+
+    @pytest.fixture()
+    def canvas_css(self, app):
+        return (
+            pathlib.Path(app.root_path) / "static" / "css" / "mindmap.css"
+        ).read_text(encoding="utf-8")
+
+    @pytest.fixture()
+    def canvas_js(self, app):
+        return (
+            pathlib.Path(app.root_path)
+            / "static"
+            / "js"
+            / "modules"
+            / "mindmap"
+            / "canvas.js"
+        ).read_text(encoding="utf-8")
+
+    def test_a_node_carries_all_four_ports(self, canvas_js):
+        """Built once. Building only the two in use would mean rebuilding
+        every node when the layout changes - the one moment the board must
+        not flicker."""
+        assert "['left', 'right', 'top', 'bottom']" in canvas_js
+
+    def test_the_board_announces_which_way_it_faces(self, client, app, mind_map):
+        for layout, expected in (
+            ("right", "horizontal"),
+            ("down", "vertical"),
+            ("tree", "vertical"),
+            ("radial", "radial"),
+        ):
+            MindMapService.update(mind_map, layout=layout)
+            html = client.get(f"/mapas/{mind_map.uuid}").get_data(as_text=True)
+            board = re.search(r"<main[^>]*data-mind-map[^>]*>", html).group(0)
+            assert f'data-orientation="{expected}"' in board, layout
+
+    def test_the_canvas_writes_the_same_answer_the_server_rendered(self, canvas_js):
+        """Otherwise the first tidy into another arrangement would leave the
+        ports on the faces the page was rendered with."""
+        assert "page.dataset.orientation = orientation()" in canvas_js
+        assert "isVertical(store.layout)" in canvas_js
+
+    def test_each_orientation_shows_one_pair_of_ports(self, canvas_css):
+        rules = canvas_css
+        assert '.mm-port[data-side="top"],\n.mm-port[data-side="bottom"] { display: none; }' in rules, (
+            "sem a regra base, um mapa horizontal mostra quatro alças"
+        )
+        assert (
+            '.mm-page[data-orientation="vertical"] .mm-port[data-side="left"]' in rules
+            and '.mm-page[data-orientation="vertical"] .mm-port[data-side="right"] { display: none; }'
+            in rules
+        ), "um mapa vertical ainda oferece as alças laterais"
+        assert '.mm-page[data-orientation="radial"] .mm-port[data-side="top"]' in rules
+
+    def test_a_folded_branch_offers_no_port_on_either_growing_face(self, canvas_css):
+        """And the rule comes last, so it wins the tie against the ones above
+        it - equal specificity is decided by order, and the folded node has to
+        win."""
+        collapsed = canvas_css.index('.mm-node[data-collapsed="true"] .mm-port')
+        oriented = canvas_css.rindex('.mm-page[data-orientation="radial"] .mm-port')
+        assert collapsed > oriented, "a regra do ramo fechado precisa vir depois"
+        rule = canvas_css[collapsed : collapsed + 200]
+        assert 'data-side="right"' in rule and 'data-side="bottom"' in rule
+
+
 class TestExchange:
     def test_the_outline_reflects_the_hierarchy(self, app, mind_map, root):
         child = add(mind_map, parent=root.uuid, text="Marketing")
@@ -1396,9 +1806,29 @@ class TestTheBoardOffersAWayBack:
         assert 'id="map-organize"' in canvas
         assert 'data-action="mm-organize-confirm"' in canvas
 
-    def test_the_question_names_the_layout_it_will_apply(self, canvas):
-        """"Arrumar" means something different in each of the three."""
-        assert "data-organize-layout" in canvas
+    def test_the_question_offers_every_arrangement(self, canvas):
+        """"Arrumar" means something different in each of the four.
+
+        It used to only *name* the one already chosen, and the choosing
+        happened in a select inside a different dialog. A setting two dialogs
+        away is a setting nobody finds: the board could be arranged as a tree
+        since the day it shipped, and it read as a board that only grew
+        sideways.
+        """
+        picker = re.search(
+            r"<fieldset[^>]*data-layout-picker.*?</fieldset>", canvas, re.S
+        )
+        assert picker, "o diálogo de arrumar não oferece a disposição"
+
+        markup = picker.group(0)
+        for value in LAYOUTS:
+            assert f'value="{value}"' in markup, value
+            assert LAYOUT_LABELS[value] in markup, value
+            assert LAYOUT_HINTS[value] in markup, value
+        assert markup.count("checked") == 1, (
+            "exatamente uma disposição começa marcada - a do mapa"
+        )
+        assert "<legend" in markup, "o grupo de rádios precisa de nome"
 
     def test_the_wand_no_longer_arranges_on_its_own(self, canvas):
         """The button opens the question; only the dialog's button acts."""

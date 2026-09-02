@@ -77,11 +77,24 @@ NODE_SHAPES = ("rounded", "pill", "rect", "ellipse", "diamond")
 # where precision, or tentativeness, is the point.
 EDGE_STYLES = ("curve", "line", "dashed")
 
-LAYOUTS = ("right", "down", "radial")
+# How a map arranges itself, and how each arrangement is named to the person
+# choosing it. `down` and `tree` both run down the page and differ in the line
+# they draw between a parent and a child: `down` keeps the mind map's curve,
+# `tree` squares its shoulders into the org chart people mean by "árvore".
+LAYOUTS = ("right", "down", "tree", "radial")
 LAYOUT_LABELS = {
     "right": "Horizontal",
     "down": "Vertical",
+    "tree": "Árvore",
     "radial": "Radial",
+}
+# One line each, for the chooser on the board - a name alone does not tell
+# anyone what "Vertical" and "Árvore" do differently.
+LAYOUT_HINTS = {
+    "right": "Os ramos crescem para o lado, a partir do centro.",
+    "down": "O mapa desce a página, em curvas.",
+    "tree": "Organograma: níveis em linha, ligados por cotovelos.",
+    "radial": "Os ramos se abrem em volta da raiz.",
 }
 
 # Geometry is clamped on the way in. The canvas is huge but finite: a node at

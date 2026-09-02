@@ -75,6 +75,12 @@ export function createInteractions(context) {
   }
 
   function anchorOf(node, side) {
+    if (side === 'top' || side === 'bottom') {
+      return {
+        x: node.x + node.width / 2,
+        y: side === 'top' ? node.y : node.y + node.height,
+      };
+    }
     return {
       x: side === 'left' ? node.x : node.x + node.width,
       y: node.y + node.height / 2,

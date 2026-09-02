@@ -23,6 +23,8 @@
  * through the CSSOM, which the strict CSP allows.
  */
 
+import { branchPath, freePath, isVertical, routingFor } from './routing.js';
+
 const NS_SVG = 'http://www.w3.org/2000/svg';
 const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 4;
@@ -115,11 +117,20 @@ export function createCamera(page, world, stage) {
 
 /* ── Renderer ─────────────────────────────────────────────────────────── */
 
-export function createRenderer({ store, nodesHost, linksHost, labelsHost, accent }) {
+export function createRenderer({ store, page, nodesHost, linksHost, labelsHost, accent }) {
   const nodeElements = new Map();
   const linkElements = new Map();
   let selection = new Set();
   let draftLink = null;
+
+  /* Which faces of a node a connection uses, as one attribute on the board.
+     CSS reads it to put the connection ports on the right two sides: dragging
+     a link out of the left edge of a node whose children hang underneath it
+     is an invitation to draw the map the wrong way round. */
+  function orientation() {
+    if (store.layout === 'radial') return 'radial';
+    return isVertical(store.layout) ? 'vertical' : 'horizontal';
+  }
 
   /* -- Nodes -- */
 
@@ -154,7 +165,10 @@ export function createRenderer({ store, nodesHost, linksHost, labelsHost, accent
     toggle.hidden = true;
 
     element.append(media, label, badges, toggle);
-    ['left', 'right'].forEach((side) => {
+    // All four are built and CSS shows the pair the layout uses. Building the
+    // two that are wanted would mean rebuilding every node when the layout
+    // changes, which is the one moment the board must not flicker.
+    ['left', 'right', 'top', 'bottom'].forEach((side) => {
       const port = document.createElement('span');
       port.className = 'mm-port';
       port.dataset.port = side;
@@ -272,33 +286,6 @@ export function createRenderer({ store, nodesHost, linksHost, labelsHost, accent
 
   /* -- Links -- */
 
-  function linkPath(source, target) {
-    const sourceRight = source.x + source.width;
-    const targetRight = target.x + target.width;
-    let x1 = sourceRight;
-    let x2 = target.x;
-    if (targetRight < source.x) {
-      x1 = source.x;
-      x2 = targetRight;
-    }
-    const y1 = source.y + source.height / 2;
-    const y2 = target.y + target.height / 2;
-    const reach = Math.max(Math.abs(x2 - x1) * 0.5, 24);
-    const direction = x2 >= x1 ? 1 : -1;
-    return `M${x1},${y1} C${x1 + reach * direction},${y1} ${x2 - reach * direction},${y2} ${x2},${y2}`;
-  }
-
-  function freePath(source, target, style) {
-    const x1 = source.x + source.width / 2;
-    const y1 = source.y + source.height / 2;
-    const x2 = target.x + target.width / 2;
-    const y2 = target.y + target.height / 2;
-    if (style === 'line') return `M${x1},${y1} L${x2},${y2}`;
-    const midX = (x1 + x2) / 2;
-    const midY = (y1 + y2) / 2 - Math.abs(x2 - x1) * 0.12;
-    return `M${x1},${y1} Q${midX},${midY} ${x2},${y2}`;
-  }
-
   function buildLink(key, kind) {
     const group = document.createElementNS(NS_SVG, 'g');
     const hit = document.createElementNS(NS_SVG, 'path');
@@ -313,6 +300,8 @@ export function createRenderer({ store, nodesHost, linksHost, labelsHost, accent
 
   function renderLinks() {
     const wanted = new Set();
+    const routing = routingFor(store.layout);
+    if (page) page.dataset.orientation = orientation();
 
     store.nodes.forEach((node) => {
       if (!node.parent) return;
@@ -323,7 +312,7 @@ export function createRenderer({ store, nodesHost, linksHost, labelsHost, accent
       const key = `b:${node.uuid}`;
       wanted.add(key);
       const entry = linkElements.get(key) || buildLink(key, 'branch');
-      const path = linkPath(parent, node);
+      const path = branchPath(routing, parent, node);
       entry.path.setAttribute('d', path);
       entry.hit.setAttribute('d', path);
       entry.group.dataset.branch = node.uuid;
@@ -340,7 +329,7 @@ export function createRenderer({ store, nodesHost, linksHost, labelsHost, accent
       const key = `e:${edge.uuid}`;
       wanted.add(key);
       const entry = linkElements.get(key) || buildLink(key, 'free');
-      const path = freePath(source, target, edge.style);
+      const path = freePath(edge.style, source, target);
       entry.path.setAttribute('d', path);
       entry.hit.setAttribute('d', path);
       entry.path.dataset.style = edge.style;

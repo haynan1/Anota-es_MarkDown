@@ -27,7 +27,13 @@ from html import escape
 from xml.sax.saxutils import quoteattr
 
 from app.models import MindMap, MindMapNode
-from app.services.mind_map_layout import bounding_box
+from app.services.mind_map_layout import (
+    bounding_box,
+    box_of,
+    branch_path,
+    branch_routing,
+    free_path,
+)
 from app.services.sanitizer import MEDIA_URL_PREFIX
 
 # ── Drawing constants ───────────────────────────────────────────────────────
@@ -184,9 +190,12 @@ def to_svg(mind_map: MindMap, nodes: list[MindMapNode], edges: list) -> str:
 
     # Connections first, so a line never crosses over the box it arrives at.
     parts.append('<g fill="none" stroke-linecap="round">')
+    # The line follows the arrangement it belongs to: a tree exported with the
+    # sideways curve of a horizontal map would be a picture of a different map.
+    routing = branch_routing(mind_map.layout)
     for node in nodes:
         for child in tree.children.get(node.id, []):
-            parts.append(_branch_path(node, child, mind_map.color))
+            parts.append(_branch_path(node, child, mind_map.color, routing))
     for edge in edges:
         source, target = by_id.get(edge.source_id), by_id.get(edge.target_id)
         if source is not None and target is not None:
@@ -226,35 +235,25 @@ def _arrow_marker() -> str:
     )
 
 
-def _branch_path(parent: MindMapNode, child: MindMapNode, accent: str) -> str:
-    """A cubic curve leaving the parent sideways and arriving the same way."""
-    x1, y1 = parent.x + parent.width, parent.y + parent.height / 2
-    x2, y2 = child.x, child.y + child.height / 2
-    if child.x + child.width < parent.x:
-        # The child sits to the left; leave from that side instead of drawing
-        # a line that loops back across the parent.
-        x1, x2 = parent.x, child.x + child.width
+def _branch_path(
+    parent: MindMapNode, child: MindMapNode, accent: str, routing: str
+) -> str:
+    """The line from a parent to a child, drawn the way the layout draws it.
 
-    reach = max(abs(x2 - x1) * 0.5, 24.0)
-    direction = 1.0 if x2 >= x1 else -1.0
+    The geometry itself belongs to :mod:`app.services.mind_map_layout`, which
+    is also where the canvas gets it from - an exported map and the board it
+    was exported from are then the same drawing rather than two drawings that
+    agree most of the time.
+    """
+    path = branch_path(routing, box_of(parent), box_of(child))
     stroke = _colour(child.color, accent)
-    return (
-        f'<path d="M{x1:.1f},{y1:.1f} C{x1 + reach * direction:.1f},{y1:.1f} '
-        f'{x2 - reach * direction:.1f},{y2:.1f} {x2:.1f},{y2:.1f}" '
-        f'stroke="{stroke}" stroke-width="2" opacity="0.55"/>'
-    )
+    return f'<path d="{path}" stroke="{stroke}" stroke-width="2" opacity="0.55"/>'
 
 
 def _free_path(source: MindMapNode, target: MindMapNode, edge) -> str:
-    x1, y1 = source.x + source.width / 2, source.y + source.height / 2
-    x2, y2 = target.x + target.width / 2, target.y + target.height / 2
     dash = ' stroke-dasharray="6 6"' if edge.style == "dashed" else ""
     stroke = _colour(edge.color, INK_MUTED)
-    if edge.style == "line":
-        path = f"M{x1:.1f},{y1:.1f} L{x2:.1f},{y2:.1f}"
-    else:
-        mid_x, mid_y = (x1 + x2) / 2, (y1 + y2) / 2 - abs(x2 - x1) * 0.12
-        path = f"M{x1:.1f},{y1:.1f} Q{mid_x:.1f},{mid_y:.1f} {x2:.1f},{y2:.1f}"
+    path = free_path(edge.style, box_of(source), box_of(target))
     return (
         f'<path d="{path}" stroke="{stroke}" stroke-width="1.5"{dash} '
         'marker-end="url(#mm-arrow)" opacity="0.8"/>'

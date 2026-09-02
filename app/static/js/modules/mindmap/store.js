@@ -48,6 +48,11 @@ export function createStore(config) {
   let nodes = new Map();
   let edges = new Map();
   let revision = config.revision || 1;
+  /* How this map arranges itself. Held here rather than read off the page,
+     because "arrumar" can change it without a reload and everything that
+     draws - the links, the ports, where a new subtopic is born - has to move
+     with it in the same frame. */
+  let layout = config.layout || 'right';
 
   /** The last graph the server confirmed. Every diff is measured from here. */
   let baseline = { nodes: new Map(), edges: new Map() };
@@ -81,6 +86,7 @@ export function createStore(config) {
     (graph.nodes || []).forEach((node) => nodes.set(node.uuid, normalizeNode(node)));
     (graph.edges || []).forEach((edge) => edges.set(edge.uuid, normalizeEdge(edge)));
     revision = graph.revision || revision;
+    if (graph.layout) layout = graph.layout;
     baseline = cloneGraph(nodes, edges);
     undoStack.length = 0;
     redoStack.length = 0;
@@ -475,6 +481,7 @@ export function createStore(config) {
     get nodes() { return nodes; },
     get edges() { return edges; },
     get revision() { return revision; },
+    get layout() { return layout; },
     get status() { return status; },
     get canUndo() { return undoStack.length > 0; },
     get canRedo() { return redoStack.length > 0; },

@@ -28,7 +28,12 @@ from flask import (
 from app.blueprints.documents.forms import ConfirmForm
 from app.blueprints.mindmaps import mindmaps_bp
 from app.blueprints.mindmaps.forms import MindMapForm
-from app.models.mind_map import LAYOUT_LABELS, LAYOUTS, NODE_SHAPES
+from app.models.mind_map import (
+    LAYOUT_HINTS,
+    LAYOUT_LABELS,
+    LAYOUTS,
+    NODE_SHAPES,
+)
 from app.repositories.mind_map_repository import MindMapRepository
 from app.services.document_service import DocumentService
 from app.services.exceptions import ServiceError, ValidationError
@@ -36,6 +41,7 @@ from app.services.media_service import (
     PICKER_ACCEPT,
     max_bytes_for,
 )
+from app.services.mind_map_layout import board_orientation
 from app.services.mind_map_service import (
     MAX_NODES_PER_MAP,
     MAX_OPERATIONS,
@@ -138,6 +144,8 @@ def canvas(public_uuid: str):
         palette=NODE_PALETTE,
         shapes=[(value, SHAPE_LABELS[value]) for value in NODE_SHAPES],
         layouts=[(value, LAYOUT_LABELS[value]) for value in LAYOUTS],
+        layout_hints=LAYOUT_HINTS,
+        orientation=board_orientation(mind_map.layout),
         upload_accept=PICKER_ACCEPT,
         upload_limit=max_bytes_for("image"),
         max_nodes=MAX_NODES_PER_MAP,

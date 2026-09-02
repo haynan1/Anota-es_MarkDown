@@ -8,9 +8,17 @@
  * quietly does something slightly different from its menu item.
  */
 
-/** Layout used when a node is born under the pointer rather than by tidying. */
+import { isVertical } from './routing.js';
+
+/** Layout used when a node is born under the pointer rather than by tidying.
+ *  Two sets, because a map that grows downwards has to grow downwards from
+ *  the first Tab and not only after someone presses "arrumar": a subtopic
+ *  that appears to the right of its parent on a tree has already told the
+ *  writer the wrong thing about the map they are building. */
 const CHILD_GAP_X = 90;
 const SIBLING_GAP_Y = 24;
+const CHILD_GAP_Y = 72;
+const SIBLING_GAP_X = 32;
 const NEW_WIDTH = 180;
 const NEW_HEIGHT = 48;
 const NOTE_WIDTH = 200;
@@ -118,10 +126,24 @@ export function createActions({ store, selection, limits, notify }) {
     return true;
   }
 
-  /** Where a new child of `parent` should land: to its right, under the last
-   *  sibling, so a branch grows downwards instead of stacking on itself. */
+  /** Where a new child of `parent` should land: one step along the axis the
+   *  map grows on, and past the last sibling on the other one - so a branch
+   *  spreads instead of stacking on itself. */
   function childPlacement(parent) {
     const siblings = store.children(parent.uuid);
+
+    if (isVertical(store.layout)) {
+      const y = parent.y + parent.height + CHILD_GAP_Y;
+      if (!siblings.length) {
+        return { x: parent.x + parent.width / 2 - NEW_WIDTH / 2, y };
+      }
+      const rightmost = siblings.reduce(
+        (edge, node) => Math.max(edge, node.x + node.width),
+        -Infinity
+      );
+      return { x: rightmost + SIBLING_GAP_X, y };
+    }
+
     const x = parent.x + parent.width + CHILD_GAP_X;
     if (!siblings.length) {
       return { x, y: parent.y + parent.height / 2 - NEW_HEIGHT / 2 };
@@ -160,7 +182,12 @@ export function createActions({ store, selection, limits, notify }) {
     const node = store.get(uuid);
     if (!node) return null;
     if (node.parent) return addChild(node.parent, overrides);
-    return addLoose({ x: node.x, y: node.y + node.height + SIBLING_GAP_Y, ...overrides });
+    // A second root goes beside the first on a map that grows downwards, and
+    // below it on one that grows across - the free direction, either way.
+    const beside = isVertical(store.layout)
+      ? { x: node.x + node.width + SIBLING_GAP_X, y: node.y }
+      : { x: node.x, y: node.y + node.height + SIBLING_GAP_Y };
+    return addLoose({ ...beside, ...overrides });
   }
 
   /** A node with no parent: an idea that has not found its branch yet. */
@@ -372,25 +399,36 @@ export function createActions({ store, selection, limits, notify }) {
 
   /**
    * The node in a given direction, following the hierarchy rather than the
-   * geometry: right goes to the first child, left to the parent, up and down
-   * to the neighbouring sibling. That is how the map is read out loud, and it
-   * is what makes the arrow keys navigate an outline rather than a plane.
+   * geometry: one arrow goes into the branch, its opposite goes back to the
+   * parent, and the other two walk the siblings. That is how the map is read
+   * out loud, and it is what makes the arrow keys navigate an outline rather
+   * than a plane.
+   *
+   * Which arrow does which turns with the map. On a horizontal map the branch
+   * is to the right; on a tree it is underneath. Leaving the keys fixed would
+   * mean pressing Right to reach a child sitting below the node - the arrow
+   * pointing away from the thing it selects.
    */
   function neighbour(uuid, direction) {
     const node = store.get(uuid);
     if (!node) return null;
 
-    if (direction === 'right') {
+    const vertical = isVertical(store.layout);
+    const intoBranch = vertical ? 'down' : 'right';
+    const towardsRoot = vertical ? 'up' : 'left';
+
+    if (direction === intoBranch) {
       if (node.collapsed) return null;
       const kids = store.children(uuid);
       return kids.length ? kids[0].uuid : null;
     }
-    if (direction === 'left') return node.parent;
+    if (direction === towardsRoot) return node.parent;
 
     const siblings = store.children(node.parent);
     const index = siblings.findIndex((item) => item.uuid === uuid);
     if (index < 0) return null;
-    const target = direction === 'up' ? index - 1 : index + 1;
+    const backwards = vertical ? 'left' : 'up';
+    const target = direction === backwards ? index - 1 : index + 1;
     return siblings[target] ? siblings[target].uuid : null;
   }
 

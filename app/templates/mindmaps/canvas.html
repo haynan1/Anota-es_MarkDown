@@ -17,6 +17,10 @@
 <main class="mm-page" id="main-content" data-mind-map
      data-uuid="{{ mind_map.uuid }}"
      data-revision="{{ mind_map.revision }}"
+     {# Which faces a connection leaves from. Rendered here as well as written
+        by the canvas, so the ports are on the right two sides in the first
+        painted frame instead of one frame later. #}
+     data-orientation="{{ orientation }}"
      data-max-nodes="{{ max_nodes }}"
      data-ops-url="{{ url_for('mindmaps.operations', public_uuid=mind_map.uuid) }}"
      data-graph-url="{{ url_for('mindmaps.graph', public_uuid=mind_map.uuid) }}"
@@ -443,13 +447,34 @@
     <div class="modal-head">
       <h2 class="modal-title" id="map-organize-title">Arrumar automaticamente?</h2>
     </div>
-    <div class="modal-body stack stack-2">
+    <div class="modal-body stack stack-3">
       <p>
-        Todos os tópicos vão para as posições que a disposição
-        <strong data-organize-layout>atual</strong> calcula. O arranjo manual
-        que existe hoje é substituído.
+        Escolha a forma. Todos os tópicos vão para as posições que ela calcula,
+        e o arranjo manual que existe hoje é substituído.
       </p>
-      <p class="subtle">Dá para desfazer com <kbd>Ctrl</kbd> + <kbd>Z</kbd>.</p>
+      {# The chooser lives here rather than only in "Configurações do mapa"
+         because this is the moment the question is being asked. A setting two
+         dialogs away is a setting nobody finds, and a mapa mental that only
+         ever grew sideways is what that costs. #}
+      <fieldset class="mm-layout-picker" data-layout-picker>
+        <legend class="visually-hidden">Disposição do mapa</legend>
+        {% for value, label in layouts %}
+        <label class="mm-layout-option">
+          <input type="radio" name="organize-layout" value="{{ value }}"
+                 class="visually-hidden"
+                 {% if value == mind_map.layout %}checked{% endif %}>
+          <span class="mm-layout-card">
+            {{ icon('layout-' ~ value, 'icon mm-layout-glyph') }}
+            <span class="mm-layout-name">{{ label }}</span>
+            <span class="mm-layout-hint">{{ layout_hints[value] }}</span>
+          </span>
+        </label>
+        {% endfor %}
+      </fieldset>
+      <p class="subtle">
+        A forma escolhida passa a ser a do mapa. Dá para desfazer as posições
+        com <kbd>Ctrl</kbd> + <kbd>Z</kbd>.
+      </p>
     </div>
     <div class="modal-foot">
       <button type="button" class="btn" data-action="close-dialog">Cancelar</button>

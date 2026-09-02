@@ -12,7 +12,7 @@
  * all plain server-rendered pages and form posts.
  */
 
-import { $, closeDialog, debounce, openDialog, postJSON } from './modules/dom.js';
+import { $, $$, closeDialog, debounce, openDialog, postJSON } from './modules/dom.js';
 import { toast } from './modules/toasts.js';
 import { createStore } from './modules/mindmap/store.js';
 import { createCamera, createRenderer } from './modules/mindmap/canvas.js';
@@ -67,7 +67,7 @@ function boot() {
   });
 
   const camera = createCamera(page, world, stage);
-  const renderer = createRenderer({ store, nodesHost, linksHost, labelsHost, accent });
+  const renderer = createRenderer({ store, page, nodesHost, linksHost, labelsHost, accent });
 
   const selection = createSelection((members) => {
     renderer.setSelection(members);
@@ -213,15 +213,21 @@ function boot() {
   function confirmOrganize() {
     const dialog = $('#map-organize');
     if (!dialog) {
-      organize();
+      organize(store.layout);
       return;
     }
-    const select = $('#map-settings select[name="layout"]');
-    const label = $('[data-organize-layout]', dialog);
-    if (label && select && select.selectedIndex >= 0) {
-      label.textContent = select.options[select.selectedIndex].text.toLowerCase();
-    }
+    // The board is the authority on its own arrangement: "arrumar" can have
+    // changed it since the page was rendered, and the dialog that offers to
+    // change it again must open on what is actually true now.
+    $$('[data-layout-picker] input', dialog).forEach((input) => {
+      input.checked = input.value === store.layout;
+    });
     openDialog(dialog);
+  }
+
+  function chosenLayout() {
+    const picked = $('[data-layout-picker] input:checked');
+    return picked ? picked.value : null;
   }
 
   function fit() {
@@ -290,13 +296,18 @@ function boot() {
     return { x: centre.x - 90, y: centre.y - 24 };
   }
 
-  async function organize() {
+  async function organize(layout) {
     notify('Arrumando o mapa…', 'info', { timeout: 1500 });
-    const ok = await store.organize(null);
+    const ok = await store.organize(layout || null);
     if (!ok) {
       notify('Não foi possível arrumar o mapa agora.', 'error');
       return;
     }
+    // The settings dialog holds the same choice. Left on the old value it
+    // would offer to change the map back to what it no longer is - and a
+    // Salvar there would actually do it.
+    const select = $('#map-settings select[name="layout"]');
+    if (select && layout) select.value = layout;
     // The graph came back with new coordinates; frame it so the change is
     // visible rather than happening somewhere off screen.
     window.requestAnimationFrame(() => {
@@ -339,10 +350,15 @@ function boot() {
       case 'mm-organize':
         confirmOrganize();
         break;
-      case 'mm-organize-confirm':
+      case 'mm-organize-confirm': {
+        // Read before closing: a closed dialog's inputs are still in the DOM,
+        // but reading first is what keeps that from being something anyone
+        // has to know.
+        const layout = chosenLayout();
         closeDialog($('#map-organize'));
-        organize();
+        organize(layout);
         break;
+      }
       case 'mm-undo':
         store.undo();
         break;

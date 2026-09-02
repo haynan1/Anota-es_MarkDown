@@ -24,12 +24,17 @@ globalThis.window = {
 
 const { createActions } = await import('../../app/static/js/modules/mindmap/actions.js');
 
-function harness({ nodes = [] } = {}) {
+function harness({ nodes = [], layout = 'right' } = {}) {
   const store = {
     nodes: new Map(nodes.map((node) => [node.uuid, node])),
     edges: new Map(),
+    layout,
     roots: () => [...store.nodes.values()].filter((node) => !node.parent),
     branch: (uuid) => [uuid],
+    children: (uuid) =>
+      [...store.nodes.values()]
+        .filter((node) => (node.parent || null) === (uuid || null))
+        .sort((a, b) => a.position - b.position),
     get: (uuid) => store.nodes.get(uuid),
     mutate: (apply) => apply(),
   };
@@ -92,6 +97,89 @@ function check(name, condition, detail = '') {
   actions.addLoose({ x: 0, y: 0 });
   check('a busca por um lugar livre é limitada',
     Date.now() - started < 250, `levou ${Date.now() - started}ms`);
+}
+
+/* ── Um subtópico nasce na direção em que o mapa cresce ─────────────────── */
+
+/* The bug this pins: pressing Tab on a map arranged as a tree put the new
+   subtopic to the *right* of its parent, where nothing else on that board
+   lives. The topic was correct - the right parent, the right position - and
+   the board said something false about the map being built until someone
+   pressed "arrumar". Growing a branch and tidying it are not supposed to
+   disagree about which way is down. */
+
+const root = () => ({
+  uuid: 'raiz', parent: null, position: 0, x: 100, y: 100, width: 180, height: 48,
+});
+
+{
+  const { actions, store } = harness({ nodes: [root()], layout: 'right' });
+  const first = actions.addChild('raiz');
+  check('num mapa horizontal o filho nasce à direita',
+    first.x > 100 + 180, `x = ${first.x}`);
+  check('e alinhado com o pai',
+    first.y + first.height / 2 === 100 + 48 / 2, `y = ${first.y}`);
+
+  store.nodes.set(first.uuid, first);
+  const second = actions.addChild('raiz');
+  check('o irmão desce, não se empilha',
+    second.y >= first.y + first.height && second.x === first.x,
+    `${second.x},${second.y} contra ${first.x},${first.y}`);
+}
+
+for (const layout of ['down', 'tree']) {
+  const { actions, store } = harness({ nodes: [root()], layout });
+  const first = actions.addChild('raiz');
+  check(`num mapa ${layout} o filho nasce abaixo`,
+    first.y > 100 + 48, `y = ${first.y}`);
+  check(`e centrado sob o pai (${layout})`,
+    first.x + first.width / 2 === 100 + 180 / 2, `x = ${first.x}`);
+
+  store.nodes.set(first.uuid, first);
+  const second = actions.addChild('raiz');
+  check(`o irmão vai para o lado (${layout})`,
+    second.x >= first.x + first.width && second.y === first.y,
+    `${second.x},${second.y} contra ${first.x},${first.y}`);
+  check(`e nenhum dos dois cobre o outro (${layout})`,
+    second.x >= first.x + first.width || first.x >= second.x + second.width);
+}
+
+/* ── As setas apontam para o que selecionam ─────────────────────────────── */
+
+/* Right selecting a child that is drawn underneath the node is an arrow
+   pointing away from the thing it moves to. The keys turn with the map. */
+
+{
+  const nodes = [
+    root(),
+    { uuid: 'a', parent: 'raiz', position: 0, x: 0, y: 0, width: 180, height: 48 },
+    { uuid: 'b', parent: 'raiz', position: 1, x: 0, y: 0, width: 180, height: 48 },
+  ];
+
+  const across = harness({ nodes: nodes.map((n) => ({ ...n })), layout: 'right' }).actions;
+  check('horizontal: direita entra no ramo', across.neighbour('raiz', 'right') === 'a');
+  check('horizontal: esquerda volta ao pai', across.neighbour('a', 'left') === 'raiz');
+  check('horizontal: baixo é o próximo irmão', across.neighbour('a', 'down') === 'b');
+  check('horizontal: cima é o irmão anterior', across.neighbour('b', 'up') === 'a');
+
+  const down = harness({ nodes: nodes.map((n) => ({ ...n })), layout: 'tree' }).actions;
+  check('árvore: baixo entra no ramo', down.neighbour('raiz', 'down') === 'a');
+  check('árvore: cima volta ao pai', down.neighbour('a', 'up') === 'raiz');
+  check('árvore: direita é o próximo irmão', down.neighbour('a', 'right') === 'b');
+  check('árvore: esquerda é o irmão anterior', down.neighbour('b', 'left') === 'a');
+}
+
+{
+  // Um ramo recolhido não entrega seus filhos por tecla nenhuma.
+  const { actions } = harness({
+    nodes: [
+      { ...root(), collapsed: true },
+      { uuid: 'a', parent: 'raiz', position: 0, x: 0, y: 0, width: 180, height: 48 },
+    ],
+    layout: 'tree',
+  });
+  check('árvore: um ramo fechado não é atravessado',
+    actions.neighbour('raiz', 'down') === null);
 }
 
 if (failures) {
