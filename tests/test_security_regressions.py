@@ -36,6 +36,18 @@ class TestDependencyFloor:
         major, minor = (int(p) for p in markdown.__version__.split(".")[:2])
         assert (major, minor) >= (3, 8)
 
+    def test_pypdf_is_patched(self):
+        """Three DoS advisories, all in code paths that read a hostile PDF.
+
+        This application only ever writes them, so none is reachable from user
+        input - but a transitive dependency with open advisories is how a real
+        one goes unnoticed, and the floor costs nothing to hold.
+        """
+        import pypdf
+
+        major, minor, patch = (int(p) for p in pypdf.__version__.split(".")[:3])
+        assert (major, minor, patch) >= (6, 16, 1)
+
     def test_pygments_is_patched(self):
         # PYSEC-2026-2987: ReDoS in AdlLexer.
         import pygments

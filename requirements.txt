@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# Versões auditadas com pip-audit em 2026-07-20: zero vulnerabilidades
+# Versões auditadas com pip-audit em 2026-09-01: zero vulnerabilidades
 # conhecidas. Os mínimos marcados com "CVE" não devem ser rebaixados — há
 # testes em tests/test_security_regressions.py que falham se isso acontecer.
 #
@@ -40,7 +40,7 @@ xhtml2pdf==0.2.17
 # Transitivas do xhtml2pdf, fixadas aqui só pelo piso de segurança: sem estas
 # linhas o pip resolve para versões com advisories abertos. Nenhuma das duas é
 # usada diretamente por esta aplicação.
-pypdf==6.15.0                 # CVE: <6.15.0 DoS ao ler fontes de um PDF hostil
+pypdf==6.16.1                 # CVE: <6.16.1 três DoS ao ler um PDF hostil
 cryptography==50.0.0          # CVE: <50.0.0 oráculo Bleichenbacher em PKCS#7
 
 # ── Testes ──────────────────────────────────────────────────────────────────
