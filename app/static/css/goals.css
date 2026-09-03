@@ -36,27 +36,39 @@
   .journey { grid-template-columns: 1fr; gap: var(--sp-5); }
 }
 
+/* O rótulo é o micro-rótulo do resto do app: mono, caixa alta, espaçado.
+   Ele tinha a mesma ideia — versalete espaçado — escrita à mão com a
+   grotesca, o que fazia esta tela ser a única com um dialeto próprio. */
 .journey-eyebrow {
-  color: var(--text-muted);
-  font-size: var(--fs-xs);
-  font-weight: 620;
-  letter-spacing: 0.08em;
+  color: var(--text-subtle);
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  font-weight: 500;
+  letter-spacing: var(--label-tracking);
   text-transform: uppercase;
+  line-height: 1.4;
 }
 
+/* E a figura é a figura: a serifa, como no painel. */
 .journey-xp {
-  margin-top: var(--sp-1);
+  margin-top: var(--sp-2);
+  font-family: var(--font-display);
   font-size: var(--fs-3xl);
-  font-weight: 640;
-  letter-spacing: -0.04em;
-  line-height: 1.05;
+  font-weight: 460;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  font-optical-sizing: auto;
 }
-.journey-xp .subtle { font-size: var(--fs-md); font-weight: 500; }
+.journey-xp .subtle {
+  font-family: var(--font-ui);
+  font-size: var(--fs-md); font-weight: 500; letter-spacing: 0;
+}
 
 .journey-hint {
   margin-top: var(--sp-2);
   color: var(--text-muted);
-  font-size: var(--fs-xs);
+  font-size: var(--fs-sm);
 }
 
 /*
@@ -96,23 +108,35 @@
   gap: var(--sp-4) var(--sp-5);
   margin: 0;
 }
+/* Uma <dl> é literalmente rótulo e figura, que é a régua do painel escrita em
+   outro elemento — então ela usa as mesmas duas vozes: o micro-rótulo em mono
+   sobre a cifra em serifa. Antes eram as duas em grotesca, e a mesma
+   informação aparecia de dois jeitos em duas telas do mesmo produto. */
 .journey-figure dt {
   display: flex; align-items: center; gap: var(--sp-2);
-  color: var(--text-muted);
-  font-size: var(--fs-xs);
-  font-weight: 560;
+  color: var(--text-subtle);
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  font-weight: 500;
+  letter-spacing: var(--label-tracking);
+  text-transform: uppercase;
+  line-height: 1.4;
 }
-.journey-figure dt .icon { opacity: 0.8; }
+.journey-figure dt .icon { opacity: 0.7; }
 .journey-figure dd {
-  margin: var(--sp-1) 0 0;
+  margin: var(--sp-2) 0 0;
+  font-family: var(--font-display);
   font-size: var(--fs-2xl);
-  font-weight: 640;
-  letter-spacing: -0.03em;
-  line-height: 1.1;
+  font-weight: 460;
+  letter-spacing: -0.025em;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+  font-optical-sizing: auto;
 }
 .journey-unit {
   margin-left: var(--sp-2);
   color: var(--text-muted);
+  font-family: var(--font-ui);
   font-size: var(--fs-xs);
   font-weight: 500;
   letter-spacing: 0;
@@ -135,7 +159,7 @@
   border-radius: var(--radius-lg);
   transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }
-.goal-row:hover { border-color: var(--border-strong); box-shadow: var(--shadow-sm); }
+.goal-row:hover { border-color: var(--border-strong); background: var(--surface-2); }
 
 /*
   O círculo é o gesto principal da tela, então ele é o único elemento da linha
@@ -285,16 +309,18 @@ a.goal-tag-link:hover { text-decoration: none; background: var(--accent-soft); }
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  box-shadow: var(--shadow-sm);
   cursor: grab;
 }
-.board-card:hover { border-color: var(--border-strong); }
+.board-card:hover { border-color: var(--border-strong); background: var(--surface-2); }
 .board-card.is-dragging { opacity: 0.5; cursor: grabbing; }
 /* Um pouso curto, para o olho seguir o cartão até a coluna nova. */
 .board-card.is-settling { animation: board-settle 320ms var(--ease); }
+/* A sombra aparece só enquanto o cartão está caindo — durante o pouso ele
+   está de facto acima da coluna, que é a única condição em que uma sombra
+   diz a verdade. Em repouso ele volta a ser papel sobre papel. */
 @keyframes board-settle {
   from { transform: translateY(-6px); box-shadow: var(--shadow-md); }
-  to { transform: none; box-shadow: var(--shadow-sm); }
+  to { transform: none; box-shadow: none; }
 }
 
 .board-card-top {
@@ -459,19 +485,29 @@ details[open] > summary .goal-overdue-caret { transform: rotate(180deg); }
 
 /* ── Frases ──────────────────────────────────────────────────────────────── */
 
+/*
+  A pull quote, set the way a magazine sets one: the serif, in italic, at a
+  size above the body, with a rule at its left and nothing behind it.
+
+  It used to be a filled slab in the accent — a 900px block of tinted colour
+  in the middle of the dashboard, which made the one sentence meant to be read
+  slowly into the loudest object on the screen. The rule says the same thing
+  the fill was saying, and the italic says the rest.
+*/
 .phrase-now {
   display: flex; align-items: flex-start; gap: var(--sp-3);
   margin: var(--sp-5) 0 0;
-  padding: var(--sp-5);
-  background: var(--accent-soft);
-  border-left: 3px solid var(--accent);
-  border-radius: var(--radius);
-  color: var(--text);
-  font-size: var(--fs-lg);
-  font-weight: 500;
-  line-height: 1.5;
+  padding: var(--sp-1) 0 var(--sp-1) var(--sp-5);
+  border-left: 2px solid var(--accent);
+  color: var(--text-muted);
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: var(--fs-xl);
+  font-weight: 400;
+  line-height: 1.45;
+  text-wrap: pretty;
 }
-.phrase-now .icon { margin-top: 6px; color: var(--accent); flex: none; }
+.phrase-now .icon { margin-top: 8px; color: var(--accent); flex: none; }
 
 .phrase-grid {
   display: grid;
@@ -570,9 +606,22 @@ details[open] > summary .goal-overdue-caret { transform: rotate(180deg); }
   white-space: nowrap;
   transition: color var(--dur) var(--ease), background var(--dur) var(--ease);
 }
-.goal-nav-item:hover { color: var(--text); background: var(--surface-sunken); text-decoration: none; }
-.goal-nav-item[aria-current="page"] {
-  color: var(--accent);
-  background: var(--accent-soft);
+.goal-nav-item {
+  position: relative;
 }
+.goal-nav-item:hover { color: var(--text); background: color-mix(in srgb, var(--text) 5%, transparent); }
+.goal-nav-item[aria-current="page"] {
+  color: var(--text);
+  background: none;
+  font-weight: 620;
+}
+/* The rule sits on the bar's own border, so the current tab reads as joined
+   to the page below it — which is what a tab is. */
+.goal-nav-item[aria-current="page"]::after {
+  content: "";
+  position: absolute; left: var(--sp-2); right: var(--sp-2);
+  bottom: calc(-1 * var(--sp-2) - 1px);
+  height: 2px; background: var(--accent);
+}
+.goal-nav-item[aria-current="page"] .icon { color: var(--accent); }
 .goal-nav-item .icon { opacity: 0.85; }

@@ -14,6 +14,7 @@ from app.models import Group, document_groups
 from app.repositories.document_repository import DocumentQuery, DocumentRepository
 from app.repositories.group_repository import GroupRepository
 from app.services.exceptions import NotFoundError, ValidationError
+from app.models.group import DEFAULT_GROUP_COLOR
 from app.services.group_service import GroupService
 
 
@@ -54,7 +55,7 @@ class TestLifecycle:
 
     def test_an_invalid_colour_falls_back_to_the_default(self, app):
         created = GroupService.create("Cores", color="javascript:alert(1)")
-        assert created.color == "#4F46E5"
+        assert created.color == DEFAULT_GROUP_COLOR
 
     def test_an_enormous_name_is_cut_to_the_column_width(self, app):
         from app.models.group import MAX_DESCRIPTION_LENGTH, MAX_NAME_LENGTH

@@ -62,7 +62,7 @@ MAX_NODE_TEXT_LENGTH = 500
 MAX_NODE_NOTE_LENGTH = 4000
 MAX_URL_LENGTH = 500
 
-DEFAULT_MAP_COLOR = "#4F46E5"
+DEFAULT_MAP_COLOR = "#0F6E64"
 
 # A node is a thought, not a document. `topic` is the ordinary one; `note` is
 # the sticky square an aside gets parked on; `image` is a picture carrying its

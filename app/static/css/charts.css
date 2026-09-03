@@ -1,10 +1,25 @@
 /* ==========================================================================
    Report charts.
 
-   Palette: categorical slots 1–2 from the validated reference set, re-checked
-   against this app's own surfaces (#FFFFFF light, #111827 dark) —
-   all six checks PASS in both modes, worst adjacent CVD ΔE 24.7 light /
-   26.8 dark against an ≥8 target.
+   Palette: teal and burnt orange — the pairing a warm-ink page has always
+   used, and the reason the previous blue-and-vermilion set had to go. Those
+   two were chosen against a blue-grey chrome (#FFFFFF / #111827); on warm
+   paper the blue read as a foreign object sitting in the middle of the
+   dashboard, which is the one thing a chart in a report must not do.
+
+   Re-selected and re-validated against this app's own surfaces (#FDFCFA
+   light, #1B1815 dark) — all five checks PASS in both modes:
+
+     light  #0D9488 / #C2410C   CVD ΔE 13.7   normal ΔE 27.1
+     dark   #13A394 / #E27127   CVD ΔE 13.6   normal ΔE 25.5
+
+   against a ≥8 CVD target and a ≥15 normal-vision floor. The dark pair is
+   selected for the dark surface rather than derived from the light one: an
+   automatic lift lands outside the band the dark ground needs.
+
+   These are deliberately *not* --accent. The accent is the user's to choose,
+   and a series that changes colour when someone picks a new brand tint is a
+   series whose identity is not stable.
 
    Colour lives here, never in a style attribute: the CSP forbids inline
    styles, so the SVG carries classes and the values come from custom
@@ -12,10 +27,10 @@
    ========================================================================== */
 
 :root {
-  --viz-series-1: #2a78d6;
-  --viz-series-2: #eb6834;
+  --viz-series-1: #0D9488;
+  --viz-series-2: #C2410C;
   --viz-surface: var(--surface);
-  --viz-grid: var(--border);
+  --viz-grid: var(--rule);
   --viz-ink-muted: var(--text-subtle);
   --viz-ink: var(--text-muted);
 }
@@ -23,8 +38,8 @@
 :root[data-theme="dark"] {
   /* The same two hues re-stepped for the dark surface — not an automatic
      flip, and validated as its own set. */
-  --viz-series-1: #3987e5;
-  --viz-series-2: #d95926;
+  --viz-series-1: #13A394;
+  --viz-series-2: #E27127;
 }
 
 .viz { margin: 0; }
@@ -360,22 +375,19 @@
 
 /* ── Layout ─────────────────────────────────────────────────────────────── */
 
-.section-title {
-  font-size: var(--fs-xl);
-  font-weight: 650;
-  letter-spacing: -0.024em;
-}
+/* `.section-title` belongs to base.css — it is the display voice, shared by
+   every screen. It used to be redefined here with the old grotesque weights,
+   which meant the reports heading was the one section title in the app that
+   did not match the rest. */
 .reports-head { margin-bottom: var(--sp-4); }
 
 .period-filter {
   display: flex; flex-wrap: wrap; gap: var(--sp-2);
   margin-left: auto;
 }
-.period-filter .chip.is-active {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-  color: var(--accent);
-}
+/* The chosen period wears the same ink inversion as every other selected
+   chip; there is no reason for this one row of filters to have its own
+   selected state, and having one is how a design system starts to drift. */
 .viz-subtitle { margin-bottom: var(--sp-5); }
 
 .reports-grid {

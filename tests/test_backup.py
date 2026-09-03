@@ -21,6 +21,7 @@ from app.services.backup_service import (
 )
 from app.services.document_service import DocumentService
 from app.services.exceptions import ValidationError
+from app.services.accent import DEFAULT_ACCENT
 from app.services.settings_service import SettingsService
 
 
@@ -326,7 +327,7 @@ class TestRoutes:
             follow_redirects=True,
         )
         SettingsService.invalidate_cache()
-        assert SettingsService.get("accent_color") == "#4F46E5"
+        assert SettingsService.get("accent_color") == DEFAULT_ACCENT
 
     def test_reset_to_defaults(self, client, app):
         SettingsService.update_many({"app_name": "Alterado"})

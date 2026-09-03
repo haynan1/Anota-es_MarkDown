@@ -43,7 +43,7 @@ class CategoryRepository:
         category = Category(
             name=clean[:80],
             slug=safe_slug(clean, fallback="categoria"),
-            color=color or "#4F46E5",
+            color=color or "#0F6E64",
         )
         db.session.add(category)
         db.session.flush()

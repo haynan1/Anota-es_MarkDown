@@ -177,8 +177,10 @@ def _register_generated_assets(app: Flask) -> None:
     def theme_css() -> Response:
         from app.services.settings_service import SettingsService
 
-        accent = SettingsService.get("accent_color", "#4F46E5")
-        css = render_template("theme.css.jinja", accent=accent)
+        from app.services.accent import DEFAULT_ACCENT, build_ramp
+
+        accent = SettingsService.get("accent_color", DEFAULT_ACCENT)
+        css = render_template("theme.css.jinja", ramp=build_ramp(accent))
         response = Response(css, mimetype="text/css")
         response.headers["Cache-Control"] = "no-cache"
         return response

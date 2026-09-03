@@ -40,6 +40,7 @@ from app.services.mind_map_layout import (
     compute_layout,
     effective_layouts,
 )
+from app.models.mind_map import DEFAULT_MAP_COLOR
 from app.services.mind_map_service import MAX_DEPTH, MindMapService
 
 
@@ -122,7 +123,7 @@ class TestLifecycle:
 
     def test_an_invalid_colour_falls_back_to_the_default(self, app):
         created = MindMapService.create("Cores", color="javascript:alert(1)")
-        assert created.color == "#4F46E5"
+        assert created.color == DEFAULT_MAP_COLOR
 
     def test_the_trash_is_reversible(self, app, mind_map):
         MindMapService.soft_delete(mind_map)

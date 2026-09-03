@@ -3,17 +3,30 @@
 
   Served from /assets/theme.css instead of an inline <style> block so the
   Content-Security-Policy can stay free of 'unsafe-inline'.
+
+  The values below are not the hex the user typed. They come from
+  ``app.services.accent``, which walks that hex toward ink or toward paper
+  until it measurably clears the contrast bar on the ground it will be read
+  on — a different distance for each theme, computed rather than guessed.
+  See that module for why a fixed ``color-mix`` could not do this job.
 #}
 :root {
-  --accent: {{ accent }};
-  --accent-strong: color-mix(in srgb, {{ accent }} 82%, #000);
-  --accent-soft: color-mix(in srgb, {{ accent }} 12%, transparent);
-  --accent-contrast: #FFFFFF;
+  --accent:          {{ ramp.light }};
+  --accent-strong:   {{ ramp.light_strong }};
+  --accent-soft:     color-mix(in srgb, {{ ramp.light }} 11%, transparent);
+  --accent-line:     color-mix(in srgb, {{ ramp.light }} 34%, transparent);
+  --accent-contrast: {{ ramp.light_contrast }};
+
+  /* The colour exactly as chosen, for places where it is a mark rather than
+     a surface carrying text: a category dot, a group's spine, a chart key. */
+  --accent-seed:     {{ ramp.seed }};
 }
 
 :root[data-theme="dark"] {
-  --accent: color-mix(in srgb, {{ accent }} 78%, #FFFFFF);
-  --accent-strong: color-mix(in srgb, {{ accent }} 60%, #FFFFFF);
-  --accent-soft: color-mix(in srgb, {{ accent }} 22%, transparent);
-  --accent-contrast: #0F172A;
+  --accent:          {{ ramp.dark }};
+  --accent-strong:   {{ ramp.dark_strong }};
+  --accent-soft:     color-mix(in srgb, {{ ramp.dark }} 16%, transparent);
+  --accent-line:     color-mix(in srgb, {{ ramp.dark }} 40%, transparent);
+  --accent-contrast: {{ ramp.dark_contrast }};
+  --accent-seed:     {{ ramp.dark }};
 }

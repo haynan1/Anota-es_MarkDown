@@ -20,6 +20,16 @@
   {# Applies the saved theme before first paint so there is no flash. #}
   <script src="{{ url_for('static', filename='js/theme-init.js') }}"></script>
 
+  {# The two faces that appear on every screen, fetched in parallel with the
+     stylesheet that will ask for them rather than after it. The mono is not
+     preloaded: it sets only micro-labels, which swap without a visible
+     reflow, and a third blocking request costs more than it saves. #}
+  <link rel="preload" as="font" type="font/woff2" crossorigin
+        href="{{ url_for('static', filename='fonts/publicsans-latin.woff2') }}">
+  <link rel="preload" as="font" type="font/woff2" crossorigin
+        href="{{ url_for('static', filename='fonts/newsreader-latin.woff2') }}">
+
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/fonts.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/markdown.css') }}">
   {% block styles %}{% endblock %}

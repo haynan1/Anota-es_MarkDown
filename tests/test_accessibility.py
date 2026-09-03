@@ -349,7 +349,13 @@ class TestMotionAndContrast:
             Path(app.root_path) / "static" / "css" / "base.css"
         ).read_text(encoding="utf-8")
         assert ".btn-icon" in css
-        assert "min-height: 38px" in css
+        # Drawn for a pointer, sized for a finger: 34px with a mouse, 44px
+        # wherever the primary input is coarse.
+        assert "min-height: 34px" in css
+        assert "@media (pointer: coarse)" in css
+        coarse = css[css.index("@media (pointer: coarse)") :]
+        coarse = coarse[: coarse.index("\n}")]
+        assert ".btn-icon, .btn-icon.btn-sm { width: 44px; min-height: 44px; }" in coarse
         assert "min-height: 32px" in css
 
 

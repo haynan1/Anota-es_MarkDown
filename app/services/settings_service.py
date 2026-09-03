@@ -14,6 +14,7 @@ from flask import g
 
 from app.extensions import db
 from app.models import PAGE_SIZES, PDF_THEMES, Setting
+from app.services.accent import DEFAULT_ACCENT
 from app.services.sanitizer import sanitize_plain_text
 
 # Settings are a closed set of three shapes, not arbitrary objects. Naming the
@@ -47,7 +48,7 @@ class SettingDefinition:
 SETTINGS_SCHEMA: tuple[SettingDefinition, ...] = (
     SettingDefinition("app_name", "Markdown Studio", max_length=60),
     SettingDefinition("theme", "auto", choices=THEMES),
-    SettingDefinition("accent_color", "#4F46E5", kind="color"),
+    SettingDefinition("accent_color", DEFAULT_ACCENT, kind="color"),
     SettingDefinition("timezone", "America/Sao_Paulo", max_length=64),
     SettingDefinition("autosave_seconds", 3, kind="int", minimum=1, maximum=60),
     SettingDefinition("pdf_page_size", "A4", choices=PAGE_SIZES),

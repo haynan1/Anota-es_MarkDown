@@ -47,7 +47,7 @@ class MindMapForm(FlaskForm):
                 message="Use uma cor no formato #RRGGBB.",
             ),
         ],
-        default="#4F46E5",
+        default="#0F6E64",
     )
     layout = SelectField(
         "Disposição",

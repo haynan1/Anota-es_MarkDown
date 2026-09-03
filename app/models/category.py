@@ -12,7 +12,7 @@ from app.utils.dates import utcnow
 if TYPE_CHECKING:  # pragma: no cover - resolved by SQLAlchemy at runtime
     from app.models.document import Document
 
-DEFAULT_CATEGORY_COLOR = "#4F46E5"
+DEFAULT_CATEGORY_COLOR = "#0F6E64"
 
 # Column width other layers truncate against, named next to the column.
 MAX_CATEGORY_NAME_LENGTH = 80

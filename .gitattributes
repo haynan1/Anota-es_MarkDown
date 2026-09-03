@@ -1,0 +1,19 @@
+# Normalizar finais de linha no repositório, e deixar cada checkout usar os da
+# sua plataforma. Sem isto, `core.autocrlf` decide sozinho por arquivo.
+* text=auto
+
+# Fontes e outros binários: nunca passar por conversão de fim de linha. Um
+# .woff2 com CRLF injetado é um arquivo corrompido que o navegador recusa em
+# silêncio - o texto simplesmente volta para a fonte de sistema, e nada no
+# console explica por quê.
+*.woff2 binary
+*.woff  binary
+*.ttf   binary
+*.otf   binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.pdf   binary
+*.db    binary

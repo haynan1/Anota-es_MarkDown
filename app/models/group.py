@@ -36,7 +36,7 @@ from app.utils.dates import utcnow
 if TYPE_CHECKING:  # pragma: no cover - resolved by SQLAlchemy at runtime
     from app.models.document import Document
 
-DEFAULT_GROUP_COLOR = "#4F46E5"
+DEFAULT_GROUP_COLOR = "#0F6E64"
 
 MAX_NAME_LENGTH = 100
 MAX_DESCRIPTION_LENGTH = 280

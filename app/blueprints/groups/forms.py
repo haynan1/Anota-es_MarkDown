@@ -40,5 +40,5 @@ class GroupForm(FlaskForm):
                 message="Use uma cor no formato #RRGGBB.",
             ),
         ],
-        default="#4F46E5",
+        default="#0F6E64",
     )

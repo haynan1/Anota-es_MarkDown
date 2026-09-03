@@ -63,7 +63,7 @@ def register_commands(app: Flask) -> None:
             click.echo("O banco já possui documentos. Nada foi criado.")
             return
 
-        category = CategoryRepository.get_or_create("Guias", "#4F46E5")
+        category = CategoryRepository.get_or_create("Guias", "#0F6E64")
         db.session.commit()
         document = DocumentService.create(
             title="Bem-vindo ao Markdown Studio",

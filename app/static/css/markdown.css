@@ -3,11 +3,29 @@
    Scoped to .markdown-body so document content can never restyle the app.
    ========================================================================== */
 
+/*
+  The reading voice, at last used for reading.
+
+  Everything else in this application is chrome around this element, and until
+  now it was set in the same interface grotesque as the buttons beside it — a
+  markdown editor whose rendered output looked like a settings panel. It gets
+  the serif, a step up in size, and the optical-size axis, which is what makes
+  a 40px heading and a 17px paragraph in the same family look drawn rather
+  than scaled.
+*/
 .markdown-body {
   color: var(--text);
-  font-size: var(--fs-base);
-  line-height: 1.75;
+  font-family: var(--font-display);
+  font-optical-sizing: auto;
+  font-size: var(--fs-lg);
+  line-height: 1.7;
   overflow-wrap: break-word;
+}
+
+/* Anything that is apparatus rather than prose keeps the interface voice:
+   a table's header, a footnote's marker, a badge on an attachment. */
+.markdown-body :is(table, kbd, .attachment, .task-list-item) {
+  font-family: var(--font-ui);
 }
 
 .markdown-body > *:first-child { margin-top: 0; }
@@ -19,10 +37,12 @@
 .markdown-body h4,
 .markdown-body h5,
 .markdown-body h6 {
-  margin: 2em 0 0.75em;
-  font-weight: 660;
-  letter-spacing: -0.022em;
-  line-height: 1.25;
+  margin: 1.8em 0 0.6em;
+  /* A serif needs less weight than a grotesque to read as a heading; 660 in
+     this family is a shout. */
+  font-weight: 580;
+  letter-spacing: -0.018em;
+  line-height: 1.2;
   scroll-margin-top: 5rem;
 }
 .markdown-body h1 { font-size: 1.9em; letter-spacing: -0.03em; }
@@ -30,7 +50,10 @@
 .markdown-body h3 { font-size: 1.2em; }
 .markdown-body h4 { font-size: 1.05em; }
 .markdown-body h5 { font-size: 0.95em; color: var(--text-muted); }
-.markdown-body h6 { font-size: 0.875em; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.markdown-body h6 {
+  font-family: var(--font-mono); font-size: 0.75em; font-weight: 500;
+  color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.1em;
+}
 
 .markdown-body p { margin: 0 0 1.15em; }
 
@@ -189,13 +212,11 @@
   background: var(--surface);
   color: inherit;
   text-decoration: none;
-  transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease),
-              transform var(--dur) var(--ease);
+  transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
 }
 .markdown-body .attachment:hover {
   border-color: var(--accent);
   background: var(--surface-2);
-  transform: translateY(-1px);
 }
 .markdown-body .attachment:focus-visible {
   outline: 2px solid var(--accent);

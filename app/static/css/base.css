@@ -1,5 +1,34 @@
 /* ==========================================================================
-   Markdown Studio - design system
+   Markdown Studio — design system
+
+   The premise, in one line: this is a place where people write, so it should
+   look like a place where writing is done rather than like a control panel.
+
+   Three decisions carry the whole surface.
+
+   1. Warm ink on warm paper. The greys are mixed toward brown, not toward
+      blue. A blue-grey chrome makes text look like data; a warm one makes it
+      look like a page. Both themes are the same colour family at different
+      luminances, which is why the dark theme reads as ink rather than as a
+      light theme with the lights off.
+
+   2. Structure is drawn with rules and space, not with boxes. Panels carry a
+      hairline and no shadow. A shadow means an object is genuinely floating
+      above the page — a dialog, an overflow menu, a toast — and nothing else
+      in this file is allowed one. Radii are 3-6px: enough to soften a corner,
+      not enough to make every element look like a pill.
+
+   3. Three typefaces, three jobs, no overlap.
+        serif  — the voice.     Titles, document names, excerpts, figures,
+                                quotations. Anything that *is* the writing.
+        sans   — the interface. Buttons, fields, navigation, hints. The parts
+                                that operate the page rather than say anything.
+        mono   — the apparatus. Small, uppercase, widely tracked labels;
+                                counts and dates. What turns a metadata line
+                                into a caption instead of another sentence.
+      A component that cannot say which of the three it is has not been
+      designed yet.
+
    Tokens first, then primitives, then components. Every colour is a variable
    so light and dark are the same code path.
    ========================================================================== */
@@ -9,74 +38,117 @@
 :root {
   color-scheme: light;
 
-  --bg:            #F6F7FB;
-  --surface:       #FFFFFF;
-  --surface-2:     #FAFBFF;
-  --surface-sunken: #EEF1F8;
-  --text:          #111827;
-  /* 4.45:1 sobre --bg era o valor antigo: reprovava o AA por cinco centésimos,
-     e este cinza carrega quase todo o texto de apoio da aplicação - subtítulo,
-     dica de campo, rótulo de estatística, meta de cartão. Escurecido até
-     5.31:1 sobre --bg e 5.02:1 sobre --surface-sunken, que é o fundo mais
-     escuro em que ele pousa. Continua sendo um cinza-ardósia de apoio; passou
-     a ser um que se lê. */
-  --text-muted:    #5B6878;
-  --text-subtle:   #94A3B8;
-  --border:        #E2E8F0;
-  --border-strong: #CBD5E1;
+  /*
+    Paper. Not white — #FFFFFF beside a warm grey reads blue, and a screen
+    full of it is why so many light themes feel clinical. --surface is the
+    closest thing to white here and it still carries a trace of warmth.
 
-  --accent:        #4F46E5;
-  --accent-strong: #4338CA;
-  --accent-soft:   rgba(79, 70, 229, 0.10);
+    Every value was measured against every ground it lands on; the ratios are
+    recorded where they were close.
+  */
+  --bg:            #F5F2EC;
+  --surface:       #FDFCFA;
+  --surface-2:     #EFEBE3;
+  --surface-sunken: #E7E2D8;
+
+  --text:          #1A1712;   /* 16.0:1 on --bg */
+  --text-muted:    #5C5548;   /* 6.6:1 on --bg, 5.7:1 on --surface-sunken */
+  /* The faintest grey the app may set text in. It used to be a blue-grey at
+     2.4:1 — decorative, and unreadable by the standard this file claims to
+     hold. 4.7:1 on the darkest ground it can land on. */
+  --text-subtle:   #686155;
+
+  --border:        #E0DACE;
+  --border-strong: #C6BFB0;
+  /* The editorial hairline: under a page head, between two figures, across a
+     section break. Fainter than --border because it separates regions of the
+     page rather than drawing an object's edge. */
+  --rule:          color-mix(in srgb, var(--text) 11%, transparent);
+
+  /* Overridden by /assets/theme.css with a ramp computed from the user's
+     chosen colour — see app/services/accent.py. These are the values that
+     apply for the moment before it lands, and if it never does. */
+  --accent:        #0F6E64;
+  --accent-strong: #116057;
+  --accent-soft:   rgba(15, 110, 100, 0.11);
+  --accent-line:   rgba(15, 110, 100, 0.34);
   --accent-contrast: #FFFFFF;
+  --accent-seed:   #0F6E64;
 
-  --success:       #16A34A;
-  --success-soft:  rgba(22, 163, 74, 0.12);
-  --warning:       #D97706;
-  --warning-soft:  rgba(217, 119, 6, 0.12);
-  --danger:        #DC2626;
-  --danger-soft:   rgba(220, 38, 38, 0.10);
+  --success:       #15803D;
+  --success-soft:  rgba(21, 128, 61, 0.10);
+  --warning:       #B45309;
+  --warning-soft:  rgba(180, 83, 9, 0.12);
+  --danger:        #B91C1C;
+  --danger-soft:   rgba(185, 28, 28, 0.09);
 
   /*
     Tinta, não cor.
 
     ``--success`` e companhia são calibrados para preencher: um ponto, uma
     barra, um ícone sobre a superfície. Escritos *sobre o próprio tom -soft*
-    eles caem para 2.8:1 no tema claro - a etiqueta "Concluída" ficava
+    eles caem para perto de 3:1 no tema claro — a etiqueta "Concluída" ficava
     ilegível justamente na cor que deveria comemorá-la.
 
     Estes três existem para esse uso e só para ele: a mesma família de cor,
     escurecida até passar o AA em qualquer um dos fundos claros. O matiz
     continua vindo do fundo tingido; a tinta só precisa ser lida.
 
-    No tema escuro não há o que corrigir - a cor clara sobre o tom -soft já
-    passa com folga -, então lá eles são a própria cor.
+    No tema escuro não há o que corrigir — a cor clara sobre o tom -soft já
+    passa com folga —, então lá eles são a própria cor.
   */
-  --success-ink:   #0F6B31;
-  --warning-ink:   #8F4F04;
-  --danger-ink:    #991B1B;
+  --success-ink:   #146B34;   /* 5.2:1 sobre --success-soft */
+  --warning-ink:   #8A4409;   /* 5.5:1 sobre --warning-soft */
+  --danger-ink:    #991B1B;   /* 6.4:1 sobre --danger-soft  */
 
-  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
-  --shadow-md: 0 4px 16px -4px rgba(15, 23, 42, 0.12);
-  --shadow-lg: 0 24px 48px -20px rgba(15, 23, 42, 0.28);
+  /*
+    Shadows are warm and rare. Exactly three things in this application float:
+    a dialog, an overflow menu and a toast. Everything drawn flat on the page
+    gets a hairline instead — a card with a drop shadow is a card pretending
+    to be somewhere it is not.
+  */
+  --shadow-sm: 0 1px 1px rgba(26, 23, 18, 0.04);
+  --shadow-md: 0 2px 6px -2px rgba(26, 23, 18, 0.10),
+               0 8px 20px -12px rgba(26, 23, 18, 0.14);
+  --shadow-lg: 0 10px 24px -8px rgba(26, 23, 18, 0.16),
+               0 36px 72px -30px rgba(26, 23, 18, 0.26);
 
-  --radius-sm: 6px;
-  --radius:    10px;
-  --radius-lg: 16px;
+  /* Sharp, not soft. 16px corners on every panel is the fastest way to make
+     an interface look generated rather than drawn. */
+  --radius-sm: 3px;
+  --radius:    4px;
+  --radius-lg: 6px;
   --radius-full: 999px;
 
   /* 4px base scale */
   --sp-1: 0.25rem; --sp-2: 0.5rem;  --sp-3: 0.75rem; --sp-4: 1rem;
   --sp-5: 1.5rem;  --sp-6: 2rem;    --sp-7: 3rem;    --sp-8: 4rem;
 
-  --font-ui: "Segoe UI Variable Display", "Segoe UI", -apple-system,
-             BlinkMacSystemFont, "Inter", "Helvetica Neue", Arial, sans-serif;
-  --font-mono: "Cascadia Code", "JetBrains Mono", "SF Mono", Consolas,
-               "Liberation Mono", monospace;
+  /* ── Typefaces ──────────────────────────────────────────────────────────
+     Self-hosted; see css/fonts.css for why, and for what each one is for.
+     Each stack ends in a fallback of the same species, so a missing file
+     degrades to the right *kind* of letter rather than to the UI sans.
+     -------------------------------------------------------------------- */
+  --font-display: "Newsreader", "Iowan Old Style", "Palatino Linotype",
+                  Palatino, Georgia, "Times New Roman", serif;
+  --font-ui:      "Public Sans", -apple-system, BlinkMacSystemFont,
+                  "Segoe UI Variable Text", "Segoe UI", Roboto,
+                  "Helvetica Neue", Arial, sans-serif;
+  --font-mono:    "JetBrains Mono", "Cascadia Code", "SF Mono", Consolas,
+                  "Liberation Mono", monospace;
 
   /* ── Type scale ─────────────────────────────────────────────────────────
      Every font-size in the app comes from this scale, so the reading size is
      one decision in one place.
+
+     The interface end of the scale is untouched — 12/13/14/15/16px, and
+     --fs-sm stays at 14px because a previous pass raised it there deliberately
+     for reading comfort. What changed is the top: --fs-lg upward each grew a
+     step, opening the gap between the sizes that operate the page and the
+     sizes that carry what is written on it. An interface that sets its chrome
+     and its content at nearly the same size has no hierarchy to read, only a
+     wall of similar text — and the way to fix that is to raise the headline,
+     not to shrink the body.
 
      `--a11y-font-scale` multiplies *only* typography. Scaling the root font
      size instead would drag the whole --sp-* spacing scale with it and inflate
@@ -90,57 +162,77 @@
   --fs-sm:   calc(0.875rem  * var(--a11y-font-scale));
   --fs-md:   calc(0.9375rem * var(--a11y-font-scale));
   --fs-base: calc(1rem      * var(--a11y-font-scale));
-  --fs-lg:   calc(1.0625rem * var(--a11y-font-scale));
-  --fs-xl:   calc(1.25rem   * var(--a11y-font-scale));
-  --fs-2xl:  calc(1.4rem    * var(--a11y-font-scale));
-  --fs-3xl:  calc(2.125rem  * var(--a11y-font-scale));
-  --fs-4xl:  calc(2.75rem   * var(--a11y-font-scale));
-  --fs-5xl:  calc(3rem      * var(--a11y-font-scale));
+  --fs-lg:   calc(1.125rem  * var(--a11y-font-scale));
+  --fs-xl:   calc(1.375rem  * var(--a11y-font-scale));
+  --fs-2xl:  calc(1.75rem   * var(--a11y-font-scale));
+  --fs-3xl:  calc(2.375rem  * var(--a11y-font-scale));
+  --fs-4xl:  calc(3.25rem   * var(--a11y-font-scale));
+  --fs-5xl:  calc(4.5rem    * var(--a11y-font-scale));
+
+  /* The micro-label. One size, one tracking, one case, used everywhere a
+     short string is naming something rather than saying it. */
+  --fs-label:      calc(0.6875rem * var(--a11y-font-scale));
+  --label-tracking: 0.13em;
 
   /* No chart-specific type scale: charts wear the same tokens as everything
      else. A px size inside an SVG is *not* immune to the viewBox — it is
      multiplied by the same factor as the geometry — so chart text is HTML. */
 
-  --sidebar-width: 264px;
-  --header-height: 60px;
+  --sidebar-width: 258px;
+  --header-height: 62px;
 
   --ease: cubic-bezier(0.32, 0.72, 0, 1);
-  --dur: 180ms;
+  --dur: 160ms;
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  --bg:            #0F172A;
-  --surface:       #111827;
-  --surface-2:     #1E293B;
-  --surface-sunken: #0B1220;
-  --text:          #F8FAFC;
-  --text-muted:    #94A3B8;
-  --text-subtle:   #64748B;
-  --border:        #334155;
-  --border-strong: #475569;
+  /*
+    Ink. The same warm family as the light theme, inverted — not a second
+    palette. --surface sits *above* --bg and --surface-sunken *below* it, so
+    a recessed rail and a raised panel are both expressible without a shadow.
+  */
+  --bg:            #131110;
+  --surface:       #1B1815;
+  --surface-2:     #262119;
+  --surface-sunken: #0B0A09;
 
-  --accent:        #818CF8;
-  --accent-strong: #A5B4FC;
-  --accent-soft:   rgba(129, 140, 248, 0.16);
-  --accent-contrast: #0F172A;
+  --text:          #F2EEE7;   /* 16.3:1 on --bg */
+  --text-muted:    #A39C90;   /* 6.9:1 on --bg */
+  --text-subtle:   #948D80;   /* 5.7:1 on --bg, 4.9:1 on --surface-2 */
 
-  --success:       #4ADE80;
-  --success-soft:  rgba(74, 222, 128, 0.14);
-  --warning:       #FBBF24;
-  --warning-soft:  rgba(251, 191, 36, 0.14);
-  --danger:        #F87171;
-  --danger-soft:   rgba(248, 113, 113, 0.14);
+  /* Strong enough to be seen. The previous pair sat at 1.3:1 against the
+     page, which is a hairline in the arithmetic and nothing at all on a
+     screen — every panel edge in the dark theme was invisible. */
+  --border:        #35302A;
+  --border-strong: #4B453B;
+  --rule:          color-mix(in srgb, var(--text) 14%, transparent);
 
-  /* No escuro a própria cor já se lê sobre o tom -soft: 7.6:1, 8.0:1 e 5.3:1. */
-  --success-ink:   #4ADE80;
-  --warning-ink:   #FBBF24;
-  --danger-ink:    #F87171;
+  --accent:        #6FA8A2;
+  --accent-strong: #89B8B3;
+  --accent-soft:   rgba(111, 168, 162, 0.16);
+  --accent-line:   rgba(111, 168, 162, 0.40);
+  --accent-contrast: #0A0906;
+  --accent-seed:   #6FA8A2;
 
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 4px 16px -4px rgba(0, 0, 0, 0.5);
-  --shadow-lg: 0 24px 48px -20px rgba(0, 0, 0, 0.7);
+  --success:       #6EE7A8;
+  --success-soft:  rgba(110, 231, 168, 0.14);
+  --warning:       #F0B45E;
+  --warning-soft:  rgba(240, 180, 94, 0.14);
+  --danger:        #F58787;
+  --danger-soft:   rgba(245, 135, 135, 0.14);
+
+  /* No escuro a própria cor já se lê sobre o tom -soft: 8.9:1, 7.6:1 e 6.2:1. */
+  --success-ink:   #6EE7A8;
+  --warning-ink:   #F0B45E;
+  --danger-ink:    #F58787;
+
+  --shadow-sm: 0 1px 1px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 2px 6px -2px rgba(0, 0, 0, 0.5),
+               0 8px 20px -12px rgba(0, 0, 0, 0.6);
+  --shadow-lg: 0 10px 24px -8px rgba(0, 0, 0, 0.6),
+               0 36px 72px -30px rgba(0, 0, 0, 0.75);
 }
 
 /* ── Reset ──────────────────────────────────────────────────────────────── */
@@ -163,7 +255,27 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-h1, h2, h3, h4, h5, h6 { margin: 0; font-weight: 650; letter-spacing: -0.018em; line-height: 1.25; }
+/*
+  Headings are set in the serif by default, because in this application a
+  heading is nearly always naming something someone wrote. The exceptions —
+  a card's title, a field's legend — opt back out explicitly below; that way
+  the common case needs no class and the exception is visible in the markup.
+
+  Weight 560 rather than 650: a serif carries authority from its shapes, and
+  the same weight that reads as confident in a grotesque reads as shouted
+  here.
+*/
+h1, h2, h3, h4, h5, h6 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 560;
+  letter-spacing: -0.012em;
+  line-height: 1.2;
+  /* Optical sizing is the whole reason this family was chosen: the 44px
+     page title and the 17px card heading are drawn as different letters,
+     not one outline scaled twice. */
+  font-optical-sizing: auto;
+}
 p { margin: 0; }
 ul, ol { margin: 0; padding: 0; }
 img, svg { max-width: 100%; }
@@ -171,8 +283,45 @@ img, svg { max-width: 100%; }
    fall back to the browser default and ignore the setting entirely. */
 button, input, select, textarea { font: inherit; color: inherit; }
 
-a { color: var(--accent); text-decoration: none; }
-a:hover { text-decoration: underline; }
+/*
+  A link is underlined where it sits inside running text, and not where it is
+  a control.
+
+  Inside a paragraph there is nothing but colour to mark a link, and colour
+  alone is not a distinction a colour-blind reader gets — so the containers of
+  prose below underline their links at rest, never merely on hover. A link
+  that is a tab, a card, a nav item or a chip already has a shape that says
+  what it is; underlining it only makes that shape harder to read.
+
+  Written as "these containers underline" rather than "these components do
+  not": a list of exceptions has to be maintained and will be wrong the first
+  time someone adds a component, while a list of prose containers is closed.
+*/
+a {
+  color: var(--accent);
+  text-decoration: none;
+  transition: text-decoration-color var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+:is(p, li, blockquote, dd, figcaption, td,
+    .markdown-body, .page-subtitle, .field-hint, .empty-text,
+    .stat-hint, .bulk-scope, .menu-note, .pagination-info) a {
+  text-decoration: underline;
+  text-decoration-thickness: from-font;
+  /* Enough offset to clear the descenders of ç, ã and g, which Portuguese
+     puts under a link more often than English does. */
+  text-underline-offset: 0.18em;
+  text-decoration-color: var(--accent-line);
+}
+:is(p, li, blockquote, dd, figcaption, td,
+    .markdown-body, .page-subtitle, .field-hint, .empty-text,
+    .stat-hint, .bulk-scope, .menu-note, .pagination-info) a:hover {
+  text-decoration-color: currentColor;
+}
+
+/* Keyboard users get the underline back on every link, control or not: the
+   focus ring says where you are, the underline says what it is. */
+a:focus-visible { text-decoration: underline; text-underline-offset: 0.18em; }
 
 /* One focus treatment for the whole app - always visible, never colour-only. */
 :focus-visible {
@@ -199,10 +348,42 @@ a:hover { text-decoration: underline; }
 .skip-link {
   position: absolute; top: -100px; left: var(--sp-4); z-index: 200;
   padding: var(--sp-2) var(--sp-4);
-  background: var(--accent); color: var(--accent-contrast);
+  background: var(--text); color: var(--bg);
   border-radius: var(--radius); font-weight: 600;
+  text-decoration: none;
 }
-.skip-link:focus { top: var(--sp-3); text-decoration: none; }
+.skip-link:focus { top: var(--sp-3); }
+
+/* ── The micro-label ────────────────────────────────────────────────────────
+   Small, uppercase, widely tracked, monospaced. This is the third voice named
+   at the top of the file, and it does more work for the character of the
+   interface than any other rule here: it is what makes "PALAVRAS ESCRITAS"
+   above a figure read as a caption on a chart rather than as another line of
+   interface text.
+
+   Mono, specifically, for two reasons. Its even colour survives being set at
+   11px in a pale grey, where a proportional sans turns into fuzz. And a
+   monospaced label beside a proportional sentence is instantly legible as a
+   different *kind* of thing — the reader stops parsing it as prose.
+
+   Never for a string long enough to be read as a sentence: uppercase costs
+   roughly a third of reading speed, which is free on two words and expensive
+   on twelve.
+   ------------------------------------------------------------------------ */
+
+.label,
+.nav-section-title,
+.stat-label,
+.card-title,
+.a11y-preview-title,
+.table th {
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  font-weight: 500;
+  letter-spacing: var(--label-tracking);
+  text-transform: uppercase;
+  line-height: 1.4;
+}
 
 /* ── Scrollbars ─────────────────────────────────────────────────────────────
    One treatment for every scrollable surface in the app.
@@ -218,7 +399,7 @@ a:hover { text-decoration: underline; }
 
 :root {
   --scrollbar-size: 10px;
-  --scrollbar-thumb: color-mix(in srgb, var(--text-subtle) 40%, transparent);
+  --scrollbar-thumb: color-mix(in srgb, var(--text-subtle) 38%, transparent);
   --scrollbar-thumb-hover: color-mix(in srgb, var(--text-muted) 70%, transparent);
 }
 
@@ -266,10 +447,10 @@ a:hover { text-decoration: underline; }
 
 /* ── Icons ──────────────────────────────────────────────────────────────── */
 
-.icon { width: 18px; height: 18px; flex: none; vertical-align: -0.2em; }
-.icon-sm { width: 15px; height: 15px; }
-.icon-lg { width: 22px; height: 22px; }
-.icon-xl { width: 32px; height: 32px; }
+.icon { width: 17px; height: 17px; flex: none; vertical-align: -0.2em; }
+.icon-sm { width: 14px; height: 14px; }
+.icon-lg { width: 21px; height: 21px; }
+.icon-xl { width: 30px; height: 30px; }
 .icon-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
 
 /* ── App shell ──────────────────────────────────────────────────────────── */
@@ -279,13 +460,22 @@ a:hover { text-decoration: underline; }
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
   min-height: 100vh;
 }
-.app[data-sidebar="collapsed"] { --sidebar-width: 72px; }
+.app[data-sidebar="collapsed"] { --sidebar-width: 64px; }
 
+/*
+  The rail is recessed, not raised.
+
+  It used to sit on --surface, one step *lighter* than the page — which read
+  as a panel floating in front of the content it navigates. Sinking it below
+  the page instead puts the writing on top, where it belongs, and it means the
+  active item can be lifted onto --surface without needing a fill colour to
+  announce itself.
+*/
 .sidebar {
   position: sticky; top: 0; align-self: start;
   height: 100vh; display: flex; flex-direction: column;
-  padding: var(--sp-4) var(--sp-3);
-  background: var(--surface);
+  padding: var(--sp-4) var(--sp-3) var(--sp-3);
+  background: var(--surface-sunken);
   border-right: 1px solid var(--border);
   overflow-y: auto;
   overflow-x: hidden;
@@ -296,7 +486,7 @@ a:hover { text-decoration: underline; }
   Collapsed, the labels are gone and the tooltips are the only thing naming
   each icon — they have to be able to escape the rail. `overflow: hidden`
   clipped them entirely, which left the collapsed state as a column of mute
-  glyphs. The rail is eight fixed items, so dropping the scroll container
+  glyphs. The rail is a fixed set of items, so dropping the scroll container
   here costs nothing.
 */
 .app[data-sidebar="collapsed"] .sidebar,
@@ -304,21 +494,30 @@ a:hover { text-decoration: underline; }
 
 .sidebar-head {
   display: flex; align-items: center; gap: var(--sp-3);
-  padding: var(--sp-2) var(--sp-2) var(--sp-5);
+  padding: var(--sp-1) var(--sp-2) var(--sp-6);
 }
-/* The brand mark doubles as the collapse control. */
+/*
+  The brand mark doubles as the collapse control.
+
+  It used to be a rounded square filled with a gradient between two shades of
+  the accent. That gradient is the single most recognisable tell of a
+  generated interface, and it appeared at the top-left corner of every screen.
+  What replaces it is a plain square of ink with the mark knocked out of it —
+  the same gesture a printer's colophon makes, and one that stays correct
+  whatever accent the user later chooses.
+*/
 .brand-mark {
   position: relative;
   display: grid; place-items: center;
-  width: 34px; height: 34px; flex: none;
+  width: 30px; height: 30px; flex: none;
   padding: 0; border: 0;
-  border-radius: 9px;
-  background: linear-gradient(140deg, var(--accent), var(--accent-strong));
-  color: var(--accent-contrast);
+  border-radius: var(--radius-sm);
+  background: var(--text);
+  color: var(--bg);
   cursor: pointer;
-  transition: filter var(--dur) var(--ease), transform var(--dur) var(--ease);
+  transition: background var(--dur) var(--ease), transform var(--dur) var(--ease);
 }
-.brand-mark:hover { filter: brightness(1.08); }
+.brand-mark:hover { background: var(--accent); color: var(--accent-contrast); }
 .brand-mark:active { transform: scale(0.94); }
 
 /* The icons stack in the same cell so the swap never shifts the layout. */
@@ -334,13 +533,16 @@ a:hover { text-decoration: underline; }
 .app[data-sidebar="collapsed"] .brand-mark:focus-visible .toggle-icon-collapse { display: none; }
 .app[data-sidebar="collapsed"] .brand-mark:hover .toggle-icon-expand,
 .app[data-sidebar="collapsed"] .brand-mark:focus-visible .toggle-icon-expand { display: block; }
+
+/* The product's name is the one piece of chrome allowed to be a masthead. */
 .brand-name {
   flex: 1; min-width: 0;
   color: var(--text);
-  font-weight: 660; letter-spacing: -0.02em; font-size: var(--fs-base);
+  font-family: var(--font-display);
+  font-weight: 560; letter-spacing: -0.015em; font-size: var(--fs-lg);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.brand-name:hover { text-decoration: none; color: var(--accent); }
+.brand-name:hover { color: var(--accent); }
 
 /* ── Collapsed rail ─────────────────────────────────────────────────────── */
 
@@ -352,13 +554,14 @@ a:hover { text-decoration: underline; }
 .app[data-sidebar="collapsed"] .nav-section-title {
   height: 1px; padding: 0; margin: var(--sp-3) var(--sp-2);
   overflow: hidden; text-indent: -999em;
-  background: var(--border);
+  background: var(--border-strong);
 }
 
 .app[data-sidebar="collapsed"] .sidebar { padding-inline: var(--sp-2); }
 /* Only the mark remains, centred — and it is the way back out. */
 .app[data-sidebar="collapsed"] .sidebar-head { justify-content: center; padding-inline: 0; }
 .app[data-sidebar="collapsed"] .nav-item { justify-content: center; padding-inline: 0; }
+.app[data-sidebar="collapsed"] .nav-item::before { display: none; }
 
 /* ── Tooltips (collapsed rail) ──────────────────────────────────────────── */
 
@@ -368,10 +571,12 @@ a:hover { text-decoration: underline; }
   position: absolute; left: calc(100% + 10px); top: 50%;
   transform: translateY(-50%) translateX(-4px);
   z-index: 70;
-  padding: 0.3rem 0.55rem;
+  padding: var(--sp-1) var(--sp-2);
   border: 1px solid var(--border); border-radius: var(--radius-sm);
-  background: var(--surface-2); color: var(--text);
-  font-size: var(--fs-xs); font-weight: 550; white-space: nowrap;
+  background: var(--text); color: var(--bg);
+  font-family: var(--font-ui);
+  font-size: var(--fs-xs); font-weight: 550; letter-spacing: 0;
+  text-transform: none; white-space: nowrap;
   box-shadow: var(--shadow-md);
   opacity: 0; pointer-events: none;
   transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease);
@@ -384,48 +589,92 @@ a:hover { text-decoration: underline; }
 
 /* `overflow-y: auto` alone would compute overflow-x to auto as well, and any
    item a few pixels too wide surfaces a horizontal scrollbar above the footer. */
-.nav { display: flex; flex-direction: column; gap: var(--sp-1); flex: 1; overflow-y: auto; overflow-x: hidden; }
+.nav { display: flex; flex-direction: column; gap: 1px; flex: 1; overflow-y: auto; overflow-x: hidden; }
 .nav-section-title {
-  padding: var(--sp-4) var(--sp-3) var(--sp-2);
-  font-size: var(--fs-2xs); font-weight: 600; letter-spacing: 0.08em;
-  text-transform: uppercase; color: var(--text-subtle);
+  padding: var(--sp-5) var(--sp-3) var(--sp-2);
+  color: var(--text-subtle);
 }
+
+/*
+  The active item is lifted onto the page's own surface and marked with a rule
+  in the accent, rather than filled with a tint of it. A filled pill states its
+  colour first and its meaning second; a rule states position — "you are on
+  this line" — which is what navigation is actually for. It also survives any
+  accent the user picks, including a pale one that would make a tinted fill
+  unreadable.
+*/
 .nav-item {
+  position: relative;
   display: flex; align-items: center; gap: var(--sp-3);
   width: 100%;
-  padding: 0.55rem var(--sp-3);
-  min-height: 40px;
+  padding: 0.4rem var(--sp-3);
+  min-height: 36px;
   border-radius: var(--radius);
-  color: var(--text-muted); font-weight: 500;
+  color: var(--text-muted);
+  font-size: var(--fs-sm); font-weight: 500;
   transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
   /* Some nav items are <button>: strip the user-agent chrome so they are
      indistinguishable from the <a> items beside them. */
-  background: none; border: 0; font: inherit; text-align: left;
-  font-weight: 500; cursor: pointer;
+  background: none; border: 0; font-family: inherit; text-align: left;
+  cursor: pointer;
   appearance: none;
 }
-.nav-item:hover { background: var(--surface-2); color: var(--text); text-decoration: none; }
-.nav-item[aria-current="page"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
-.nav-count {
-  margin-left: auto; padding: 0 0.4rem; min-width: 22px;
-  border-radius: var(--radius-full); background: var(--surface-sunken);
-  color: var(--text-muted); font-size: var(--fs-xs); font-weight: 600; text-align: center;
-}
-.nav-item[aria-current="page"] .nav-count { background: var(--accent); color: var(--accent-contrast); }
+.nav-item .icon { color: var(--text-subtle); transition: color var(--dur) var(--ease); }
+.nav-item:hover { background: color-mix(in srgb, var(--text) 5%, transparent); color: var(--text); }
+.nav-item:hover .icon { color: var(--text-muted); }
 
-.sidebar-footer { padding-top: var(--sp-3); border-top: 1px solid var(--border); }
+.nav-item[aria-current="page"] {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.nav-item[aria-current="page"] .icon { color: var(--accent); }
+/* The rule that says "here". Two pixels, full height, in the accent. */
+.nav-item[aria-current="page"]::before {
+  content: "";
+  position: absolute; left: 0; top: 6px; bottom: 6px;
+  width: 2px; border-radius: 2px;
+  background: var(--accent);
+}
+
+/* A count is a number, and numbers belong to the mono. No pill: the figure
+   sits at the right margin of the rail like a page number. */
+.nav-count {
+  margin-left: auto;
+  color: var(--text-subtle);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs); font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.nav-item[aria-current="page"] .nav-count { color: var(--accent); }
+
+.sidebar-footer { padding-top: var(--sp-3); margin-top: var(--sp-2); border-top: 1px solid var(--border); }
 
 .main { display: flex; flex-direction: column; min-width: 0; max-width: 100%; }
 
 .topbar {
   position: sticky; top: 0; z-index: 30;
-  display: flex; align-items: center; gap: var(--sp-3);
-  height: var(--header-height); padding: 0 var(--sp-5);
-  background: color-mix(in srgb, var(--bg) 86%, transparent);
-  backdrop-filter: blur(12px);
+  display: flex; align-items: center; gap: var(--sp-4);
+  height: var(--header-height); padding: 0 var(--sp-6);
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  backdrop-filter: saturate(1.6) blur(14px);
   border-bottom: 1px solid var(--border);
 }
-.topbar-title { font-size: var(--fs-md); font-weight: 620; letter-spacing: -0.01em; white-space: nowrap; }
+/*
+  The bar names the screen; the screen's own title says what it is. Those were
+  the same words at nearly the same size, sixty pixels apart. Setting the
+  first as a micro-label removes the duplication without removing the
+  orientation: it reads as a running head, and the page title below is left as
+  the only heading on the screen.
+*/
+.topbar-title {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-label); font-weight: 500;
+  letter-spacing: var(--label-tracking); text-transform: uppercase;
+  white-space: nowrap;
+}
 .topbar-actions { margin-left: auto; display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
 
 /* The sidebar is permanent above this breakpoint; its trigger must not linger.
@@ -433,7 +682,7 @@ a:hover { text-decoration: underline; }
    later in this file. */
 .topbar .menu-trigger { display: none; }
 
-.content { padding: var(--sp-6) var(--sp-5) var(--sp-8); min-width: 0; }
+.content { padding: var(--sp-7) var(--sp-6) var(--sp-8); min-width: 0; }
 /*
   `width: 100%` is load-bearing. `.content` is a flex item of `.main`, and on
   a flex item the auto inline margins win over `align-items: stretch`: without
@@ -442,24 +691,53 @@ a:hover { text-decoration: underline; }
   With the width set, the auto margins only centre once max-width actually
   bites on a very wide screen.
 */
-.content-narrow { width: 100%; max-width: 900px; margin-inline: auto; }
-.content-wide { width: 100%; max-width: 1320px; margin-inline: auto; }
+.content-narrow { width: 100%; max-width: 860px; margin-inline: auto; }
+.content-wide { width: 100%; max-width: 1280px; margin-inline: auto; }
 
 /* ── Page header ────────────────────────────────────────────────────────── */
 
-.page-head { margin-bottom: var(--sp-6); }
-/* Editorial scale: large, tightly tracked, one clear entry point per screen. */
+/*
+  A masthead, and then a rule.
+
+  The rule is the piece that does the work. It closes the header as a region,
+  so the first card below is read as the start of the content rather than as
+  the third element in an undifferentiated stack — the job a card's border was
+  being asked to do, at the cost of putting a box around everything.
+*/
+.page-head {
+  margin-bottom: var(--sp-6);
+  padding-bottom: var(--sp-5);
+  border-bottom: 1px solid var(--rule);
+}
+
+/* An optional line above the title, for a screen that belongs to a section:
+   "JORNADA", "ORGANIZAÇÃO". Set in the apparatus voice. */
+.page-eyebrow {
+  display: block;
+  margin-bottom: var(--sp-3);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: var(--fs-label); font-weight: 500;
+  letter-spacing: var(--label-tracking); text-transform: uppercase;
+}
+
+/* Editorial scale: large, tightly tracked, one clear entry point per screen.
+   The negative tracking is what a serif at 48px needs — set at its default
+   fitting it looks like a word-processor heading. */
 .page-title {
-  font-size: var(--fs-3xl);
-  font-weight: 680;
-  letter-spacing: -0.035em;
-  line-height: 1.1;
+  font-family: var(--font-display);
+  font-size: var(--fs-4xl);
+  font-weight: 500;
+  letter-spacing: -0.028em;
+  line-height: 1.02;
+  text-wrap: balance;
 }
 .page-subtitle {
-  margin-top: var(--sp-3);
-  max-width: 62ch;
+  margin-top: var(--sp-4);
+  max-width: 58ch;
   color: var(--text-muted);
-  font-size: var(--fs-md);
+  font-size: var(--fs-lg);
+  line-height: 1.55;
   /* `pretty` rather than `balance`: this is body copy that can run to several
      lines, and balancing would even them out at the cost of the measure. What
      it fixes is the single word left alone on the last line - the first
@@ -467,112 +745,198 @@ a:hover { text-decoration: underline; }
   text-wrap: pretty;
 }
 .page-head-row { display: flex; align-items: flex-start; gap: var(--sp-4); flex-wrap: wrap; }
-.page-head-row .page-head-actions { margin-left: auto; display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+/* The actions align to the title's baseline rather than to the top of a block
+   that may be two lines tall. */
+.page-head-row .page-head-actions {
+  margin-left: auto; display: flex; gap: var(--sp-2); flex-wrap: wrap;
+  padding-top: var(--sp-1);
+}
+
+/* A heading inside the page, below the masthead. Serif, but nowhere near the
+   title's size — the gap between them is the hierarchy. */
+.section-title {
+  font-family: var(--font-display);
+  font-size: var(--fs-xl);
+  font-weight: 560;
+  letter-spacing: -0.015em;
+}
 
 /* ── Buttons ────────────────────────────────────────────────────────────── */
 
+/*
+  Tight, square-ish, and quiet. A button here is a small piece of machined
+  hardware sitting on a page, not a coloured tile: 34px tall, 4px corners, no
+  shadow, and a hairline that darkens rather than a fill that appears.
+*/
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-2);
-  min-height: 38px; padding: 0 var(--sp-4);
-  border: 1px solid var(--border); border-radius: var(--radius);
+  min-height: 34px; padding: 0 var(--sp-4);
+  border: 1px solid var(--border-strong); border-radius: var(--radius);
   background: var(--surface); color: var(--text);
-  font-size: var(--fs-md); font-weight: 560; white-space: nowrap;
+  font-family: var(--font-ui);
+  font-size: var(--fs-sm); font-weight: 560; letter-spacing: 0.004em;
+  white-space: nowrap;
   cursor: pointer;
   transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease),
-              transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+              color var(--dur) var(--ease);
 }
-.btn:hover { background: var(--surface-2); border-color: var(--border-strong); text-decoration: none; }
-.btn:active { transform: translateY(1px); }
-.btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+.btn:hover { background: var(--surface-2); border-color: var(--text-subtle); }
+/* No translate on press. A button that moves down a pixel is a skeuomorphic
+   habit that reads as cheap beside type this precise; the colour step is
+   enough, and it does not fight the 44px touch target on the way down. */
+.btn:active { background: var(--surface-sunken); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .btn-primary {
   background: var(--accent); border-color: var(--accent); color: var(--accent-contrast);
-  box-shadow: var(--shadow-sm);
 }
-.btn-primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
+.btn-primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); color: var(--accent-contrast); }
+.btn-primary:active { background: var(--accent-strong); }
+
+/* The other way to be primary: ink. Used where the accent would be one
+   colour too many — a confirm inside an already-tinted dialog. */
+.btn-ink {
+  background: var(--text); border-color: var(--text); color: var(--bg);
+}
+.btn-ink:hover { background: color-mix(in srgb, var(--text) 86%, var(--bg)); border-color: var(--text); color: var(--bg); }
 
 .btn-ghost { background: transparent; border-color: transparent; color: var(--text-muted); }
-.btn-ghost:hover { background: var(--surface-2); color: var(--text); }
+.btn-ghost:hover { background: color-mix(in srgb, var(--text) 6%, transparent); color: var(--text); border-color: transparent; }
 
-.btn-danger { color: var(--danger); border-color: var(--border); }
-.btn-danger:hover { background: var(--danger-soft); border-color: var(--danger); }
+.btn-danger { color: var(--danger); border-color: var(--border-strong); background: var(--surface); }
+.btn-danger:hover { background: var(--danger-soft); border-color: var(--danger); color: var(--danger-ink); }
 
-.btn-sm { min-height: 32px; padding: 0 var(--sp-3); font-size: var(--fs-sm); }
-.btn-lg { min-height: 44px; padding: 0 var(--sp-5); font-size: var(--fs-md); }
+.btn-sm { min-height: 30px; padding: 0 var(--sp-3); font-size: var(--fs-xs); }
+.btn-lg { min-height: 42px; padding: 0 var(--sp-5); font-size: var(--fs-md); }
 .btn-block { width: 100%; }
 
-/* Icon-only buttons keep a 38px hit area regardless of the glyph size. */
-.btn-icon { width: 38px; min-height: 38px; padding: 0; }
-.btn-icon.btn-sm { width: 32px; min-height: 32px; }
+/* Icon-only buttons keep their hit area regardless of the glyph size. */
+.btn-icon { width: 34px; min-height: 34px; padding: 0; }
+.btn-icon.btn-sm { width: 30px; min-height: 30px; }
 
-.btn-group { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--surface); }
-.btn-group .btn { border: 0; border-radius: 0; min-height: 34px; }
+/*
+  Drawn for a pointer above; sized for a finger here. Every control the user
+  can hit grows to 44px square — WCAG 2.5.5 — wherever the primary input is
+  coarse, which is the question that actually matters. Window width is not
+  that question: a 13" touchscreen needs the large targets and a narrow window
+  driven by a mouse does not.
+*/
+@media (pointer: coarse) {
+  .btn { min-height: 44px; }
+  .btn-sm { min-height: 44px; }
+  .btn-icon, .btn-icon.btn-sm { width: 44px; min-height: 44px; }
+  .btn-group .btn { min-height: 42px; }
+  .chip { min-height: 40px; }
+  .nav-item { min-height: 44px; }
+  .menu-item { min-height: 44px; }
+  .input, .select, .textarea { min-height: 44px; }
+  .select-sm { min-height: 44px; }
+  .toolbar { --toolbar-control: 44px; }
+  :is(.checkbox, .checkbox-inline, .doc-select-box) input[type="checkbox"] {
+    width: 1.5rem; height: 1.5rem;
+  }
+  .goal-check { min-width: 44px; min-height: 44px; }
+}
+
+.btn-group { display: inline-flex; border: 1px solid var(--border-strong); border-radius: var(--radius); overflow: hidden; background: var(--surface); }
+.btn-group .btn { border: 0; border-radius: 0; min-height: 32px; }
 .btn-group .btn + .btn { border-left: 1px solid var(--border); }
-.btn-group .btn[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+.btn-group .btn[aria-pressed="true"] { background: var(--text); color: var(--bg); }
 
 /* ── Cards & surfaces ───────────────────────────────────────────────────── */
 
+/*
+  A panel, not a card. One hairline, one small radius, no shadow, no lift.
+  The only thing separating it from the page is its surface and its edge —
+  which is all a container has ever needed to say, and it lets a page hold six
+  of them without looking like a pile of receipts.
+*/
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
 }
 .card-pad { padding: var(--sp-5); }
 .card-head {
   display: flex; align-items: center; gap: var(--sp-3);
   padding: var(--sp-4) var(--sp-5);
   border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
 }
-.card-title { font-size: var(--fs-md); font-weight: 620; }
+.card-head .icon { color: var(--text-subtle); }
+/* Set by `.label` above: mono, uppercase, tracked. A panel is titled the way
+   a table column is, because that is what it is. */
+.card-title { color: var(--text-muted); }
 .card-head-actions { margin-left: auto; }
+/* A head that carries a sentence under its title, and controls at the right. */
+.card-head-row { display: flex; align-items: flex-start; gap: var(--sp-4); flex-wrap: wrap; margin-bottom: var(--sp-4); }
+.card-head-row > .row { margin-left: auto; }
 
 .grid { display: grid; gap: var(--sp-4); }
-.section-gap { margin-top: var(--sp-5); }
-/* Wider gutters: with the boxes gone, the space between columns is the only
-   thing keeping the figures from reading as one run of numbers. */
+.section-gap { margin-top: var(--sp-6); }
+
+/*
+  The figures are a rule of type, not a row of boxes.
+
+  Separation comes from the hairline between columns and from the jump
+  between an 11px mono label and a 48px serif numeral — the two furthest
+  points on the whole scale, sitting one above the other. The boxes that used
+  to be here were doing work the typography does better, and they made the
+  dashboard's opening read like a control panel instead of a summary.
+*/
 .grid-stats {
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: var(--sp-4) var(--sp-7);
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: var(--sp-5) 0;
   margin-bottom: var(--sp-7);
+  padding-bottom: var(--sp-6);
+  border-bottom: 1px solid var(--rule);
 }
 /* Cards have a reserved excerpt and chip height, so stretching them back to a
    shared baseline no longer creates voids - it just squares the row up. */
-.grid-cards { grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); align-items: stretch; }
+.grid-cards { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); align-items: stretch; }
 .grid-2 { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); align-items: start; }
 
-/*
-  Statistics carry no border, background or radius. Separation comes from the
-  typographic jump between label and figure and from the space around them —
-  the boxes were doing work the type can do better, and they made the
-  dashboard's opening read like a control panel instead of a summary.
-*/
-.stat { padding: var(--sp-1) 0; }
+.stat {
+  padding: 0 var(--sp-5);
+  border-left: 1px solid var(--rule);
+}
+/* The first column of each row starts at the margin, with no rule in front of
+   it — a rule there would be fencing the content off from the page. */
+.stat:first-child { padding-left: 0; border-left: 0; }
 
 .stat-label {
   display: flex; align-items: center; gap: var(--sp-2);
-  color: var(--text-muted);
-  font-size: var(--fs-md); font-weight: 560; letter-spacing: 0.01em;
+  color: var(--text-subtle);
 }
-.stat-label .icon { opacity: 0.75; }
+.stat-label .icon { opacity: 0.7; }
 
-/* The figure is the anchor of each column, so it gets the scale. */
+/* The figure is the anchor of each column, so it gets the scale — and the
+   serif, whose old-style-adjacent numerals are the reason a figure set this
+   large reads as considered rather than as a scoreboard. */
 .stat-value {
   margin-top: var(--sp-3);
+  font-family: var(--font-display);
   font-size: var(--fs-4xl);
-  font-weight: 640;
-  letter-spacing: -0.045em;
+  font-weight: 460;
+  letter-spacing: -0.03em;
   line-height: 0.95;
   font-variant-numeric: tabular-nums;
+  font-optical-sizing: auto;
 }
 
 .stat-hint {
-  margin-top: var(--sp-2);
+  margin-top: var(--sp-3);
   color: var(--text-muted);
   font-size: var(--fs-md);
 }
 
-/* ── Document cards & rows ──────────────────────────────────────────────── */
+/* ── Document cards & rows ──────────────────────────────────────────────────
+   Where the three voices meet, and the clearest statement of the rule: the
+   document's title and its excerpt are the writing, so they are set in the
+   serif. The date, the word count and the actions are apparatus and chrome,
+   so they are not. A card here should read like an index entry in a
+   well-made book — because that is exactly what it is.
+   -------------------------------------------------------------------------- */
 
 .doc-card {
   display: flex; flex-direction: column; gap: var(--sp-3);
@@ -580,13 +944,21 @@ a:hover { text-decoration: underline; }
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease),
-              transform var(--dur) var(--ease);
+  transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
 }
-.doc-card:hover { border-color: var(--border-strong); box-shadow: var(--shadow-md); transform: translateY(-2px); }
+/* No lift, no shadow. The edge sharpens and the paper warms — the card stays
+   where it is, which is where it was already. */
+.doc-card:hover { border-color: var(--border-strong); background: var(--surface-2); }
 .doc-card-top { display: flex; align-items: flex-start; gap: var(--sp-3); }
-.doc-card-title { font-size: var(--fs-base); font-weight: 620; letter-spacing: -0.015em; color: var(--text); }
-.doc-card-title:hover { color: var(--accent); text-decoration: none; }
+.doc-card-title {
+  font-family: var(--font-display);
+  font-size: var(--fs-xl); font-weight: 560;
+  letter-spacing: -0.014em; line-height: 1.22;
+  color: var(--text);
+  font-optical-sizing: auto;
+  transition: color var(--dur) var(--ease);
+}
+.doc-card-title:hover { color: var(--accent); }
 /*
   Fixed two lines, always. Letting the excerpt run to its natural height made
   every card in a row a different size: `stretch` then left voids under the
@@ -594,38 +966,56 @@ a:hover { text-decoration: underline; }
   makes the grid line up without either compromise.
 */
 .doc-card-excerpt {
-  color: var(--text-muted); font-size: var(--fs-md); line-height: 1.65;
+  font-family: var(--font-display);
+  color: var(--text-muted); font-size: var(--fs-lg); line-height: 1.5;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
   overflow: hidden;
-  min-height: calc(2 * 1.65em);
+  min-height: calc(2 * 1.5em);
 }
 
 /* One row of chips, for the same reason. */
 .doc-card > .chip-list {
-  max-height: 32px;
+  max-height: 30px;
   overflow: hidden;
 }
+/* The footer of the entry: a hairline, then the apparatus. Mono numerals so
+   two cards side by side line their dates and counts up. */
 .doc-card-meta {
   display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap;
   margin-top: auto; padding-top: var(--sp-3);
   border-top: 1px solid var(--border);
-  color: var(--text-subtle); font-size: var(--fs-sm);
+  color: var(--text-subtle);
+  font-family: var(--font-mono); font-size: var(--fs-2xs); font-weight: 400;
+  font-variant-numeric: tabular-nums;
 }
 .doc-card-actions { display: flex; gap: var(--sp-1); margin-left: auto; }
+/* Inside a mono metadata line, a badge is still a badge. */
+.doc-card-meta .badge, .doc-card-meta .chip { font-family: var(--font-ui); }
 
 .doc-row {
   display: grid; grid-template-columns: minmax(0, 1fr) auto;
   gap: var(--sp-3) var(--sp-4); align-items: center;
-  padding: var(--sp-4) var(--sp-5);
+  padding: var(--sp-3) var(--sp-5);
   border-bottom: 1px solid var(--border);
   transition: background var(--dur) var(--ease);
 }
 .doc-row:last-child { border-bottom: 0; }
 .doc-row:hover { background: var(--surface-2); }
 .doc-row-main { min-width: 0; }
-.doc-row-title { font-weight: 590; color: var(--text); }
-.doc-row-title:hover { color: var(--accent); text-decoration: none; }
-.doc-row-sub { margin-top: var(--sp-1); color: var(--text-subtle); font-size: var(--fs-sm); display: flex; gap: var(--sp-3); flex-wrap: wrap; }
+.doc-row-title {
+  font-family: var(--font-display);
+  font-size: var(--fs-lg); font-weight: 560; letter-spacing: -0.008em;
+  color: var(--text);
+  transition: color var(--dur) var(--ease);
+}
+.doc-row-title:hover { color: var(--accent); }
+.doc-row-sub {
+  margin-top: 2px; display: flex; gap: var(--sp-3); flex-wrap: wrap; align-items: center;
+  color: var(--text-subtle);
+  font-family: var(--font-mono); font-size: var(--fs-2xs);
+  font-variant-numeric: tabular-nums;
+}
+.doc-row-sub .badge, .doc-row-sub .chip { font-family: var(--font-ui); }
 .doc-row-actions { display: flex; gap: var(--sp-1); }
 
 /* ── Groups ─────────────────────────────────────────────────────────────────
@@ -635,13 +1025,12 @@ a:hover { text-decoration: underline; }
 
 .group-card {
   position: relative;
-  display: grid; grid-template-columns: 4px minmax(0, 1fr);
+  display: grid; grid-template-columns: 3px minmax(0, 1fr);
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--radius-lg); overflow: hidden;
-  transition: border-color var(--dur) var(--ease), transform var(--dur) var(--ease),
-              box-shadow var(--dur) var(--ease);
+  transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
 }
-.group-card:hover { border-color: var(--border-strong); transform: translateY(-2px); box-shadow: var(--shadow-md); }
+.group-card:hover { border-color: var(--border-strong); background: var(--surface-2); }
 .group-card:hover .group-card-title { color: var(--accent); }
 /* The focus ring belongs to the card, not to the invisible link inside it. */
 .group-card:has(.group-card-title:focus-visible) {
@@ -651,24 +1040,30 @@ a:hover { text-decoration: underline; }
 .group-card-stripe { background: var(--category-color, var(--accent)); }
 .group-card-body { display: grid; gap: var(--sp-2); padding: var(--sp-4) var(--sp-5); }
 .group-card-title {
-  font-size: var(--fs-lg); font-weight: 620; letter-spacing: -0.01em; color: var(--text);
+  font-family: var(--font-display);
+  font-size: var(--fs-xl); font-weight: 560; letter-spacing: -0.014em; color: var(--text);
   transition: color var(--dur) var(--ease);
 }
-.group-card-title:hover { color: var(--accent); text-decoration: none; }
+.group-card-title:hover { color: var(--accent); }
 .group-card-title:focus-visible { outline: none; }
-/* The whole card is the target — a 290px card with a 12-character hit area is
+/* The whole card is the target — a 280px card with a 12-character hit area is
    a link pretending to be a card. One anchor, so the reading order and the
    accessible name stay exactly as they were. */
 .group-card-title::after { content: ""; position: absolute; inset: 0; }
 .group-card-text {
-  color: var(--text-muted); font-size: var(--fs-sm); line-height: 1.55;
+  font-family: var(--font-display);
+  color: var(--text-muted); font-size: var(--fs-lg); line-height: 1.5;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
-.group-card-meta { display: flex; gap: var(--sp-2); flex-wrap: wrap; color: var(--text-subtle); font-size: var(--fs-sm); }
+.group-card-meta {
+  display: flex; gap: var(--sp-3); flex-wrap: wrap; color: var(--text-subtle);
+  font-family: var(--font-mono); font-size: var(--fs-2xs);
+  font-variant-numeric: tabular-nums;
+}
 
 .group-head { display: flex; align-items: flex-start; gap: var(--sp-3); min-width: 0; }
 .group-head-dot {
-  width: 12px; height: 12px; margin-top: 0.55em; border-radius: 50%;
+  width: 10px; height: 10px; margin-top: 0.6em; border-radius: 2px;
   background: var(--category-color, var(--accent)); flex: none;
 }
 
@@ -684,8 +1079,11 @@ a:hover { text-decoration: underline; }
 .group-item:last-child { border-bottom: 0; }
 .group-item:hover { background: var(--surface-2); }
 .group-item[data-dragging="true"] { opacity: 0.5; background: var(--accent-soft); }
+/* The position is a number in a sequence — the one place in the app where a
+   figure is genuinely an ordinal, and it is set like a line number. */
 .group-item-position {
-  min-width: 2ch; color: var(--text-subtle); font-size: var(--fs-sm);
+  min-width: 2ch; color: var(--text-subtle);
+  font-family: var(--font-mono); font-size: var(--fs-2xs);
   font-variant-numeric: tabular-nums; text-align: right;
 }
 /* The grip stays quiet until the row is approached: the sequence is the
@@ -699,9 +1097,16 @@ a:hover { text-decoration: underline; }
 .group-item[data-dragging="true"] .group-item-handle { opacity: 1; }
 .group-item:active .group-item-handle { cursor: grabbing; }
 .group-item-main { min-width: 0; }
-.group-item-title { font-weight: 590; color: var(--text); }
-.group-item-title:hover { color: var(--accent); text-decoration: none; }
-.group-item-sub { margin-top: var(--sp-1); display: flex; gap: var(--sp-3); flex-wrap: wrap; color: var(--text-subtle); font-size: var(--fs-sm); }
+.group-item-title {
+  font-family: var(--font-display);
+  font-size: var(--fs-lg); font-weight: 560; color: var(--text);
+}
+.group-item-title:hover { color: var(--accent); }
+.group-item-sub {
+  margin-top: 2px; display: flex; gap: var(--sp-3); flex-wrap: wrap; color: var(--text-subtle);
+  font-family: var(--font-mono); font-size: var(--fs-2xs);
+  font-variant-numeric: tabular-nums;
+}
 .group-item-actions { display: flex; gap: var(--sp-1); }
 
 .group-picker { display: grid; gap: var(--sp-1); border: 0; margin: 0; padding: 0; max-height: 46vh; overflow-y: auto; overscroll-behavior: contain; }
@@ -711,7 +1116,7 @@ a:hover { text-decoration: underline; }
 .group-picker-meta { display: block; color: var(--text-subtle); font-size: var(--fs-sm); }
 
 @media (prefers-reduced-motion: reduce) {
-  .group-card, .group-card:hover { transition: none; transform: none; }
+  .group-card, .group-card:hover { transition: none; }
   .group-item-handle { transition: none; opacity: 1; }
 }
 
@@ -728,7 +1133,7 @@ a:hover { text-decoration: underline; }
 /* Selected state reads at a glance without a second control. */
 .doc-card:has(.doc-select:checked) {
   border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 .doc-row:has(.doc-select:checked) { background: var(--accent-soft); }
 
@@ -755,7 +1160,9 @@ a:hover { text-decoration: underline; }
   color: var(--accent); font: inherit; font-weight: 580;
   text-align: left; cursor: pointer; border-radius: var(--radius-sm);
 }
-.btn-link:hover { text-decoration: underline; }
+.btn-link { text-decoration: underline; text-decoration-thickness: from-font;
+            text-underline-offset: 0.18em; text-decoration-color: var(--accent-line); }
+.btn-link:hover { text-decoration-color: currentColor; }
 
 .checkbox-inline {
   display: inline-flex; align-items: center; gap: var(--sp-2);
@@ -772,12 +1179,12 @@ a:hover { text-decoration: underline; }
   max-width: calc(100vw - 2 * var(--sp-4));
   padding: var(--sp-3) var(--sp-4);
   background: var(--surface); color: var(--text);
-  border: 1px solid var(--border-strong); border-radius: var(--radius-full);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   animation: bulk-bar-in var(--dur) var(--ease);
 }
 .bulk-bar[hidden] { display: none; }
-.bulk-bar-count { font-size: var(--fs-sm); color: var(--text-muted); white-space: nowrap; }
+.bulk-bar-count { font-family: var(--font-mono); font-size: var(--fs-2xs); letter-spacing: 0.04em; color: var(--text-muted); white-space: nowrap; }
 .bulk-bar-count strong { color: var(--text); font-variant-numeric: tabular-nums; }
 /* Says which of the two selections is live, because "348 selecionados" and
    "348 selecionados · todos os resultados" are answers to different actions. */
@@ -798,7 +1205,7 @@ a:hover { text-decoration: underline; }
 /* Whichever half is being touched draws its whole border over the seam. */
 .bulk-assign .select-wrap:focus-within { z-index: 1; }
 .bulk-assign .btn:hover, .bulk-assign .btn:focus-visible { position: relative; z-index: 1; }
-.bulk-assign .btn:active { transform: none; }
+
 
 @keyframes bulk-bar-in {
   from { opacity: 0; transform: translate(-50%, var(--sp-4)); }
@@ -851,9 +1258,9 @@ a:hover { text-decoration: underline; }
   cursor: pointer;
   transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
 }
-.menu-item:hover { background: var(--surface-2); color: var(--text); text-decoration: none; }
+.menu-item:hover { background: var(--surface-2); color: var(--text); }
 /* Destructive intent reads on approach, not from across the page. */
-.menu-item-danger:hover { background: var(--danger-soft); color: var(--danger); }
+.menu-item-danger:hover { background: var(--danger-soft); color: var(--danger-ink); }
 .menu-separator { height: 1px; margin: var(--sp-2) 0; border: 0; background: var(--border); }
 .menu-note {
   display: flex; align-items: center; gap: var(--sp-3);
@@ -861,36 +1268,50 @@ a:hover { text-decoration: underline; }
   color: var(--text-subtle); font-size: var(--fs-sm);
 }
 
-/* ── Badges, chips, pills ───────────────────────────────────────────────── */
+/* ── Badges, chips, pills ───────────────────────────────────────────────────
+   Tags, not lozenges. A 999px radius on a two-word label is the shape of a
+   pharmaceutical capsule; a 3px one is the shape of a filing tab, which is
+   what these actually are.
+   -------------------------------------------------------------------------- */
 
 .badge {
   display: inline-flex; align-items: center; gap: 0.3rem;
-  padding: 0.15rem 0.55rem;
-  border-radius: var(--radius-full);
+  padding: 0.1rem 0.4rem;
+  border-radius: var(--radius-sm);
   background: var(--surface-sunken); color: var(--text-muted);
-  font-size: var(--fs-xs); font-weight: 560; white-space: nowrap;
+  font-size: var(--fs-2xs); font-weight: 560; letter-spacing: 0.01em;
+  white-space: nowrap;
 }
 .badge-accent { background: var(--accent-soft); color: var(--accent); }
 /* Fundo com a cor, texto com a tinta - ver os tokens ``--*-ink``. */
 .badge-success { background: var(--success-soft); color: var(--success-ink); }
 .badge-warning { background: var(--warning-soft); color: var(--warning-ink); }
 .badge-danger { background: var(--danger-soft); color: var(--danger-ink); }
-.badge-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--category-color, var(--accent)); flex: none; }
+/* Square, because it identifies a category rather than decorating one. */
+.badge-dot { width: 7px; height: 7px; border-radius: 2px; background: var(--category-color, var(--accent)); flex: none; }
 /* A badge that filters. It reads as a label until the pointer says otherwise —
    the surface lifts and the text sharpens, the same gesture .chip:hover makes. */
 .badge-link { cursor: pointer; transition: background-color var(--dur) var(--ease), color var(--dur) var(--ease); }
-.badge-link:hover, .badge-link:focus-visible { background: var(--accent-soft); color: var(--accent); text-decoration: none; }
+.badge-link:hover, .badge-link:focus-visible { background: var(--accent-soft); color: var(--accent); }
 
 .chip {
   display: inline-flex; align-items: center; gap: var(--sp-2);
-  min-height: 32px; padding: 0 var(--sp-3);
-  border: 1px solid var(--border); border-radius: var(--radius-full);
+  min-height: 28px; padding: 0 var(--sp-3);
+  border: 1px solid var(--border); border-radius: var(--radius);
   background: var(--surface); color: var(--text-muted);
   font-size: var(--fs-sm); font-weight: 540; cursor: pointer;
+  transition: border-color var(--dur) var(--ease), color var(--dur) var(--ease),
+              background var(--dur) var(--ease);
 }
-.chip:hover { border-color: var(--border-strong); color: var(--text); text-decoration: none; }
+.chip:hover { border-color: var(--border-strong); color: var(--text); }
+/* Selected is ink-on-paper, not a tint. It is the only state in a row of
+   filters that must be unmistakable at a glance, and inverting it is the
+   most legible way to say so under any accent the user might choose. */
 .chip[aria-pressed="true"], .chip.is-active {
-  background: var(--accent-soft); border-color: var(--accent); color: var(--accent);
+  background: var(--text); border-color: var(--text); color: var(--bg);
+}
+.chip[aria-pressed="true"] .badge, .chip.is-active .badge {
+  background: color-mix(in srgb, var(--bg) 22%, transparent); color: var(--bg);
 }
 .chip-list { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
 
@@ -900,60 +1321,77 @@ a:hover { text-decoration: underline; }
 .locked-on { color: var(--text-muted); }
 
 /* The toggle shows the theme currently in effect: it reads as state first,
-   control second. (The comment used to claim the opposite of the code.) */
+   control second. */
 .theme-icon-dark { display: none; }
 :root[data-theme="dark"] .theme-icon-light { display: none; }
 :root[data-theme="dark"] .theme-icon-dark { display: block; }
 
 .inline-form { display: contents; }
 
-/* ── Forms ──────────────────────────────────────────────────────────────── */
+/* ── Forms ──────────────────────────────────────────────────────────────────
+   A form is a document being filled in, so it is set like one: the label in
+   the interface sans at full strength, the field recessed into the page
+   rather than raised out of it, and the hint beneath in the same measure as
+   the field it explains.
 
-.field { display: flex; flex-direction: column; gap: var(--sp-2); margin-bottom: var(--sp-4); }
-.field-label { font-size: var(--fs-sm); font-weight: 580; color: var(--text); }
-.field-hint { color: var(--text-subtle); font-size: var(--fs-sm); }
-.field-error { display: flex; align-items: center; gap: var(--sp-2); color: var(--danger); font-size: var(--fs-sm); font-weight: 540; }
+   Labels stay sans and sentence-cased on purpose, against the micro-label
+   used everywhere else. Several of them run to five or six words, and
+   uppercase costs roughly a third of reading speed — free on "PALAVRAS
+   ESCRITAS", expensive on "Salvamento automático (segundos)".
+   -------------------------------------------------------------------------- */
+
+.field { display: flex; flex-direction: column; gap: var(--sp-2); margin-bottom: var(--sp-5); }
+.field-label { font-size: var(--fs-md); font-weight: 600; color: var(--text); letter-spacing: -0.004em; }
+.field-hint { color: var(--text-subtle); font-size: var(--fs-sm); line-height: 1.5; }
+.field-error { display: flex; align-items: center; gap: var(--sp-2); color: var(--danger-ink); font-size: var(--fs-sm); font-weight: 560; }
 
 .input, .select, .textarea {
-  width: 100%; min-height: 38px; padding: 0.45rem var(--sp-3);
-  background: var(--surface); color: var(--text);
+  width: 100%; min-height: 36px; padding: 0.4rem var(--sp-3);
+  background: var(--surface-2); color: var(--text);
   border: 1px solid var(--border); border-radius: var(--radius);
-  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+  font-size: var(--fs-md);
+  transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease),
+              box-shadow var(--dur) var(--ease);
 }
 /* A hint that outgrows its field should end in an ellipsis, not mid-word:
    the search placeholder names four things it looks through, and narrow
    layouts get to show only the first two. */
 .input::placeholder, .textarea::placeholder { color: var(--text-subtle); text-overflow: ellipsis; }
 .input:hover, .select:hover, .textarea:hover { border-color: var(--border-strong); }
+/* On focus the field comes up out of the page onto the writing surface. */
 .input:focus, .select:focus, .textarea:focus {
-  outline: none; border-color: var(--accent);
+  outline: none; background: var(--surface); border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 .input[aria-invalid="true"] { border-color: var(--danger); }
-.textarea { min-height: 120px; resize: vertical; line-height: 1.6; }
+/* Free text is writing, and writing is set in the serif. */
+.textarea {
+  min-height: 120px; resize: vertical;
+  font-family: var(--font-display); font-size: var(--fs-lg); line-height: 1.6;
+}
 .select { appearance: none; padding-right: var(--sp-6); background-image: none; cursor: pointer; }
 
 .select-wrap { position: relative; }
 /* Matches .btn-sm, so a select can sit inside a row of small buttons. */
-.select-sm { min-height: 32px; padding: 0 var(--sp-6) 0 var(--sp-3); font-size: var(--fs-sm); }
+.select-sm { min-height: 30px; padding: 0 var(--sp-6) 0 var(--sp-3); font-size: var(--fs-sm); }
 .select-wrap-sm { max-width: 200px; }
 .select-wrap .icon { position: absolute; right: var(--sp-3); top: 50%; transform: translateY(-50%); pointer-events: none; color: var(--text-subtle); }
 
-.color-input { width: 46px; min-height: 38px; padding: 3px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); cursor: pointer; }
+.color-input { width: 44px; min-height: 36px; padding: 3px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface); cursor: pointer; }
 
-.checkbox { display: flex; align-items: center; gap: var(--sp-3); cursor: pointer; min-height: 38px; }
+.checkbox { display: flex; align-items: center; gap: var(--sp-3); cursor: pointer; min-height: 36px; }
 
 :is(.checkbox, .checkbox-inline, .doc-select-box) input[type="checkbox"] {
   appearance: none;
   display: grid; place-content: center; flex: none;
-  width: 1.25rem; height: 1.25rem; margin: 0;
-  border: 1px solid var(--border-strong); border-radius: 0.3rem;
+  width: 1.15rem; height: 1.15rem; margin: 0;
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
   background: var(--surface); cursor: pointer;
   transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }
 :is(.checkbox, .checkbox-inline, .doc-select-box) input[type="checkbox"]::before {
   content: "";
-  width: 0.62rem; height: 0.35rem;
+  width: 0.58rem; height: 0.32rem;
   border: solid var(--accent-contrast); border-width: 0 0 2px 2px;
   transform: translateY(-0.08rem) rotate(-45deg) scale(0);
   transition: transform var(--dur) var(--ease);
@@ -973,7 +1411,7 @@ a:hover { text-decoration: underline; }
   transform: translateY(-0.08rem) rotate(-45deg) scale(1);
 }
 :is(.checkbox, .checkbox-inline, .doc-select-box) input[type="checkbox"]:indeterminate::before {
-  width: 0.62rem; height: 2px;
+  width: 0.58rem; height: 2px;
   border: 0; background: var(--accent-contrast);
   transform: none;
 }
@@ -981,14 +1419,18 @@ a:hover { text-decoration: underline; }
   opacity: 0.55; cursor: not-allowed;
 }
 
-.search-field { position: relative; flex: 1; min-width: 0; max-width: 460px; }
+.search-field { position: relative; flex: 1; min-width: 0; max-width: 420px; }
 .search-field .icon { position: absolute; left: var(--sp-3); top: 50%; transform: translateY(-50%); color: var(--text-subtle); pointer-events: none; }
 .search-field .input { padding-left: 2.375rem; }
+/* In the top bar the field is part of the chrome: no edge until it is used. */
+.topbar .search-field .input { background: color-mix(in srgb, var(--text) 5%, transparent); border-color: transparent; }
+.topbar .search-field .input:hover { border-color: var(--border); }
+.topbar .search-field .input:focus { background: var(--surface); border-color: var(--accent); }
 
 .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0 var(--sp-4); }
 .backup-directory { min-width: 0; }
-.backup-path { overflow-wrap: anywhere; word-break: break-word; }
-.form-actions { display: flex; gap: var(--sp-3); flex-wrap: wrap; padding-top: var(--sp-4); border-top: 1px solid var(--border); margin-top: var(--sp-2); }
+.backup-path { overflow-wrap: anywhere; word-break: break-word; font-family: var(--font-mono); font-size: var(--fs-sm); }
+.form-actions { display: flex; gap: var(--sp-3); flex-wrap: wrap; padding-top: var(--sp-5); border-top: 1px solid var(--rule); margin-top: var(--sp-2); }
 
 /* ── Toolbar / filters ──────────────────────────────────────────────────── */
 
@@ -999,17 +1441,22 @@ a:hover { text-decoration: underline; }
 
    The wrapping question here is about the toolbar's own width, never the
    window's: the sidebar collapses and expands without the viewport moving, so
-   a media query would be answering a different question. Hence @container. */
+   a media query would be answering a different question. Hence @container.
+
+   No panel around it. The toolbar operates the list below it, and boxing the
+   controls made them read as a thing to be read rather than a thing to be
+   used. A rule underneath is enough to say where the apparatus ends and the
+   results begin. */
 .toolbar {
-  --toolbar-control: 40px;
+  --toolbar-control: 36px;
   container-type: inline-size;
   display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap;
-  padding: var(--sp-4); margin-bottom: var(--sp-5);
-  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  padding: 0 0 var(--sp-4); margin-bottom: var(--sp-5);
+  border-bottom: 1px solid var(--rule);
 }
 
-/* One height for every control in the bar. Left to the defaults it mixes 32px
-   chips, 36px segmented buttons and 38px fields — three rhythms in one box. */
+/* One height for every control in the bar. Left to the defaults it mixes 28px
+   chips, 32px segmented buttons and 36px fields — three rhythms in one row. */
 .toolbar :is(.input, .select, .chip, .btn) { min-height: var(--toolbar-control); }
 .toolbar .btn-icon { width: var(--toolbar-control); }
 .toolbar .btn-group .btn { min-height: calc(var(--toolbar-control) - 2px); }  /* sits inside the group border */
@@ -1043,28 +1490,43 @@ a:hover { text-decoration: underline; }
 .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
 .table { width: 100%; border-collapse: collapse; font-size: var(--fs-md); }
 .table th, .table td { padding: var(--sp-3) var(--sp-4); text-align: left; border-bottom: 1px solid var(--border); }
-.table th { font-weight: 600; color: var(--text-muted); font-size: var(--fs-sm); background: var(--surface-2); }
+/* The column head is a micro-label — see the `.label` rule near the top. */
+.table th { color: var(--text-subtle); background: var(--surface-2); }
+.table td { font-variant-numeric: tabular-nums; }
 .table tr:last-child td { border-bottom: 0; }
 
 /* A summary row that is not one of the rows above it. The sunken background
    and the rule over it say "this is the remainder" without a second heading. */
-.table-row-aside :is(th, td) { background: var(--surface-2); border-top: 1px solid var(--border); }
-.table-row-aside th { color: var(--text-muted); font-weight: 560; }
+.table-row-aside :is(th, td) { background: var(--surface-2); border-top: 1px solid var(--border-strong); }
+.table-row-aside th { color: var(--text-muted); }
 
-/* ── Empty states ───────────────────────────────────────────────────────── */
+/* ── Empty states ───────────────────────────────────────────────────────────
+   A page with nothing on it yet is still a page. It gets the same hairline
+   panel as everything else — the dashed border it used to wear is the visual
+   language of a drop target, which is not what most of these are.
+   -------------------------------------------------------------------------- */
 
 .empty {
   display: flex; flex-direction: column; align-items: center; text-align: center;
   gap: var(--sp-3); padding: var(--sp-8) var(--sp-5);
-  background: var(--surface); border: 1px dashed var(--border-strong); border-radius: var(--radius-lg);
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
 }
-.empty-icon { display: grid; place-items: center; width: 56px; height: 56px; border-radius: var(--radius-lg); background: var(--surface-sunken); color: var(--text-subtle); }
+.empty-icon {
+  display: grid; place-items: center; width: 46px; height: 46px;
+  border-radius: var(--radius); background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-subtle);
+}
 /* `balance` on both: a measure of 44ch and a sentence of 55 left "termo."
    alone on its own line, which is the kind of ragged ending a reader notices
    without knowing why. The browser distributes the lines instead of filling
    greedily; where it is unsupported the declaration is simply ignored. */
-.empty-title { font-size: var(--fs-lg); font-weight: 620; text-wrap: balance; }
-.empty-text { color: var(--text-muted); max-width: 44ch; text-wrap: balance; }
+.empty-title {
+  font-family: var(--font-display);
+  font-size: var(--fs-xl); font-weight: 560; letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+.empty-text { color: var(--text-muted); max-width: 46ch; font-size: var(--fs-md); text-wrap: balance; }
 
 /* ── Toasts ─────────────────────────────────────────────────────────────── */
 
@@ -1077,7 +1539,7 @@ a:hover { text-decoration: underline; }
   display: flex; align-items: flex-start; gap: var(--sp-3);
   padding: var(--sp-3) var(--sp-4);
   background: var(--surface); color: var(--text);
-  border: 1px solid var(--border); border-left: 3px solid var(--text-subtle);
+  border: 1px solid var(--border); border-left: 2px solid var(--text-subtle);
   border-radius: var(--radius); box-shadow: var(--shadow-lg);
   animation: toast-in 220ms var(--ease);
 }
@@ -1088,7 +1550,7 @@ a:hover { text-decoration: underline; }
 .toast-warning { border-left-color: var(--warning); }
 .toast-warning .toast-icon { color: var(--warning); }
 .toast-info .toast-icon { color: var(--accent); }
-.toast-body { flex: 1; font-size: var(--fs-md); }
+.toast-body { flex: 1; font-size: var(--fs-md); line-height: 1.5; }
 .toast-close { margin: -2px -4px 0 0; }
 
 @keyframes toast-in {
@@ -1103,11 +1565,16 @@ dialog.modal {
   padding: 0; border: 1px solid var(--border); border-radius: var(--radius-lg);
   background: var(--surface); color: var(--text); box-shadow: var(--shadow-lg);
 }
-dialog.modal::backdrop { background: rgba(15, 23, 42, 0.55); backdrop-filter: blur(3px); }
+/* Warm, like everything else. A blue-black scrim over a warm page is the
+   one place the old palette used to leak through most visibly. */
+dialog.modal::backdrop { background: rgba(20, 17, 12, 0.58); backdrop-filter: blur(3px); }
 .modal-head { padding: var(--sp-5) var(--sp-5) var(--sp-3); }
-.modal-title { font-size: var(--fs-lg); font-weight: 640; }
+.modal-title {
+  font-family: var(--font-display);
+  font-size: var(--fs-xl); font-weight: 560; letter-spacing: -0.015em;
+}
 .modal-body { padding: 0 var(--sp-5) var(--sp-4); color: var(--text-muted); }
-.modal-foot { display: flex; justify-content: flex-end; gap: var(--sp-2); padding: var(--sp-4) var(--sp-5); border-top: 1px solid var(--border); background: var(--surface-2); border-radius: 0 0 var(--radius-lg) var(--radius-lg); }
+.modal-foot { display: flex; justify-content: flex-end; gap: var(--sp-2); padding: var(--sp-4) var(--sp-5); border-top: 1px solid var(--border); background: var(--surface-2); border-radius: 0 0 calc(var(--radius-lg) - 1px) calc(var(--radius-lg) - 1px); }
 
 /* O corpo rola, o rodapé fica.
    Sem isto, um diálogo mais alto que a janela rola inteiro - e a primeira
@@ -1137,8 +1604,9 @@ html.a11y-bold-text .small,
 html.a11y-bold-text .field-hint,
 html.a11y-bold-text .doc-card-excerpt,
 html.a11y-bold-text .stat-hint { font-weight: 600; }
-html.a11y-bold-text h1, html.a11y-bold-text h2, html.a11y-bold-text h3,
-html.a11y-bold-text .card-title, html.a11y-bold-text .page-title { font-weight: 720; }
+html.a11y-bold-text h1, html.a11y-bold-text h2, html.a11y-bold-text h3 { font-weight: 650; }
+html.a11y-bold-text .page-title, html.a11y-bold-text .stat-value { font-weight: 600; }
+html.a11y-bold-text .card-title, html.a11y-bold-text .label { font-weight: 650; }
 /* Low-contrast greys get darker too, or the extra weight buys nothing. */
 html.a11y-bold-text { --text-subtle: var(--text-muted); }
 
@@ -1161,10 +1629,11 @@ html.a11y-bold-text { --text-subtle: var(--text-muted); }
               color var(--dur) var(--ease);
 }
 .a11y-size:hover { border-color: var(--border-strong); color: var(--text); }
+/* Chosen, not merely tinted — the same inversion the filter chips use. */
 .a11y-size.is-active {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent);
+  border-color: var(--text);
+  background: var(--text);
+  color: var(--bg);
 }
 
 /* The samples are deliberately fixed sizes: they preview the steps rather
@@ -1175,12 +1644,15 @@ html.a11y-bold-text { --text-subtle: var(--text-muted); }
 .a11y-sample-3 { font-size: 18px; }
 .a11y-sample-4 { font-size: 21px; }
 
-.a11y-size-name { font-size: var(--fs-2xs); font-weight: 550; }
+.a11y-size-name {
+  font-family: var(--font-mono); font-size: var(--fs-2xs); font-weight: 500;
+  letter-spacing: 0.06em; text-transform: uppercase;
+}
 
 .a11y-status {
   margin-top: var(--sp-3);
   color: var(--text-muted);
-  font-size: var(--fs-sm);
+  font-family: var(--font-mono); font-size: var(--fs-2xs);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1195,10 +1667,6 @@ html.a11y-bold-text { --text-subtle: var(--text-muted); }
 .a11y-preview-title {
   margin-bottom: var(--sp-2);
   color: var(--text-subtle);
-  font-size: var(--fs-2xs);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
 }
 
 @media (max-width: 560px) {
@@ -1210,7 +1678,7 @@ html.a11y-bold-text { --text-subtle: var(--text-muted); }
 .dropzone {
   display: flex; flex-direction: column; align-items: center; text-align: center;
   gap: var(--sp-2); padding: var(--sp-7) var(--sp-5);
-  border: 2px dashed var(--border-strong); border-radius: var(--radius-lg);
+  border: 1px dashed var(--border-strong); border-radius: var(--radius-lg);
   background: var(--surface-2); cursor: pointer;
   transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
 }
@@ -1223,22 +1691,41 @@ html.a11y-bold-text { --text-subtle: var(--text-muted); }
   outline-offset: 2px;
 }
 .dropzone[data-dragover="true"] { border-color: var(--accent); background: var(--accent-soft); }
-.dropzone-filename { font-weight: 600; color: var(--accent); }
+.dropzone-filename { font-family: var(--font-mono); font-size: var(--fs-sm); font-weight: 500; color: var(--accent); }
 .dropzone-filename[hidden] { display: none; }
 
 /* ── Error page ─────────────────────────────────────────────────────────── */
 
 .error-page { padding-block: var(--sp-8); }
-.error-code { font-size: var(--fs-5xl); font-weight: 700; letter-spacing: -0.04em; color: var(--text-subtle); line-height: 1; }
+.error-code {
+  font-family: var(--font-display);
+  font-size: var(--fs-5xl); font-weight: 440; letter-spacing: -0.04em;
+  color: var(--border-strong); line-height: 1;
+  font-variant-numeric: tabular-nums; font-optical-sizing: auto;
+}
 
 /* ── Pagination ─────────────────────────────────────────────────────────── */
 
 .pagination { display: flex; align-items: center; justify-content: center; gap: var(--sp-2); margin-top: var(--sp-6); }
-.pagination-info { color: var(--text-muted); font-size: var(--fs-md); }
+.pagination-info {
+  color: var(--text-muted);
+  font-family: var(--font-mono); font-size: var(--fs-2xs);
+  letter-spacing: 0.04em; font-variant-numeric: tabular-nums;
+}
 
 /* ── Search results ─────────────────────────────────────────────────────── */
 
-mark { background: var(--warning-soft); color: inherit; padding: 0 0.15em; border-radius: 3px; font-weight: 600; }
+/* A hit, marked the way a reader marks one: a wash behind the word and a
+   rule under it. The old version boxed each match in a rounded amber tag,
+   which fragmented the sentence it was supposed to help you read. */
+mark {
+  background: var(--warning-soft);
+  color: inherit;
+  padding: 0 0.12em;
+  border-radius: 2px;
+  box-shadow: inset 0 -1px 0 var(--warning);
+  font-weight: 560;
+}
 
 /* ── Utilities ──────────────────────────────────────────────────────────── */
 
@@ -1268,7 +1755,13 @@ mark { background: var(--warning-soft); color: inherit; padding: 0 0.15em; borde
 .tabular { font-variant-numeric: tabular-nums; }
 .text-danger { color: var(--danger); }
 .text-success { color: var(--success); }
-.divider { height: 1px; background: var(--border); border: 0; margin: var(--sp-5) 0; }
+.divider { height: 1px; background: var(--rule); border: 0; margin: var(--sp-5) 0; }
+/* A short measure for anything meant to be read rather than scanned. */
+.prose-measure { max-width: 62ch; }
+/* Opt in to the reading voice where a template has prose the CSS cannot
+   recognise from its class alone. */
+.serif { font-family: var(--font-display); font-optical-sizing: auto; }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 
 /* ── Mobile ─────────────────────────────────────────────────────────────── */
 
@@ -1321,17 +1814,31 @@ mark { background: var(--warning-soft); color: inherit; padding: 0 0.15em; borde
   .app[data-mobile-nav="open"] .sidebar { transform: none; }
   .app[data-mobile-nav="open"] .sidebar-backdrop {
     display: block; position: fixed; inset: 0; z-index: 50;
-    background: rgba(15, 23, 42, 0.5);
+    background: rgba(20, 17, 12, 0.55);
   }
 
   .content { padding: var(--sp-5) var(--sp-4) 5.5rem; }
   .topbar { padding: 0 var(--sp-4); }
-  .page-title { font-size: var(--fs-2xl); }
+  .page-title { font-size: var(--fs-3xl); }
+  .content { padding-inline: var(--sp-4); }
+  /* The rules between figures were drawn for a row; stacked, they would fence
+     off each line instead of separating columns. */
+  .stat { padding-inline: 0; border-left: 0; }
 
   /* Bottom navigation replaces the sidebar on phones. */
+  /*
+    `grid-auto-columns: 1fr` is not `minmax(0, 1fr)`: a `1fr` track refuses to
+    shrink below its content, so the five mono labels — "Documentos" being the
+    widest — added up to more than a 390px screen and pushed the whole page
+    sideways. The top bar's last control went off the right edge with it,
+    which is how a bottom bar broke a header.
+
+    `minmax(0, 1fr)` lets the tracks divide the width honestly; the label
+    below is allowed to end in an ellipsis rather than to win the argument.
+  */
   .mobile-nav {
     position: fixed; inset: auto 0 0 0; z-index: 40;
-    display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
+    display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr);
     padding: var(--sp-2) var(--sp-2) max(var(--sp-2), env(safe-area-inset-bottom));
     background: color-mix(in srgb, var(--surface) 94%, transparent);
     backdrop-filter: blur(12px);
@@ -1339,11 +1846,31 @@ mark { background: var(--warning-soft); color: inherit; padding: 0 0.15em; borde
   }
   .mobile-nav-item {
     display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 2px; min-height: 52px; border-radius: var(--radius);
-    color: var(--text-muted); font-size: var(--fs-2xs); font-weight: 550;
+    gap: 3px; min-height: 52px; min-width: 0; border-radius: var(--radius);
+    color: var(--text-subtle);
+    font-family: var(--font-mono); font-size: var(--fs-2xs); font-weight: 500;
+    letter-spacing: 0;
   }
-  .mobile-nav-item[aria-current="page"] { color: var(--accent); }
-  .mobile-nav-item:hover { text-decoration: none; }
+  .mobile-nav-item > span {
+    max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  /* `display: contents` on the wrapper makes the <button> inside a direct
+     grid item, so the form around "Novo" does not become a sixth track. */
+  .mobile-nav .inline-form { display: contents; }
+  /* "Novo" is a POST and therefore a <button> among four anchors. Without
+     this it was the only item in the bar wearing the user agent's grey fill
+     and border — one control in five looking like a different species. */
+  button.mobile-nav-item {
+    appearance: none; background: none; border: 0; padding: 0;
+    font: inherit; letter-spacing: inherit; cursor: pointer;
+  }
+  /* Colour alone is not a state. The label goes to full ink and a rule
+     appears above the item, so the current tab is legible without it. */
+  .mobile-nav-item[aria-current="page"] { color: var(--text); position: relative; }
+  .mobile-nav-item[aria-current="page"]::before {
+    content: ""; position: absolute; top: -1px; left: 22%; right: 22%;
+    height: 2px; border-radius: 2px; background: var(--accent);
+  }
 
   .toasts { bottom: 5rem; }
   .doc-row { grid-template-columns: minmax(0, 1fr); }
@@ -1407,7 +1934,11 @@ mark { background: var(--warning-soft); color: inherit; padding: 0 0.15em; borde
 }
 
 @media print {
-  .sidebar, .topbar, .mobile-nav, .toasts, .doc-card-actions { display: none !important; }
+  .sidebar, .topbar, .mobile-nav, .toasts, .doc-card-actions,
+  .toolbar, .bulk-bar, .pagination, .skip-link { display: none !important; }
   .app { display: block; }
-  body { background: #fff; }
+  .content { padding: 0; max-width: none; }
+  body { background: #fff; color: #000; }
+  /* Nothing floats on paper, and a hairline is enough to keep the structure. */
+  .card, .doc-card, .group-card, .table-wrap { border-color: #BBB; }
 }
