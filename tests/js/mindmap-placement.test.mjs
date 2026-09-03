@@ -27,7 +27,6 @@ const { createActions } = await import('../../app/static/js/modules/mindmap/acti
 function harness({ nodes = [], layout = 'right' } = {}) {
   const store = {
     nodes: new Map(nodes.map((node) => [node.uuid, node])),
-    edges: new Map(),
     layout,
     /* The same rule the real store applies: a node that names nothing takes
        what is above it, and a root that names nothing takes the map's. */
@@ -39,13 +38,37 @@ function harness({ nodes = [], layout = 'right' } = {}) {
       }
       return layout;
     },
-    roots: () => [...store.nodes.values()].filter((node) => !node.parent),
+    /* Como no store de verdade: raízes são os filhos de ninguém, e vêm na
+       mesma ordem que qualquer lista de irmãos. Sem isto o dublê devolvia a
+       ordem de inserção e escondia justamente o que os testes de reordenar
+       precisam ver. */
+    roots: () => store.children(null),
     branch: (uuid) => [uuid],
     children: (uuid) =>
       [...store.nodes.values()]
         .filter((node) => (node.parent || null) === (uuid || null))
         .sort((a, b) => a.position - b.position),
     get: (uuid) => store.nodes.get(uuid),
+    /* Cópia fiel da regra do store: o tópico que este nó mostra é ele mesmo,
+       ou o original que ele espelha. Um salto só - o serviço recusa espelho
+       de espelho. */
+    original: (node) => {
+      if (!node || !node.mirror_of) return node;
+      return store.nodes.get(node.mirror_of) || node;
+    },
+    /* Cópia fiel da regra do store: subindo pelos pais de `uuid`, algum
+       deles é `candidate`? O próprio `uuid` não conta - um dublê que
+       responde diferente do original é um dublê que mente mais tarde. */
+    ancestorOf: (candidate, uuid) => {
+      let cursor = store.nodes.get(uuid);
+      let guard = 0;
+      while (cursor && cursor.parent && guard < 64) {
+        if (cursor.parent === candidate) return true;
+        cursor = store.nodes.get(cursor.parent);
+        guard += 1;
+      }
+      return false;
+    },
     mutate: (apply) => apply(),
   };
   const actions = createActions({
@@ -285,6 +308,282 @@ for (const layout of ['down', 'tree']) {
   check('um tópico novo declara a disposição do ramo, mesmo vazia',
     Object.prototype.hasOwnProperty.call(fresh, 'layout') && fresh.layout === '',
     JSON.stringify(fresh.layout));
+}
+
+/* ── Desconectar um tópico do de cima ───────────────────────────────────── */
+
+/* O defeito: soltar um bloco em cima do outro pendura um no outro, e a linha
+   que aparece desenhava um cursor de clique e não respondia a clique nenhum.
+   O gesto tinha ida e não tinha volta. */
+
+{
+  const nodes = [
+    { uuid: 'pai', parent: null, position: 0, x: 0, y: 0, width: 180, height: 48 },
+    { uuid: 'filho', parent: 'pai', position: 0, x: 300, y: 120, width: 180, height: 48 },
+    { uuid: 'neto', parent: 'filho', position: 0, x: 600, y: 120, width: 180, height: 48 },
+  ];
+  const { actions, store } = harness({ nodes, layout: 'right' });
+
+  check('desligar responde que desligou', actions.detach('filho') === true);
+  check('o tópico deixa de estar pendurado', store.get('filho').parent === null);
+  check('e não sai do lugar',
+    store.get('filho').x === 300 && store.get('filho').y === 120);
+  check('o ramo abaixo vem junto, ainda pendurado nele',
+    store.get('neto').parent === 'filho');
+  check('e o tópico de cima continua onde estava',
+    store.get('pai').x === 0 && store.get('pai').parent === null);
+}
+
+{
+  const nodes = [
+    { uuid: 'solto', parent: null, position: 0, x: 0, y: 0, width: 180, height: 48 },
+  ];
+  const { actions, store } = harness({ nodes, layout: 'right' });
+
+  check('um tópico que já é solto não tem o que desligar',
+    actions.detach('solto') === false);
+  check('e nada acontece com ele', store.get('solto').parent === null);
+  check('desligar algo que não existe não quebra',
+    actions.detach('nao-existe') === false);
+}
+
+/* ── Desconectar tem volta ──────────────────────────────────────────────── */
+
+/* O defeito: desligado, o tópico virava raiz - pintado como o centro do mapa -
+   e o único jeito de pendurá-lo de novo era arrastar o ramo inteiro para cima
+   de outro tópico. Quem procurava um botão achava "Conectar a…", que faz uma
+   associação: uma linha tracejada que parece ter resolvido e não devolve
+   hierarquia nenhuma. */
+
+{
+  const nodes = [
+    { uuid: 'setup', parent: null, position: 0, x: 0, y: 0, width: 180, height: 48 },
+    { uuid: 'analytics', parent: 'setup', position: 0, x: 300, y: 0, width: 180, height: 48 },
+    { uuid: 'coleta', parent: 'analytics', position: 0, x: 600, y: 0, width: 180, height: 48 },
+  ];
+  const { actions, store } = harness({ nodes, layout: 'right' });
+
+  actions.detach('analytics');
+  check('desligado, o tópico fica sem pai', store.get('analytics').parent === null);
+
+  check('e conectar de volta responde que conectou',
+    actions.reparent('analytics', 'setup') === true);
+  check('o pai voltou a ser o de antes', store.get('analytics').parent === 'setup');
+  check('o ramo abaixo nunca se soltou', store.get('coleta').parent === 'analytics');
+}
+
+{
+  // Pendurar um tópico dentro do próprio ramo faria do mapa um anel.
+  const nodes = [
+    { uuid: 'pai', parent: null, position: 0, x: 0, y: 0, width: 180, height: 48 },
+    { uuid: 'filho', parent: 'pai', position: 0, x: 0, y: 0, width: 180, height: 48 },
+  ];
+  const { actions, store } = harness({ nodes, layout: 'right' });
+
+  check('um tópico não pode ser pendurado no próprio ramo',
+    actions.reparent('pai', 'filho') === false);
+  check('e nada se move', store.get('pai').parent === null);
+}
+
+/* ── Reaninhar e reordenar ──────────────────────────────────────────────── */
+
+/* O caso de verdade, tirado da tela de quem reportou: "Analytics" e "Tags"
+   foram desconectados de "SETUP INICIAL" e ficaram no nível de cima, irmãos
+   da raiz do mapa. Duas descidas de nível por ramo devolvem o mapa - com o
+   ponteiro, arrastando um tópico sobre outro na tela; pelo teclado, Alt e as
+   setas sobre o tópico selecionado. */
+
+function board() {
+  return [
+    { uuid: 'ads', parent: null, position: 0, x: 0, y: 0, width: 180, height: 48 },
+    { uuid: 'setup', parent: 'ads', position: 0, x: 0, y: 0, width: 180, height: 48 },
+    { uuid: 'analytics', parent: null, position: 1, x: 0, y: 0, width: 180, height: 48 },
+    { uuid: 'coleta', parent: 'analytics', position: 0, x: 0, y: 0, width: 180, height: 48 },
+    { uuid: 'tags', parent: null, position: 2, x: 0, y: 0, width: 180, height: 48 },
+    { uuid: 'ga4', parent: 'tags', position: 0, x: 0, y: 0, width: 180, height: 48 },
+  ];
+}
+
+{
+  const { actions, store } = harness({ nodes: board(), layout: 'right' });
+
+  check('pôr dentro do de cima leva ao irmão anterior',
+    actions.indent('analytics') === true && store.get('analytics').parent === 'ads');
+  check('de novo, e chega em SETUP INICIAL',
+    actions.indent('analytics') === true && store.get('analytics').parent === 'setup');
+  check('o ramo abaixo veio junto', store.get('coleta').parent === 'analytics');
+
+  actions.indent('tags');
+  actions.indent('tags');
+  check('o segundo ramo faz o mesmo caminho', store.get('tags').parent === 'setup');
+  check('e os dois viraram irmãos sob SETUP INICIAL',
+    store.children('setup').map((n) => n.uuid).join(',') === 'analytics,tags');
+  check('sem sobrar nada no nível de cima além da raiz',
+    store.roots().map((n) => n.uuid).join(',') === 'ads');
+}
+
+{
+  const { actions, store } = harness({ nodes: board(), layout: 'right' });
+
+  check('o primeiro da lista não tem o que ficar embaixo',
+    actions.indent('ads') === false);
+  check('e um tópico no nível de cima não tem de onde sair',
+    actions.outdent('ads') === false);
+
+  check('tirar de dentro sobe um nível',
+    actions.outdent('setup') === true && store.get('setup').parent === null);
+  check('e aterrissa logo depois de quem era o seu pai',
+    store.roots().map((n) => n.uuid).join(',') === 'ads,setup,analytics,tags');
+}
+
+{
+  const { actions, store } = harness({ nodes: board(), layout: 'right' });
+
+  check('descer entre os irmãos', actions.shiftSibling('analytics', 1) === true);
+  check('a ordem mudou',
+    store.roots().map((n) => n.uuid).join(',') === 'ads,tags,analytics');
+  check('o último não desce mais', actions.shiftSibling('analytics', 1) === false);
+  check('o primeiro não sobe mais', actions.shiftSibling('ads', -1) === false);
+}
+
+{
+  // As posições ficam densas: empates só são resolvidos pelo uuid, e um mapa
+  // cuja ordem depende disso é um mapa que se reordena sozinho.
+  const { actions, store } = harness({ nodes: board(), layout: 'right' });
+  actions.shiftSibling('tags', -1);
+  const roots = store.roots();
+  check('as posições continuam 0, 1, 2…',
+    roots.every((node, index) => node.position === index),
+    roots.map((n) => `${n.uuid}:${n.position}`).join(' '));
+}
+
+{
+  // Um ramo não pode ser posto dentro de si mesmo.
+  const { actions, store } = harness({ nodes: board(), layout: 'right' });
+  check('pôr um tópico dentro do próprio ramo é recusado',
+    actions.moveInto('ads', 'setup', 0) === false);
+  check('e nada se move', store.get('ads').parent === null);
+}
+
+{
+  // Mover para dentro de um ramo fechado o abre - senão o tópico some no
+  // instante em que chega, e a tecla parece não ter funcionado.
+  const nodes = board();
+  nodes.find((n) => n.uuid === 'ads').collapsed = true;
+  const { actions, store } = harness({ nodes, layout: 'right' });
+  actions.indent('analytics');
+  check('o ramo de destino abre para receber',
+    store.get('ads').collapsed === false);
+}
+
+/* ── Onde um tópico aterrissa ───────────────────────────────────────────── */
+
+/* Onde um tópico pode aterrissar numa lista de irmãos: antes, depois, ou
+   dentro de outro. `moveInto` é onde os três chegam. */
+
+{
+  const nodes = [
+    { uuid: 'a', parent: null, position: 0, x: 0, y: 0, width: 180, height: 48 },
+    { uuid: 'b', parent: null, position: 1, x: 0, y: 0, width: 180, height: 48 },
+    { uuid: 'c', parent: null, position: 2, x: 0, y: 0, width: 180, height: 48 },
+  ];
+  const order = (store) => store.roots().map((n) => n.uuid).join(',');
+
+  const before = harness({ nodes: nodes.map((n) => ({ ...n })), layout: 'right' });
+  before.actions.moveInto('c', null, 0);
+  check('entrar antes', order(before.store) === 'c,a,b');
+
+  const after = harness({ nodes: nodes.map((n) => ({ ...n })), layout: 'right' });
+  after.actions.moveInto('a', null, 2);
+  check('entrar depois', order(after.store) === 'b,c,a');
+
+  const inside = harness({ nodes: nodes.map((n) => ({ ...n })), layout: 'right' });
+  inside.actions.moveInto('c', 'a', 0);
+  check('entrar dentro', inside.store.get('c').parent === 'a');
+  check('e sai do nível de cima', order(inside.store) === 'a,b');
+}
+
+{
+  // Arrastar para o mesmo lugar não pode reordenar nada por conta própria.
+  const nodes = [
+    { uuid: 'a', parent: null, position: 0, x: 0, y: 0, width: 180, height: 48 },
+    { uuid: 'b', parent: null, position: 1, x: 0, y: 0, width: 180, height: 48 },
+  ];
+  const { actions, store } = harness({ nodes, layout: 'right' });
+  actions.moveInto('a', null, 0);
+  check('aterrissar onde já estava deixa tudo como estava',
+    store.roots().map((n) => n.uuid).join(',') === 'a,b');
+}
+
+/* ── Conectar é pendurar ────────────────────────────────────────────────── */
+
+/* O quadro desenhava dois tipos de linha e nada dizia qual era qual, então
+   "conectar" podia deixar a estrutura exatamente como estava. Sobrou uma
+   linha, e conectar dois tópicos põe um dentro do outro. */
+
+{
+  const nodes = [
+    { uuid: 'setup', parent: null, position: 0, x: 0, y: 0, width: 180, height: 48 },
+    { uuid: 'analytics', parent: null, position: 1, x: 0, y: 0, width: 180, height: 48 },
+    { uuid: 'coleta', parent: 'analytics', position: 0, x: 0, y: 0, width: 180, height: 48 },
+  ];
+  const { actions, store } = harness({ nodes, layout: 'right' });
+
+  check('conectar devolve quem se moveu',
+    actions.connect('setup', 'analytics') === 'analytics');
+  check('e o alvo passa a ficar dentro da origem',
+    store.get('analytics').parent === 'setup');
+  check('o ramo abaixo veio junto', store.get('coleta').parent === 'analytics');
+
+  check('conectar um tópico a si mesmo não faz nada',
+    actions.connect('setup', 'setup') === null);
+  check('nem a um tópico que não existe',
+    actions.connect('setup', 'nao-existe') === null);
+  check('nem para dentro do próprio ramo',
+    actions.connect('coleta', 'analytics') === null);
+  check('e a estrutura fica de pé', store.get('analytics').parent === 'setup');
+}
+
+/* ── Um bloco comum em várias etapas ────────────────────────────────────── */
+
+/* O caso de verdade: "Modelo de alcance", com os seis modelos de campanha
+   dentro, vale para as seis etapas de "Objetivo de campanha" - e não para uma
+   só. Uma árvore não sabe dizer isso; o tópico compartilhado sabe. */
+
+{
+  const etapas = ['Vendas', 'Leads', 'Trafego', 'App', 'Alcance', 'Visitas'];
+  const nodes = [
+    { uuid: 'obj', parent: null, position: 0, x: 0, y: 0, width: 180, height: 48 },
+    ...etapas.map((nome, i) => ({
+      uuid: nome, parent: 'obj', position: i, x: 0, y: 0, width: 180, height: 48,
+    })),
+    { uuid: 'modelo', parent: 'Vendas', position: 0, x: 0, y: 0, width: 180, height: 48 },
+    { uuid: 'shopping', parent: 'modelo', position: 0, x: 0, y: 0, width: 180, height: 48 },
+  ];
+  const { actions, store } = harness({ nodes, layout: 'tree' });
+
+  const criados = etapas
+    .filter((nome) => nome !== 'Vendas')
+    .map((nome) => actions.shareInto('modelo', nome))
+    .filter(Boolean);
+
+  check('o bloco entra nas outras cinco etapas', criados.length === 5,
+    `entrou em ${criados.length}`);
+  check('e cada um é o mesmo tópico, não uma cópia',
+    criados.every((n) => n.mirror_of === 'modelo'));
+  check('o ramo continua sendo só do original',
+    store.children('shopping').length === 0 &&
+    criados.every((n) => store.children(n.uuid).length === 0));
+
+  check('repetir na mesma etapa não duplica',
+    actions.shareInto('modelo', 'Leads') === null);
+  check('o próprio bloco não entra em si mesmo',
+    actions.shareInto('modelo', 'modelo') === null);
+
+  // Compartilhar o espelho compartilha o original: é o mesmo tópico.
+  const doEspelho = actions.shareInto(criados[0].uuid, 'Vendas');
+  check('compartilhar um espelho aponta para o original',
+    doEspelho === null || doEspelho.mirror_of === 'modelo');
 }
 
 if (failures) {

@@ -259,22 +259,8 @@
 }
 .mm-link { fill: none; stroke-linecap: round; }
 .mm-link-branch { stroke: var(--mm-link-color, var(--border-strong)); stroke-width: 2.5; opacity: 0.75; }
-.mm-link-free {
-  stroke: var(--mm-link-color, var(--text-subtle));
-  stroke-width: 1.75;
-  opacity: 0.9;
-}
-.mm-link-free[data-style="dashed"] { stroke-dasharray: 7 6; }
 .mm-link.is-selected { stroke: var(--accent); stroke-width: 3; opacity: 1; }
 .mm-link-hit { stroke: transparent; stroke-width: 16; pointer-events: stroke; cursor: pointer; }
-.mm-link-label {
-  fill: var(--text-muted);
-  font-size: 11px;
-  font-family: var(--font-ui);
-  text-anchor: middle;
-  pointer-events: none;
-}
-.mm-link-label-plate { fill: var(--surface); stroke: var(--border); }
 
 /* The line drawn while a connection is being dragged out of a port. */
 .mm-draft-link {
@@ -347,6 +333,33 @@
 .mm-node[data-root="true"]::before { display: none; }
 .mm-node[data-root="true"] .mm-node-label { font-size: var(--fs-lg); font-weight: 660; }
 .mm-node[data-root="true"] .mm-node-badge { color: rgba(255, 255, 255, 0.85); }
+
+/* A linha de um tópico que vale para várias etapas. Ela atravessa o quadro
+   para chegar numa caixa que também tem a sua própria linha, e o tracejado é
+   o que diz, sem legenda, que este caminho é um segundo caminho. */
+.mm-link[data-shared="true"] {
+  stroke-dasharray: 6 5;
+  opacity: 0.85;
+}
+
+/* Um tópico compartilhado: o mesmo tópico, visto noutro lugar da árvore.
+   A borda dupla à esquerda é a marca - discreta o bastante para não competir
+   com o nome, e presente o bastante para ninguém achar que é uma cópia que
+   pode ser editada por conta própria. */
+.mm-node[data-mirror="true"] {
+  border-style: solid;
+  box-shadow: inset 3px 0 0 var(--mm-node-color, var(--accent)),
+              inset 7px 0 0 var(--surface),
+              inset 10px 0 0 var(--mm-node-color, var(--accent));
+}
+.mm-node[data-mirror="true"] .mm-node-label { font-style: italic; }
+/* O botão de dobrar vira selo: conta o ramo do original, e não dobra nada. */
+.mm-node[data-mirror="true"] .mm-node-toggle { cursor: default; }
+
+/* Um tópico que não está pendurado em nada. Não é o centro do mapa, então não
+   usa o tratamento do centro; a borda tracejada diz o que a falta de uma linha
+   chegando diria, e que uma associação passando por ali esconderia. */
+.mm-node[data-loose="true"] { border-style: dashed; }
 
 .mm-node[data-selected="true"] {
   border-color: var(--accent);
@@ -651,6 +664,67 @@
    note spends most of its life hidden. */
 .mm-organize-mixed[hidden] { display: none; }
 
+/* O que a linha selecionada liga, em uma frase. */
+.mm-branch-summary {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  text-wrap: pretty;
+}
+.mm-branch-summary strong { color: var(--text); font-weight: 600; }
+
+/* Onde este mapa mora no acervo. No topo da Estrutura porque é a estrutura de
+   fora: o mapa dentro da árvore, antes dos tópicos dentro do mapa. */
+.mm-folder-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--border);
+}
+.mm-folder-path {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--sp-1);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+/* O separador é do CSS e não do markup: assim o caminho pode ser reescrito
+   pela tela com os nomes que o servidor devolveu, sem ter de intercalar
+   barras que não são conteúdo. */
+.mm-folder-step + .mm-folder-step::before {
+  content: "/";
+  margin-right: var(--sp-1);
+  color: var(--text-subtle);
+}
+
+/* As teclas que reorganizam, ditas onde se reorganiza. */
+.mm-outline-hint {
+  margin: 0;
+  padding: 0 var(--sp-4) var(--sp-3);
+  font-size: var(--fs-2xs);
+  line-height: 1.6;
+  color: var(--text-subtle);
+  border-bottom: 1px solid var(--border);
+}
+
+/* O que uma conexão é, e o que ela decide. Uma nota, não um alerta: nada
+   está errado, apenas a linha carrega mais do que parece - o nível, o
+   arranjo, a Estrutura e o Markdown - e vale dizer isso onde ela é editada. */
+.mm-link-kind {
+  margin: 0;
+  padding: var(--sp-3);
+  border-left: 2px solid var(--border-strong);
+  background: var(--surface-2);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-size: var(--fs-2xs);
+  line-height: 1.5;
+  color: var(--text-muted);
+  text-wrap: pretty;
+}
+.mm-link-kind strong { color: var(--text); font-weight: 640; }
+
 /* ── Marquee ────────────────────────────────────────────────────────────── */
 
 .mm-marquee {
@@ -914,7 +988,7 @@
   align-items: center;
   gap: var(--sp-2);
   width: 100%;
-  padding: 5px var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
   padding-left: calc(var(--sp-2) + var(--mm-outline-depth, 0) * var(--sp-3));
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
@@ -922,20 +996,64 @@
   color: var(--text-muted);
   font-size: var(--fs-xs);
   text-align: left;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
   cursor: pointer;
 }
 .mm-outline-item:hover { background: var(--surface-2); color: var(--text); }
+.mm-outline-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* A seta que abre e fecha uma pasta. Um alvo próprio, porque clicar no nome
+   revela o tópico na tela e clicar na seta dobra o ramo - duas ações, dois
+   lugares para acertar. */
+.mm-outline-twisty {
+  display: flex; align-items: center; justify-content: center;
+  width: 14px; height: 14px; flex: none;
+  margin-left: -2px;
+  border-radius: 3px;
+  color: var(--text-subtle);
+}
+.mm-outline-twisty {
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.mm-outline-twisty:hover { background: var(--surface-sunken); color: var(--text); }
+.mm-outline-twisty .icon { width: 12px; height: 12px; }
+
+/* Pasta e conteúdo: um tópico que contém outros é uma pasta, e é isso que o
+   painel precisa dizer antes de qualquer nome. */
+.mm-outline-glyph {
+  display: flex; flex: none;
+  color: var(--mm-node-color, var(--text-subtle));
+}
+.mm-outline-item[data-kind="folder"] .mm-outline-glyph { color: var(--mm-node-color, var(--accent)); }
+.mm-outline-item[data-kind="folder"] .mm-outline-text { font-weight: 570; color: var(--text); }
+
+.mm-outline-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-6) var(--sp-4);
+  color: var(--text-subtle);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  text-align: center;
+  text-wrap: pretty;
+}
+.mm-outline-empty .icon { width: 22px; height: 22px; opacity: 0.5; }
+
+.mm-outline-count {
+  margin-left: auto;
+  padding-left: var(--sp-2);
+  font-size: var(--fs-2xs);
+  color: var(--text-subtle);
+}
 .mm-outline-item[aria-current="true"] {
   background: var(--accent-soft);
   border-color: color-mix(in srgb, var(--accent) 40%, transparent);
   color: var(--text);
   font-weight: 570;
 }
-.mm-outline-dot {
-  width: 6px; height: 6px; flex: none;
-  border-radius: var(--radius-full);
-  background: var(--mm-node-color, var(--border-strong));
-}
+
 .mm-outline-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ── Shortcut list ──────────────────────────────────────────────────────── */

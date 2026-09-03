@@ -22,7 +22,7 @@ const ZOOM_STEP = 1.2;
 export function createInteractions(context) {
   const {
     page, stage, store, camera, renderer, selection, actions, hint,
-    onEditStart, onEditEnd, onSelectEdge, uploader,
+    onEditStart, onEditEnd, onSelectBranch, onRemoveLink, uploader,
   } = context;
 
   let tool = 'select';
@@ -51,6 +51,7 @@ export function createInteractions(context) {
       button.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
     if (next !== 'connect') clearConnect();
+    if (next !== 'share') clearAttach();
   }
 
   function showHint(message) {
@@ -172,6 +173,93 @@ export function createInteractions(context) {
 
   /* ── Connecting ─────────────────────────────────────────────────────── */
 
+  /* "Pendurar em…": o inverso de desligar, sem arrastar.
+     Arrastar um tópico para cima de outro é o único gesto que pendura um no
+     outro - e é impraticável quando o que se quer pendurar é um ramo inteiro
+     já posicionado do outro lado da tela. Sem isto, quem desligou por engano
+     alcançava a porta do nó, que faz uma associação: uma linha tracejada que
+     parece ter resolvido e não devolveu a hierarquia nenhuma. */
+  let attachChild = null;
+
+  function beginAttach(uuid, mode = 'move') {
+    clearConnect();
+    clearAttach();
+    attachMode = mode;
+    attachChild = uuid;
+    shared = 0;
+    const element = renderer.elementFor(uuid);
+    if (element) element.dataset.connect = 'true';
+    showHint(
+      mode === 'share'
+        ? 'Agora clique no tópico onde este também deve aparecer.'
+        : 'Agora clique no tópico que vai ficar acima deste.'
+    );
+  }
+
+  function clearAttach() {
+    if (attachChild) {
+      const element = renderer.elementFor(attachChild);
+      if (element) delete element.dataset.connect;
+    }
+    attachChild = null;
+    if (tool === 'share') setTool('select');
+  }
+
+  /* "Também em…": o mesmo gesto de pendurar, com outro fim. Uma modalidade
+     só, com um alvo, porque duas ferramentas para "clique no outro tópico"
+     seriam duas coisas para aprender e uma para confundir. */
+  let attachMode = 'move';
+
+  /** Quantos lugares já receberam o tópico nesta rodada. */
+  let shared = 0;
+
+  function attachStep(uuid) {
+    const child = attachChild;
+    if (child === uuid) return;
+
+    /* Compartilhar segue aberto depois de cada clique.
+       Um bloco que vale para uma etapa quase sempre vale para as outras -
+       "Modelo de alcance" existe embaixo de seis - e fechar o modo a cada
+       clique obrigaria a repetir o mesmo caminho seis vezes para dizer uma
+       coisa só. Fica aberto, conta o que já foi, e o Esc encerra. */
+    if (attachMode === 'share') {
+      if (!actions.shareInto(child, uuid)) return;
+      shared += 1;
+      // A seleção volta para o tópico compartilhado, e não para o espelho
+      // recém-criado: o gesto continua sendo sobre ele.
+      selection.only(child);
+      showHint(
+        `Em ${shared} ${shared === 1 ? 'lugar' : 'lugares'}. ` +
+        'Clique em outro para repetir, ou Esc para terminar.'
+      );
+      return;
+    }
+
+    clearAttach();
+    showHint('');
+    const before = (store.get(child) || {}).parent;
+    if (actions.reparent(child, uuid)) {
+      selection.only(child);
+      noteItMoved(child, before);
+    }
+  }
+
+  /* Conectar move: o tópico sai de onde estava. É o que uma árvore quer
+     dizer, e é também a coisa que mais confunde quem queria o mesmo bloco
+     valendo para várias etapas - "conectei numa e desconectou da outra".
+     O aviso aparece no instante do engano, com as duas saídas. */
+  function noteItMoved(uuid, from) {
+    if (!from) return;
+    const node = store.get(uuid);
+    const before = store.get(from);
+    if (!node || !before) return;
+    const name = (text) => `“${text || 'sem título'}”`;
+    showHint(
+      `${name(store.original(node).text)} saiu de ${name(before.text)}. ` +
+      'Para ficar nos dois, desfaça com Ctrl+Z e use a ferramenta ⧉ (S).'
+    );
+  }
+
   function clearConnect() {
     if (connectSource) {
       const element = renderer.elementFor(connectSource);
@@ -186,12 +274,14 @@ export function createInteractions(context) {
       connectSource = uuid;
       const element = renderer.elementFor(uuid);
       if (element) element.dataset.connect = 'true';
-      showHint('Agora clique no tópico que se conecta a este.');
+      showHint('Agora clique no tópico que vai ficar dentro deste.');
       return;
     }
     const source = connectSource;
     clearConnect();
-    if (source !== uuid) actions.connect(source, uuid);
+    if (source === uuid) return;
+    const before = (store.get(uuid) || {}).parent;
+    if (actions.connect(source, uuid)) noteItMoved(uuid, before);
   }
 
   /* ── Pointer ────────────────────────────────────────────────────────── */
@@ -210,7 +300,7 @@ export function createInteractions(context) {
     const handle = event.target.closest('[data-handle]');
     const toggle = event.target.closest('[data-toggle]');
     const badge = event.target.closest('[data-badge-link]');
-    const edgeHit = event.target.closest('[data-edge]');
+    const branchHit = event.target.closest('[data-branch]');
 
     if (badge) return; // a link inside a node is a link, not a drag handle
 
@@ -241,9 +331,25 @@ export function createInteractions(context) {
       const uuid = nodeElement.dataset.uuid;
       if (editing && editing.uuid === uuid) return; // clicking inside the text
 
+      if (attachChild) {
+        event.preventDefault();
+        attachStep(uuid);
+        return;
+      }
+
       if (tool === 'connect') {
         event.preventDefault();
         connectStep(uuid);
+        return;
+      }
+
+      /* A ferramenta de repetir: o primeiro clique escolhe o tópico, os
+         seguintes escolhem os lugares. Na barra, e não só no painel do
+         tópico, porque o painel começa fechado - e uma ação que só existe
+         atrás de um painel fechado é uma ação que não existe. */
+      if (tool === 'share') {
+        event.preventDefault();
+        beginAttach(uuid, 'share');
         return;
       }
 
@@ -257,16 +363,20 @@ export function createInteractions(context) {
       return;
     }
 
-    if (edgeHit) {
+    // A parent-child line. Dropping one topic onto another draws it, so this
+    // is the gesture's inverse and it has to be reachable the same way the
+    // association's is: click the line, then act on it.
+    if (branchHit) {
       commitEdit();
       selection.clear();
-      if (onSelectEdge) onSelectEdge(edgeHit.dataset.edge);
+      if (onSelectBranch) onSelectBranch(branchHit.dataset.branch);
       return;
     }
 
     // Empty canvas.
     commitEdit();
     clearConnect();
+    clearAttach();
     if (!event.shiftKey) selection.clear();
     startMarquee(event);
   });
@@ -455,7 +565,10 @@ export function createInteractions(context) {
     }
 
     if (finished.kind === 'drag' && finished.moved && finished.dropTarget) {
-      actions.reparent(finished.uuid, finished.dropTarget);
+      const before = (store.get(finished.uuid) || {}).parent;
+      if (actions.reparent(finished.uuid, finished.dropTarget)) {
+        noteItMoved(finished.uuid, before);
+      }
     }
 
     if (finished.kind === 'connect') {
@@ -686,10 +799,15 @@ export function createInteractions(context) {
       case 'Delete':
       case 'Backspace':
         event.preventDefault();
+        // A selected connection takes the key: with a line selected there is
+        // no selected topic for the fallback to delete, and the key would
+        // silently do nothing.
+        if (onRemoveLink && onRemoveLink()) break;
         actions.removeSelection();
         break;
       case 'Escape':
         clearConnect();
+        clearAttach();
         selection.clear();
         break;
       case 'ArrowUp':
@@ -699,6 +817,20 @@ export function createInteractions(context) {
         if (!primary) break;
         event.preventDefault();
         const direction = event.key.replace('Arrow', '').toLowerCase();
+        // Alt reestrutura, e vive aqui porque é aqui que se edita o mapa. O
+        // painel Estrutura mostra a forma; mudá-la em dois lugares era pedir
+        // para alguém arrastar num e procurar o resultado no outro. E sem
+        // isto não sobraria caminho nenhum de teclado para mudar a
+        // hierarquia - a tela é uma figura, e figura não se alcança assim.
+        if (event.altKey && !event.shiftKey) {
+          const changed =
+            direction === 'right' ? actions.indent(primary)
+            : direction === 'left' ? actions.outdent(primary)
+            : direction === 'up' ? actions.shiftSibling(primary, -1)
+            : actions.shiftSibling(primary, 1);
+          if (changed) context.reveal(primary);
+          break;
+        }
         if (event.shiftKey) {
           const step = event.altKey ? NUDGE_FINE : NUDGE;
           const dx = direction === 'left' ? -step : direction === 'right' ? step : 0;
@@ -740,6 +872,10 @@ export function createInteractions(context) {
       case 'C':
         setTool('connect');
         break;
+      case 's':
+      case 'S':
+        setTool('share');
+        break;
       case 'n':
       case 'N': {
         const created = actions.addLoose(context.centrePlacement());
@@ -773,6 +909,7 @@ export function createInteractions(context) {
 
   return {
     setTool,
+    beginAttach,
     get tool() { return tool; },
     beginEdit,
     commitEdit,

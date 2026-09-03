@@ -44,7 +44,6 @@ function boot() {
   const world = $('[data-world]', page);
   const nodesHost = $('[data-nodes]', page);
   const linksHost = $('[data-links]', page);
-  const labelsHost = $('[data-link-labels]', page);
   const marquee = $('[data-marquee]', page);
   const hint = $('[data-hint]', page);
   const statusOutput = $('[data-save-status]', page);
@@ -67,11 +66,12 @@ function boot() {
   });
 
   const camera = createCamera(page, world, stage);
-  const renderer = createRenderer({ store, page, nodesHost, linksHost, labelsHost, accent });
+  const renderer = createRenderer({ store, page, nodesHost, linksHost, accent });
 
   const selection = createSelection((members) => {
     renderer.setSelection(members);
-    if (members.size) inspector.clearEdge();
+    if (members.size) inspector.clearLink();
+    renderer.setLinkSelection(selectedLinkKey());
     inspector.refresh();
     scheduleOutline();
   });
@@ -111,7 +111,15 @@ function boot() {
     onConnectFrom(uuid) {
       interactions.setTool('connect');
       selection.only(uuid);
-      interactions.showHint('Clique no tópico que se conecta a este.');
+      interactions.showHint('Clique no tópico que vai ficar dentro deste.');
+    },
+    onAttachTo(uuid) {
+      selection.only(uuid);
+      interactions.beginAttach(uuid);
+    },
+    onShare(uuid) {
+      selection.only(uuid);
+      interactions.beginAttach(uuid, 'share');
     },
     onReveal: reveal,
   });
@@ -129,7 +137,17 @@ function boot() {
     marquee,
     hint,
     uploader,
-    onSelectEdge: (uuid) => inspector.selectEdge(uuid),
+    // Which line is lit is the inspector's answer and the renderer's job to
+    // paint, so every path that changes the answer says so straight after.
+    onSelectBranch: (uuid) => {
+      inspector.selectBranch(uuid);
+      renderer.setLinkSelection(selectedLinkKey());
+    },
+    onRemoveLink: () => {
+      const removed = inspector.removeSelectedLink();
+      renderer.setLinkSelection(selectedLinkKey());
+      return removed;
+    },
     onEditEnd: () => inspector.refresh(),
     undo: () => {
       if (!store.undo()) notify('Nada para desfazer.', 'info', { timeout: 1600 });
@@ -165,8 +183,17 @@ function boot() {
 
   const scheduleOutline = debounce(() => inspector.renderOutline(), 120);
 
+  /** The selected connection as the renderer names it, or null. */
+  function selectedLinkKey() {
+    return inspector.branch ? `b:${inspector.branch}` : null;
+  }
+
   store.on('change', () => {
     selection.prune((uuid) => store.nodes.has(uuid));
+    // Which line is lit is the inspector's answer; the renderer only paints
+    // it. Read on every change so a line that was cut, or whose topic was
+    // deleted, stops being highlighted.
+    renderer.setLinkSelection(selectedLinkKey());
     scheduleRender();
     scheduleOutline();
     inspector.refresh();

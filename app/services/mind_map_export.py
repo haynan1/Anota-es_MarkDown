@@ -33,7 +33,6 @@ from app.services.mind_map_layout import (
     box_of,
     branch_path,
     branch_routing,
-    free_path,
 )
 from app.services.sanitizer import MEDIA_URL_PREFIX
 
@@ -88,6 +87,17 @@ def to_markdown(mind_map: MindMap, nodes: list[MindMapNode]) -> str:
 
 def _write_branch(lines: list[str], tree: _Index, node: MindMapNode, depth: int) -> None:
     indent = "  " * depth
+
+    # Um tópico compartilhado sai uma vez, onde ele mora, e as outras
+    # aparições apontam para ele. Repetir o ramo inteiro em cada etapa daria
+    # um arquivo que se contradiz sozinho no dia em que alguém editar uma das
+    # cópias - e o Markdown perderia justamente a informação que o espelho
+    # existe para carregar: é o mesmo assunto.
+    if node.mirror_of is not None:
+        name = node.mirror_of.text.strip() or "(sem título)"
+        lines.append(f"{indent}- {_escape_markdown(name)} *(o mesmo tópico, ver acima)*")
+        return
+
     label = node.text.strip() or "(sem título)"
 
     if node.url:
@@ -162,7 +172,7 @@ def _escape_markdown(value: str) -> str:
 # ── SVG out ─────────────────────────────────────────────────────────────────
 
 
-def to_svg(mind_map: MindMap, nodes: list[MindMapNode], edges: list) -> str:
+def to_svg(mind_map: MindMap, nodes: list[MindMapNode]) -> str:
     """Draw the map exactly where the canvas has it.
 
     Built by hand rather than with a templating engine because every value that
@@ -173,8 +183,10 @@ def to_svg(mind_map: MindMap, nodes: list[MindMapNode], edges: list) -> str:
     if not nodes:
         return _empty_svg(mind_map)
 
-    box = bounding_box([(n.x, n.y, n.width, n.height) for n in nodes], padding=56.0)
-    by_id = {node.id: node for node in nodes}
+    box = bounding_box(
+        [(n.x, n.y, n.width, n.height) for n in nodes if n.mirror_of_id is None],
+        padding=56.0,
+    )
     tree = _index(nodes)
 
     parts: list[str] = [
@@ -186,8 +198,7 @@ def to_svg(mind_map: MindMap, nodes: list[MindMapNode], edges: list) -> str:
         f'<title>{escape(mind_map.title)}</title>',
         f'<rect x="{box.min_x:.1f}" y="{box.min_y:.1f}" width="{box.width:.1f}" '
         f'height="{box.height:.1f}" fill="{PAPER}"/>',
-        _arrow_marker(),
-    ]
+        ]
 
     # Connections first, so a line never crosses over the box it arrives at.
     parts.append('<g fill="none" stroke-linecap="round">')
@@ -200,24 +211,22 @@ def to_svg(mind_map: MindMap, nodes: list[MindMapNode], edges: list) -> str:
     arrangement = _arrangements(mind_map, nodes, tree)
     for node in nodes:
         for child in tree.children.get(node.id, []):
+            # Uma segunda aparição é uma linha, não uma caixa: ela leva do pai
+            # até o tópico de verdade, desenhado noutro lugar da figura.
+            target = _shown(child)
             parts.append(
                 _branch_path(
-                    node, child, mind_map.color, branch_routing(arrangement[node.id])
+                    node, target, mind_map.color,
+                    branch_routing(arrangement[node.id]),
+                    shared=target is not child,
                 )
             )
-    for edge in edges:
-        source, target = by_id.get(edge.source_id), by_id.get(edge.target_id)
-        if source is not None and target is not None:
-            parts.append(_free_path(source, target, edge))
     parts.append("</g>")
 
     for node in nodes:
+        if node.mirror_of_id is not None:
+            continue
         parts.append(_node_shape(node, mind_map.color))
-
-    for edge in edges:
-        source, target = by_id.get(edge.source_id), by_id.get(edge.target_id)
-        if edge.label and source is not None and target is not None:
-            parts.append(_edge_label(source, target, edge.label))
 
     parts.append("</svg>")
     return "\n".join(parts)
@@ -233,14 +242,6 @@ def _empty_svg(mind_map: MindMap) -> str:
         f'<text x="240" y="104" text-anchor="middle" font-family="{FONT_STACK}" '
         f'font-size="15" fill="{INK_MUTED}">Mapa sem tópicos</text>'
         "</svg>"
-    )
-
-
-def _arrow_marker() -> str:
-    return (
-        '<defs><marker id="mm-arrow" viewBox="0 0 10 10" refX="9" refY="5" '
-        'markerWidth="6" markerHeight="6" orient="auto-start-reverse">'
-        f'<path d="M0,0 L10,5 L0,10 z" fill="{INK_MUTED}"/></marker></defs>'
     )
 
 
@@ -274,7 +275,8 @@ def _arrangements(
 
 
 def _branch_path(
-    parent: MindMapNode, child: MindMapNode, accent: str, routing: str
+    parent: MindMapNode, child: MindMapNode, accent: str, routing: str,
+    shared: bool = False,
 ) -> str:
     """The line from a parent to a child, drawn the way the layout draws it.
 
@@ -285,22 +287,30 @@ def _branch_path(
     """
     path = branch_path(routing, box_of(parent), box_of(child))
     stroke = _colour(child.color, accent)
-    return f'<path d="{path}" stroke="{stroke}" stroke-width="2" opacity="0.55"/>'
-
-
-def _free_path(source: MindMapNode, target: MindMapNode, edge) -> str:
-    dash = ' stroke-dasharray="6 6"' if edge.style == "dashed" else ""
-    stroke = _colour(edge.color, INK_MUTED)
-    path = free_path(edge.style, box_of(source), box_of(target))
+    # Tracejada quando é o segundo caminho até um tópico: a figura precisa
+    # dizer isso sem legenda, como a tela diz.
+    dash = ' stroke-dasharray="6 5"' if shared else ""
     return (
-        f'<path d="{path}" stroke="{stroke}" stroke-width="1.5"{dash} '
-        'marker-end="url(#mm-arrow)" opacity="0.8"/>'
+        f'<path d="{path}" stroke="{stroke}" stroke-width="2" '
+        f'opacity="0.55"{dash}/>'
     )
 
 
+def _shown(node: MindMapNode) -> MindMapNode:
+    """O tópico que este nó mostra: ele mesmo, ou o original que ele espelha.
+
+    A figura exportada e o quadro na tela precisam dizer a mesma coisa, e na
+    tela um espelho mostra o texto de lá.
+    """
+    return node.mirror_of if node.mirror_of is not None else node
+
+
 def _node_shape(node: MindMapNode, accent: str) -> str:
-    fill = _colour(node.color, accent if node.parent_id is None else PAPER)
-    on_accent = node.parent_id is None or bool(node.color)
+    # A caixa é deste nó - é aqui que ele está desenhado - mas o que se lê
+    # dentro dela é do tópico que ele mostra.
+    shown = _shown(node)
+    fill = _colour(shown.color, accent if node.parent_id is None else PAPER)
+    on_accent = node.parent_id is None or bool(shown.color)
     text_fill = "#FFFFFF" if on_accent else INK
     radius = {
         "pill": node.height / 2,
@@ -315,7 +325,7 @@ def _node_shape(node: MindMapNode, accent: str) -> str:
         f'stroke="{STROKE}" stroke-width="1"/>'
     )
 
-    label = node.text.strip()
+    label = shown.text.strip()
     if not label:
         return body
 
@@ -339,19 +349,6 @@ def _node_shape(node: MindMapNode, accent: str) -> str:
             f'r="3.5" fill="{LINK}"/>'
         )
     return body + text + marker
-
-
-def _edge_label(source: MindMapNode, target: MindMapNode, label: str) -> str:
-    x = (source.x + source.width / 2 + target.x + target.width / 2) / 2
-    y = (source.y + source.height / 2 + target.y + target.height / 2) / 2
-    width = len(label) * CHAR_WIDTH + 12
-    return (
-        f'<rect x="{x - width / 2:.1f}" y="{y - 11:.1f}" width="{width:.1f}" '
-        f'height="20" rx="6" fill="{PAPER}" stroke="{STROKE}"/>'
-        f'<text x="{x:.1f}" y="{y + 4:.1f}" text-anchor="middle" '
-        f'font-family="{FONT_STACK}" font-size="11" fill="{INK_MUTED}">'
-        f"{escape(label)}</text>"
-    )
 
 
 def _wrap(value: str, width: float) -> list[str]:

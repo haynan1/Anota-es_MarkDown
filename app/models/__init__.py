@@ -16,13 +16,11 @@ from app.models.document_version import DocumentVersion
 from app.models.group import Group, document_groups
 from app.models.media_asset import MediaAsset
 from app.models.mind_map import (
-    EDGE_STYLES,
     LAYOUT_LABELS,
     LAYOUTS,
     NODE_KINDS,
     NODE_SHAPES,
     MindMap,
-    MindMapEdge,
     MindMapNode,
 )
 from app.models.setting import Setting
@@ -35,7 +33,6 @@ __all__ = [
     "Group",
     "MediaAsset",
     "MindMap",
-    "MindMapEdge",
     "MindMapNode",
     "Setting",
     "Tag",
@@ -47,7 +44,6 @@ __all__ = [
     "PDF_THEME_LABELS",
     "NODE_KINDS",
     "NODE_SHAPES",
-    "EDGE_STYLES",
     "LAYOUTS",
     "LAYOUT_LABELS",
 ]

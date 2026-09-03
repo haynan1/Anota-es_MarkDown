@@ -4,21 +4,22 @@ Why a graph and not a JSON blob
 --------------------------------
 The obvious shortcut for a canvas is a single ``canvas_json`` column. It is
 also the shortcut that costs the most later: a blob cannot be indexed, cannot
-be joined, cannot enforce that an edge points at a node that exists, and turns
+be joined, cannot enforce that a link points at a node that exists, and turns
 every edit into a read-modify-write of the whole document. Two tabs editing
 different corners of the same map would then overwrite each other wholesale.
 
-So a map is stored as what it is: nodes and edges, with real foreign keys.
+So a map is stored as what it is: nodes with real foreign keys.
 Deleting a map takes its nodes with it (``CASCADE``); deleting a node takes its
 branch with it, because that is what "delete this branch" means in a mind map.
 
-Two kinds of connection, on purpose
------------------------------------
-``parent_id`` is the *spine*: the hierarchy a mind map is built from, the thing
-auto-layout walks and the outline export reads. :class:`MindMapEdge` is the
-free association - "this idea also relates to that one" - which is a graph, not
-a tree, and must never be allowed to confuse the layout. Keeping them apart is
-what lets one canvas be both a tidy outline and a free-form board.
+Uma conexão só
+--------------
+``parent_id`` is the whole of it: one topic connected to another is one topic
+inside another, and there is nothing else. The board used to draw a second
+kind of line - a free association across the map - and the two were told apart
+by nothing a person could see. Which of them a gesture produced, and which one
+carried the structure, became the map's most reliable source of confusion. A
+mind map is a tree; it now has one line, and that line is the tree.
 
 A node may also point *outwards*: at an uploaded image, at a remote image, at a
 URL, or at a document in this library. All four are optional and none of them
@@ -60,7 +61,6 @@ MAX_DESCRIPTION_LENGTH = 280
 MAX_NODE_TEXT_LENGTH = 500
 MAX_NODE_NOTE_LENGTH = 4000
 MAX_URL_LENGTH = 500
-MAX_EDGE_LABEL_LENGTH = 120
 
 DEFAULT_MAP_COLOR = "#4F46E5"
 
@@ -71,11 +71,6 @@ DEFAULT_MAP_COLOR = "#4F46E5"
 # a thought when a URL is attached to it.
 NODE_KINDS = ("topic", "note", "image")
 NODE_SHAPES = ("rounded", "pill", "rect", "ellipse", "diamond")
-
-# How a connection is drawn. `curve` is the default because a map read as a
-# whole is easier to follow with curves; `line` and `dashed` exist for diagrams
-# where precision, or tentativeness, is the point.
-EDGE_STYLES = ("curve", "line", "dashed")
 
 # How a map arranges itself, and how each arrangement is named to the person
 # choosing it. `down` and `tree` both run down the page and differ in the line
@@ -133,6 +128,7 @@ class MindMap(TimestampMixin, db.Model):
     )
     layout: Mapped[str] = mapped_column(String(10), nullable=False, default="right")
 
+
     # Optimistic concurrency, exactly as documents do it. The canvas sends the
     # revision it last saw with every batch of operations; a mismatch is
     # rejected with the server graph attached instead of silently overwriting a
@@ -161,12 +157,6 @@ class MindMap(TimestampMixin, db.Model):
     )
 
     nodes: Mapped[list["MindMapNode"]] = relationship(
-        back_populates="mind_map",
-        cascade="all, delete-orphan",
-        passive_deletes=True,
-        lazy="select",
-    )
-    edges: Mapped[list["MindMapEdge"]] = relationship(
         back_populates="mind_map",
         cascade="all, delete-orphan",
         passive_deletes=True,
@@ -244,6 +234,23 @@ class MindMapNode(db.Model):
 
     color: Mapped[str] = mapped_column(String(9), nullable=False, default="")
     shape: Mapped[str] = mapped_column(String(12), nullable=False, default="rounded")
+
+    # Um espelho: este nó *é* outro nó, aparecendo num segundo lugar da árvore.
+    #
+    # Uma árvore não sabe dizer "isto vale para todas as etapas" - um tópico
+    # tem um pai. O espelho é como isso é dito sem deixar de ser uma árvore:
+    # ele é uma linha como qualquer outra, e o que está na ponta dela é um
+    # tópico que mora noutro lugar. Renomear o original renomeia aqui, porque
+    # é o mesmo tópico; e é sempre uma folha, porque o ramo é do original.
+    #
+    # CASCADE: uma referência a algo que não existe mais não é nada. Apagar o
+    # original leva os espelhos dele; apagar um espelho não toca no original.
+    mirror_of_id: Mapped[int | None] = mapped_column(
+        ForeignKey("mind_map_nodes.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    mirror_of: Mapped["MindMapNode | None"] = relationship(
+        remote_side="MindMapNode.id", foreign_keys=[mirror_of_id]
+    )
     # How this node's own branch arranges itself. ``None`` - the default, and
     # what every node keeps unless someone says otherwise - means "the same as
     # whatever I hang from", so changing the map's arrangement still moves the
@@ -271,13 +278,16 @@ class MindMapNode(db.Model):
     # the top level sets its parent to nothing and must keep the topic.
     children: Mapped[list["MindMapNode"]] = relationship(
         back_populates="parent",
+        foreign_keys=[parent_id],
         cascade="save-update, merge",
         passive_deletes=True,
         order_by="MindMapNode.position",
         lazy="select",
     )
     parent: Mapped["MindMapNode | None"] = relationship(
-        back_populates="children", remote_side="MindMapNode.id"
+        back_populates="children",
+        remote_side="MindMapNode.id",
+        foreign_keys=[parent_id],
     )
     media_asset: Mapped["MediaAsset | None"] = relationship(lazy="joined")
     document: Mapped["Document | None"] = relationship(lazy="joined")
@@ -288,47 +298,3 @@ class MindMapNode(db.Model):
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid
         return f"<MindMapNode {self.uuid}>"
-
-
-class MindMapEdge(db.Model):
-    """A free association between two nodes, outside the hierarchy."""
-
-    __tablename__ = "mind_map_edges"
-    __table_args__ = (
-        # One association per ordered pair. A second edge would be drawn
-        # exactly on top of the first, so it is a duplicate by construction.
-        UniqueConstraint("source_id", "target_id", name="uq_mind_map_edge_pair"),
-        Index("ix_mind_map_edges_map", "map_id"),
-    )
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    uuid: Mapped[str] = mapped_column(
-        String(36), default=new_uuid, nullable=False, unique=True, index=True
-    )
-
-    map_id: Mapped[int] = mapped_column(
-        ForeignKey("mind_maps.id", ondelete="CASCADE"), nullable=False
-    )
-    source_id: Mapped[int] = mapped_column(
-        ForeignKey("mind_map_nodes.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    target_id: Mapped[int] = mapped_column(
-        ForeignKey("mind_map_nodes.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-
-    label: Mapped[str] = mapped_column(
-        String(MAX_EDGE_LABEL_LENGTH), nullable=False, default=""
-    )
-    style: Mapped[str] = mapped_column(String(10), nullable=False, default="curve")
-    color: Mapped[str] = mapped_column(String(9), nullable=False, default="")
-
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, nullable=False
-    )
-
-    mind_map: Mapped["MindMap"] = relationship(back_populates="edges")
-    source: Mapped["MindMapNode"] = relationship(foreign_keys=[source_id])
-    target: Mapped["MindMapNode"] = relationship(foreign_keys=[target_id])
-
-    def __repr__(self) -> str:  # pragma: no cover - debugging aid
-        return f"<MindMapEdge {self.source_id}->{self.target_id}>"

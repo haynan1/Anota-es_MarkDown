@@ -189,21 +189,3 @@ function edgePoint(box, towardX, towardY) {
   const reach = Math.min(scaleX, scaleY);
   return { x: cx + dx * reach, y: cy + dy * reach };
 }
-
-/**
- * The `d` of an association - the edge that is not part of the tree.
- *
- * Centre to centre whatever the layout is: a free edge says "this also has to
- * do with that", and it has no orientation of its own to respect.
- */
-export function freePath(style, source, target) {
-  const x1 = centreX(source);
-  const y1 = centreY(source);
-  const x2 = centreX(target);
-  const y2 = centreY(target);
-  if (style === 'line') return `M${n(x1)},${n(y1)} L${n(x2)},${n(y2)}`;
-
-  const midX = (x1 + x2) / 2;
-  const midY = (y1 + y2) / 2 - Math.abs(x2 - x1) * 0.12;
-  return `M${n(x1)},${n(y1)} Q${n(midX)},${n(midY)} ${n(x2)},${n(y2)}`;
-}

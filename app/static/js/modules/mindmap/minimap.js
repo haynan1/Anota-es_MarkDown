@@ -45,6 +45,7 @@ export function createMinimap({ host, canvas, store, camera, stage }) {
     projection = { scale, offsetX, offsetY, bounds };
 
     const fragment = document.createDocumentFragment();
+    const roots = store.roots();
     store.nodes.forEach((node) => {
       if (!store.isVisible(node)) return;
       const rect = document.createElementNS(NS_SVG, 'rect');
@@ -54,7 +55,9 @@ export function createMinimap({ host, canvas, store, camera, stage }) {
       rect.setAttribute('width', String(Math.max(node.width * scale, 2)));
       rect.setAttribute('height', String(Math.max(node.height * scale, 2)));
       rect.setAttribute('rx', '1.5');
-      if (!node.parent) rect.dataset.root = 'true';
+      // O mesmo "centro" que a tela pinta, e pela mesma razão: o mapa em
+      // miniatura com três pontos de acento diria que há três mapas.
+      if (roots.length && roots[0].uuid === node.uuid) rect.dataset.root = 'true';
       fragment.appendChild(rect);
     });
 

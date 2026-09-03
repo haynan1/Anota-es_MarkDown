@@ -12,9 +12,10 @@ fixture has already created the schema by the time a test sees it.
 from __future__ import annotations
 
 import sqlite3
+from pathlib import Path
 
 from alembic.script import ScriptDirectory
-from flask_migrate import downgrade
+from flask_migrate import downgrade, upgrade
 
 from app import SNAPSHOTS_KEPT, bootstrap_database, create_app
 from app.extensions import db as _db
@@ -66,10 +67,22 @@ def tables(database):
         connection.close()
 
 
-def columns(database, table):
+def schema(database):
+    """Every ``(table, column)`` the database has.
+
+    Compared before and after rather than inspected by name, so the test says
+    "the migration ran and the schema actually moved" without having to be
+    rewritten into a lie every time the head advances.
+    """
     connection = sqlite3.connect(database)
     try:
-        return {row[1] for row in connection.execute(f"pragma table_info({table})")}
+        found = set()
+        for (table,) in connection.execute(
+            "select name from sqlite_master where type='table'"
+        ):
+            for row in connection.execute(f"pragma table_info({table})"):
+                found.add((table, row[1]))
+        return found
     finally:
         connection.close()
 
@@ -109,17 +122,20 @@ def test_pending_migration_is_applied_on_startup(tmp_path):
     application = build(tmp_path, database)
     behind = previous(application)
     rewind(application)
-
     assert revision(database) == behind
-    # Whatever the head migration adds, named concretely: a test that only
-    # compared revision numbers would pass against a migration that ran and
-    # did nothing.
-    assert "layout" not in columns(database, "mind_map_nodes")
 
+    before = schema(database)
     build(tmp_path, database)
+    after = schema(database)
 
     assert revision(database) == head(application)
-    assert "layout" in columns(database, "mind_map_nodes")
+    # Not only the number: a test that compared revisions alone would pass
+    # against a migration that ran and did nothing at all.
+    assert after != before, "a migration da vez subiu sem mexer no schema"
+    # And the concrete fact, which names today's head on purpose. This line
+    # moves with the head; a generic assertion cannot tell "did the right
+    # thing" from "did some thing".
+    assert ("mind_map_nodes", "mirror_of_id") in after - before
 
 
 def test_pending_migration_leaves_a_snapshot_behind(tmp_path):
@@ -183,3 +199,155 @@ def test_opting_out_leaves_the_schema_to_flask_db(tmp_path):
     build(tmp_path, database, AUTO_CREATE_DB=False)
 
     assert "documents" not in tables(database)
+
+
+def rows_of(database, table):
+    connection = sqlite3.connect(database)
+    try:
+        return connection.execute(f"select count(*) from {table}").fetchone()[0]
+    finally:
+        connection.close()
+
+
+def seed_a_map(database):
+    """Um mapa com uma árvore de três níveis, escrito em SQL cru.
+
+    Cru porque o ORM escreve as colunas de hoje, e este teste semeia bancos
+    parados em versões antigas do schema - é justamente essa a situação que
+    ele existe para exercitar.
+
+    Uma tabela que referencia a si mesma é a única em que a reescrita de
+    tabela do SQLite pode disparar cascades contra as próprias linhas que
+    acabou de copiar, e é por isso que o mapa é o que se semeia aqui.
+    """
+    agora = "2026-01-01 00:00:00"
+    connection = sqlite3.connect(database)
+    try:
+        def insert(table, values):
+            # Cada versão do schema tem as suas colunas e as suas obrigações.
+            # Em vez de listar as de todas elas, as que faltam ganham um vazio
+            # do tipo certo - o teste é sobre não perder linhas, não sobre o
+            # conteúdo delas.
+            colunas_info = list(connection.execute(f"pragma table_info({table})"))
+            usadas = {}
+            for _, nome, tipo, notnull, default, _pk in colunas_info:
+                if nome in values:
+                    usadas[nome] = values[nome]
+                elif notnull and default is None and nome != "id":
+                    usadas[nome] = 0 if tipo.upper() in ("INTEGER", "FLOAT", "REAL") else ""
+            colunas = ",".join(usadas)
+            marcas = ",".join("?" * len(usadas))
+            cur = connection.execute(
+                f"insert into {table} ({colunas}) values ({marcas})",
+                list(usadas.values()),
+            )
+            return cur.lastrowid
+
+        mapa = insert("mind_maps", {
+            "uuid": "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa", "title": "Mapa",
+            "slug": "mapa-dados", "description": "", "color": "#4F46E5",
+            "layout": "right", "revision": 1, "viewport_x": 0.0, "viewport_y": 0.0,
+            "viewport_zoom": 1.0, "is_favorite": 0, "is_deleted": 0,
+            "created_at": agora, "updated_at": agora,
+        })
+        anterior = None
+        for nivel, texto in enumerate(("Raiz", "Meio", "Fundo")):
+            anterior = insert("mind_map_nodes", {
+                "uuid": f"{nivel + 1}" * 8 + "-1111-4111-8111-111111111111",
+                "map_id": mapa, "parent_id": anterior, "position": 0,
+                "kind": "topic", "text": texto, "note": "", "url": "",
+                "image_url": "", "x": 0.0, "y": 0.0, "width": 180.0, "height": 48.0,
+                "color": "", "shape": "rounded", "is_collapsed": 0,
+                "created_at": agora, "updated_at": agora,
+            })
+        insert("documents", {
+            "uuid": "bbbbbbbb-1111-4111-8111-bbbbbbbbbbbb", "title": "Um documento",
+            "slug": "um-documento", "content_markdown": "", "content_html": "",
+            "excerpt": "", "word_count": 0, "reading_minutes": 0,
+            "is_favorite": 0, "is_archived": 0, "is_deleted": 0,
+            "created_at": agora, "updated_at": agora,
+        })
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def test_an_upgrade_never_takes_the_data_with_it(tmp_path):
+    """Subir de qualquer versão até a atual não pode apagar linha nenhuma.
+
+    O defeito que isto fixa custou o mapa mental de quem usa o sistema.
+
+    SQLite não sabe alterar uma coluna: o Alembic reescreve a tabela inteira -
+    cria uma temporária, copia as linhas, **derruba a original** e renomeia. A
+    aplicação liga ``PRAGMA foreign_keys`` em toda conexão, porque sem isso os
+    ``ON DELETE CASCADE`` não fazem nada; e com ela ligada, aquele DROP dispara
+    os cascades que apontam para a tabela sendo reescrita. Numa tabela que
+    referencia a si mesma - os tópicos de um mapa, cada um filho de outro -
+    isso apaga todo filho e deixa só as raízes.
+
+    Passou por vinte migrações sem aparecer porque nenhuma outra tabela do
+    sistema aponta para si mesma. Apareceu na primeira que reescreveu a dos
+    tópicos, e apareceu como uma tela em branco.
+
+    A propriedade é sobre *subir*: um ``downgrade`` pode legitimamente
+    descartar o que a versão nova trouxe, mas atualizar um banco em produção
+    nunca pode perder o que já estava lá. Cada degrau da cadeia é semeado com
+    dados e subido até o topo, um de cada vez, para que a falha aponte a
+    migração culpada em vez de dizer só que a cadeia perdeu linhas.
+    """
+    application = build(tmp_path, tmp_path / "escada.db")
+    with application.app_context():
+        script_dir = ScriptDirectory.from_config(migrate.get_config())
+        chain = [rev.revision for rev in script_dir.walk_revisions()][::-1]
+
+    testadas = 0
+    for target in chain[:-1]:
+        database = tmp_path / f"de-{target}.db"
+        one = build(tmp_path, database)
+        with one.app_context():
+            downgrade(revision=target)
+
+        # Só faz sentido a partir da versão em que a árvore existe.
+        if "mind_map_nodes" not in tables(database):
+            continue
+        seed_a_map(database)
+
+        antes = {
+            table: rows_of(database, table)
+            for table in ("documents", "mind_maps", "mind_map_nodes")
+        }
+        assert antes["mind_map_nodes"] == 3, "o teste precisa de uma árvore de verdade"
+
+        with one.app_context():
+            upgrade()
+
+        for table, total in antes.items():
+            assert rows_of(database, table) == total, (
+                f"subir de {target} até o topo levou linhas de {table}: "
+                f"{total} viraram {rows_of(database, table)}"
+            )
+        testadas += 1
+
+    assert testadas, "nenhuma versão da cadeia tinha a árvore para semear"
+
+
+def test_the_migrations_run_with_foreign_keys_off(tmp_path):
+    """E a razão de tudo isso, dita onde ela vale.
+
+    Uma pragma que não pegou é a diferença entre uma migração e uma perda de
+    dados, então ``env.py`` não confia: ele confere e recusa migrar se não
+    conseguir desligá-las.
+    """
+    source = Path("migrations", "env.py").read_text(encoding="utf-8")
+
+    assert "PRAGMA foreign_keys=OFF" in source
+    assert "dbapi_connection" in source, "precisa ser na conexão crua"
+    assert "connection.rollback()" in source, (
+        "a pragma é ignorada em silêncio dentro de uma transação"
+    )
+    assert "PRAGMA foreign_key_check" in source, (
+        "o que a migração deixou quebrado tem de aparecer agora"
+    )
+    assert "raise RuntimeError" in source, (
+        "não conseguir desligar as chaves tem de parar a migração"
+    )

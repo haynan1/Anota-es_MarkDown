@@ -49,6 +49,7 @@ from app.services.mind_map_service import (
 )
 from app.utils.files import safe_filename
 from app.utils.orm import identities_of
+from app.utils.params import positive_int
 
 # A palette rather than a colour wheel. Eight hues that stay legible against
 # both themes and against each other - a canvas where every branch is a
@@ -98,7 +99,6 @@ def index():
     search = (request.args.get("q") or "").strip()[:120]
     trashed = request.args.get("escopo") == "lixeira"
     favorites = request.args.get("favoritos") == "1"
-
     maps = MindMapRepository.listing(
         search=search, favorites_only=favorites, deleted=trashed
     )

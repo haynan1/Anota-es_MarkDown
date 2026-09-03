@@ -24,7 +24,7 @@ from math import hypot
 
 import pytest
 
-from app.models import MindMap, MindMapEdge, MindMapNode
+from app.models import MindMap, MindMapNode
 from app.models.mind_map import LAYOUT_HINTS, LAYOUT_LABELS, LAYOUTS
 from app.repositories.mind_map_repository import MindMapRepository
 from app.services.exceptions import ConflictError, NotFoundError, ValidationError
@@ -38,13 +38,13 @@ from app.services.mind_map_layout import (
     branch_routing,
     compute_layout,
     effective_layouts,
-    free_path,
 )
 from app.services.mind_map_service import MAX_DEPTH, MindMapService
 
 
 JS_DIR = pathlib.Path(__file__).resolve().parent / "js"
 PLACEMENT_SUITE = JS_DIR / "mindmap-placement.test.mjs"
+BOOT_SUITE = JS_DIR / "mindmap-boot.test.mjs"
 ROUTING_SUITE = JS_DIR / "mindmap-routing.test.mjs"
 
 
@@ -146,20 +146,22 @@ class TestLifecycle:
         )
 
     def test_a_copy_carries_the_whole_graph(self, app, mind_map, root):
-        child = add(mind_map, parent=root.uuid, text="Marketing", color="#22C55E")
-        other = add(mind_map, parent=root.uuid, text="Engenharia")
-        MindMapService.apply_operations(
-            mind_map,
-            [{"type": "edge.create", "uuid": new_id(), "source": child,
-              "target": other, "fields": {"label": "depende"}}],
-        )
+        add(mind_map, parent=root.uuid, text="Marketing", color="#22C55E")
+        deeper = add(mind_map, parent=root.uuid, text="Engenharia")
+        add(mind_map, parent=deeper, text="Plataforma")
 
         clone = MindMapService.duplicate(mind_map)
         graph = MindMapService.graph_payload(clone)
 
         assert clone.uuid != mind_map.uuid
-        assert len(graph["nodes"]) == 3
-        assert len(graph["edges"]) == 1
+        assert len(graph["nodes"]) == 4
+        # E a hierarquia inteira veio junto, não só as caixas.
+        by_uuid = {node["uuid"]: node for node in graph["nodes"]}
+        levels = [node["parent"] for node in graph["nodes"]]
+        assert levels.count(None) == 1, "a cópia tem uma raiz só"
+        assert any(by_uuid[node["parent"]]["parent"] for node in graph["nodes"] if node["parent"]), (
+            "o terceiro nível não sobreviveu à cópia"
+        )
         # The copy is independent: its nodes are new rows with new identities.
         original_uuids = {node["uuid"] for node in MindMapService.graph_payload(mind_map)["nodes"]}
         assert not original_uuids & {node["uuid"] for node in graph["nodes"]}
@@ -373,68 +375,53 @@ class TestHierarchy:
 
 
 class TestConnections:
-    def test_two_nodes_can_be_associated(self, app, mind_map, root):
-        left = add(mind_map, parent=root.uuid, text="Esquerda")
-        right = add(mind_map, parent=root.uuid, text="Direita")
+    """Conectar é pendurar, e é a única coisa que uma linha quer dizer.
+
+    O quadro desenhava dois tipos de linha - a espinha pai-filho e uma
+    associação livre que atravessava o mapa sem mudar nada - e nada na tela
+    dizia qual era qual. Qual delas um gesto produzia virou a fonte mais
+    confiável de confusão do mapa: "conectar" podia deixar a estrutura
+    exatamente como estava. Sobrou uma linha, e ela é a árvore.
+    """
+
+    def test_connecting_two_topics_puts_one_inside_the_other(self, app, mind_map, root):
+        other = add(mind_map, text="Solto")
 
         MindMapService.apply_operations(
             mind_map,
-            [{"type": "edge.create", "uuid": new_id(), "source": left,
-              "target": right, "fields": {"label": "alimenta", "style": "dashed"}}],
+            [{"type": "node.move", "uuid": other, "parent": root.uuid}],
         )
 
-        edges = MindMapService.graph_payload(mind_map)["edges"]
-        assert len(edges) == 1
-        assert edges[0]["label"] == "alimenta"
-        assert edges[0]["style"] == "dashed"
+        assert node_by_uuid(other).parent_id == node_by_uuid(root.uuid).id
 
-    def test_a_node_cannot_be_connected_to_itself(self, app, mind_map, root):
-        with pytest.raises(ValidationError):
-            MindMapService.apply_operations(
-                mind_map,
-                [{"type": "edge.create", "uuid": new_id(),
-                  "source": root.uuid, "target": root.uuid}],
-            )
+    def test_the_graph_carries_no_second_kind_of_line(self, app, mind_map, root):
+        """O payload não tem mais onde guardar uma associação, e é isso que
+        garante que nenhuma volte a aparecer por um caminho lateral."""
+        payload = MindMapService.graph_payload(mind_map)
 
-    def test_the_same_association_is_never_drawn_twice(self, app, mind_map, root):
-        other = add(mind_map, parent=root.uuid, text="Outro")
-        pair = {"source": root.uuid, "target": other}
+        assert "edges" not in payload
+        assert "edges" not in payload["limits"]
+
+    def test_the_operation_protocol_refuses_the_old_verbs(self, app, mind_map, root):
+        """Uma aba antiga, aberta desde antes, mandaria estas."""
+        for verb in ("edge.create", "edge.update", "edge.delete"):
+            with pytest.raises(ValidationError):
+                MindMapService.apply_operations(
+                    mind_map, [{"type": verb, "uuid": new_id()}]
+                )
+
+    def test_disconnecting_leaves_the_topic_and_its_branch_standing(
+        self, app, mind_map, root
+    ):
+        branch = add(mind_map, parent=root.uuid, text="Ramo")
+        below = add(mind_map, parent=branch, text="Sob o ramo")
 
         MindMapService.apply_operations(
-            mind_map, [{"type": "edge.create", "uuid": new_id(), **pair}]
-        )
-        MindMapService.apply_operations(
-            mind_map,
-            [{"type": "edge.create", "uuid": new_id(), **pair,
-              "fields": {"label": "segunda tentativa"}}],
+            mind_map, [{"type": "node.move", "uuid": branch, "parent": None}]
         )
 
-        edges = MindMapService.graph_payload(mind_map)["edges"]
-        assert len(edges) == 1
-        assert edges[0]["label"] == "segunda tentativa"
-
-    def test_an_edge_dies_with_the_node_it_touched(self, app, db, mind_map, root):
-        other = add(mind_map, parent=root.uuid, text="Outro")
-        MindMapService.apply_operations(
-            mind_map,
-            [{"type": "edge.create", "uuid": new_id(), "source": root.uuid, "target": other}],
-        )
-
-        MindMapService.apply_operations(mind_map, [{"type": "node.delete", "uuid": other}])
-
-        assert db.session.scalars(db.select(MindMapEdge)).all() == []
-
-    def test_an_invalid_style_is_refused(self, app, mind_map, root):
-        other = add(mind_map, parent=root.uuid)
-        with pytest.raises(ValidationError):
-            MindMapService.apply_operations(
-                mind_map,
-                [{"type": "edge.create", "uuid": new_id(), "source": root.uuid,
-                  "target": other, "fields": {"style": "neon"}}],
-            )
-
-
-# ── Valores que entram ──────────────────────────────────────────────────────
+        assert node_by_uuid(branch).parent_id is None
+        assert node_by_uuid(below).parent_id == node_by_uuid(branch).id
 
 
 class TestSanitising:
@@ -1028,7 +1015,6 @@ class TestALinkFollowsTheArrangement:
             branch_path(routing, Box(-90, -24, 180, 48), Box(-90, 100, 180, 48))
             for routing in set(BRANCH_ROUTING.values())
         ]
-        paths.append(free_path("curve", Box(-90, -24, 180, 48), Box(-90, 100, 180, 48)))
 
         for path in paths:
             assert "-0.0" not in path, path
@@ -1047,11 +1033,7 @@ class TestTheExportDrawsTheSameMap:
         add(mind_map, parent=root.uuid, text="Ramo")
         MindMapService.autolayout(mind_map, "tree")
 
-        svg = to_svg(
-            mind_map,
-            MindMapRepository.nodes_of(mind_map),
-            MindMapRepository.edges_of(mind_map),
-        )
+        svg = to_svg(mind_map, MindMapRepository.nodes_of(mind_map))
 
         paths = self.branch_paths(svg)
         assert paths, "o SVG saiu sem ligações"
@@ -1062,12 +1044,11 @@ class TestTheExportDrawsTheSameMap:
     ):
         add(mind_map, parent=root.uuid, text="Ramo")
         nodes = MindMapRepository.nodes_of(mind_map)
-        edges = MindMapRepository.edges_of(mind_map)
 
         drawings = set()
         for layout in LAYOUTS:
             mind_map.layout = layout
-            drawings.add(tuple(self.branch_paths(to_svg(mind_map, nodes, edges))))
+            drawings.add(tuple(self.branch_paths(to_svg(mind_map, nodes))))
 
         assert len(drawings) == len(LAYOUTS), (
             "duas disposições exportando o mesmo desenho"
@@ -1080,7 +1061,7 @@ class TestTheExportDrawsTheSameMap:
         MindMapService.autolayout(mind_map, "tree")
 
         nodes = {node.uuid: node for node in MindMapRepository.nodes_of(mind_map)}
-        svg = to_svg(mind_map, list(nodes.values()), [])
+        svg = to_svg(mind_map, list(nodes.values()))
 
         parent, kid = nodes[root.uuid], nodes[child]
         expected = branch_path(
@@ -1123,13 +1104,6 @@ class TestBothLanguagesDrawTheSameLine:
             assert here == case["d"], (
                 f"{case['routing']}: python {here!r} contra javascript {case['d']!r}"
             )
-
-    def test_every_association_is_drawn_identically(self):
-        for case in self.table()["free"]:
-            here = free_path(
-                case["style"], Box(**case["source"]), Box(**case["target"])
-            )
-            assert here == case["d"], case
 
     def test_both_sides_map_a_layout_to_the_same_routing(self):
         for layout, routing in self.table()["routings"].items():
@@ -1599,6 +1573,735 @@ class TestTheBranchArrangementIsOffered:
         )
 
 
+class TestALinkCanBeCut:
+    """Soltar um bloco em cima do outro pendura um no outro - e dava para
+    desfazer de nenhum jeito.
+
+    A linha entre pai e filho já era desenhada com um caminho de acerto gordo
+    e ``cursor: pointer``, ou seja, anunciava-se clicável; mas a marca que o
+    clique procura estava só no ``<g>`` em volta, e o que o ponteiro acerta é
+    o caminho lá dentro. Resultado: a linha prometia um clique que não
+    respondia. O gesto que a cria tinha ida e não tinha volta.
+
+    Um segundo defeito no mesmo lugar, que só apareceu ao consertar o
+    primeiro: ``.mm-link.is-selected`` existia no CSS e nada no JavaScript
+    aplicava a classe - nem a conexão livre, que já era clicável, mostrava que
+    estava selecionada.
+
+    Lido dos arquivos, como as outras invariantes desta suíte.
+    """
+
+    @pytest.fixture()
+    def canvas(self, client, mind_map):
+        response = client.get(f"/mapas/{mind_map.uuid}")
+        assert response.status_code == 200
+        return response.get_data(as_text=True)
+
+    @pytest.fixture()
+    def source(self, app):
+        base = pathlib.Path(app.root_path) / "static" / "js"
+        return {
+            name: (base / "modules" / "mindmap" / f"{name}.js").read_text(encoding="utf-8")
+            for name in ("canvas", "interactions", "inspector", "actions")
+        }
+
+    def test_the_mark_the_click_looks_for_is_on_what_the_pointer_hits(self, source):
+        """On the paths, not only on the group around them."""
+        assert "entry.hit.dataset.branch = node.uuid" in source["canvas"]
+        assert "entry.path.dataset.branch = node.uuid" in source["canvas"]
+
+    def test_a_press_on_a_hierarchy_line_reaches_someone(self, source):
+        assert "event.target.closest('[data-branch]')" in source["interactions"]
+        assert "onSelectBranch(branchHit.dataset.branch)" in source["interactions"]
+
+    def test_the_delete_key_takes_the_selected_line_first(self, source):
+        """With a line selected there is no selected topic, so the fallback
+        would delete nothing and the key would look broken."""
+        interactions = source["interactions"]
+        removal = interactions.index("if (onRemoveLink && onRemoveLink()) break;")
+        fallback = interactions.index("actions.removeSelection();", removal)
+        assert removal < fallback
+
+    def test_a_selected_connection_is_visible_as_selected(self, source):
+        """`.mm-link.is-selected` was in the stylesheet and nothing applied
+        it - not even to the association, which was already clickable."""
+        assert "classList.toggle('is-selected'" in source["canvas"]
+        assert "setLinkSelection" in source["canvas"]
+
+    def test_cutting_is_reparenting_to_nowhere(self, source):
+        assert "function detach(uuid)" in source["actions"]
+        assert "return reparent(uuid, null);" in source["actions"]
+
+    def test_the_line_offers_exactly_one_thing(self, canvas):
+        panel = re.search(r'<div class="mm-inspector-form" data-branch-form.*?\n        </div>',
+                          canvas, re.S)
+        assert panel, "não há painel para a ligação de hierarquia"
+
+        markup = panel.group(0)
+        assert 'data-action="mm-detach"' in markup
+        assert "mm-branch-demote" not in markup, "não há segundo tipo de linha"
+        assert "data-branch-child" in markup and "data-branch-parent" in markup, (
+            "o painel precisa dizer que ligação é essa"
+        )
+        assert "hidden" in markup, "o painel aparece sem linha selecionada"
+
+    def test_cutting_is_also_reachable_without_a_pointer(self, canvas):
+        """A line takes no focus, so with the button only on the line this
+        would be a change only a mouse could make."""
+        actions = re.search(
+            r'<div class="mm-inspector-actions">(?:(?!</div>).)*?data-action="mm-add-child".*?</div>',
+            canvas, re.S
+        )
+        assert actions, "painel do tópico sem barra de ações"
+        assert 'data-action="mm-detach"' in actions.group(0)
+
+    def test_the_promise_the_panel_makes_is_the_one_the_code_keeps(self, source):
+        """The panel says nothing is deleted. `detach` moves one field and
+        touches no other node - the branch underneath comes along."""
+        assert "actions.removeSelection" not in source["inspector"].split(
+            "case 'mm-detach'"
+        )[1].split("break;")[0]
+
+
+class TestALooseTopicIsNotTheCentre:
+    """Cortar uma linha deixava dois "blocos fortes" na tela, sem volta.
+
+    Two defects with one cause: the canvas answered "is this the centre of the
+    map?" with "does it have a parent?". Cut one line and the branch below it
+    took the map's accent, its white text and its shadow - announcing itself
+    as the subject of the board rather than as the branch that had come
+    loose. And the gesture that made it had no inverse within reach: dragging
+    the whole branch onto another topic was the only way back, so the button
+    people found instead was "Conectar a…", which draws an association - a
+    dashed line that looks resolved and restores no hierarchy at all.
+    """
+
+    @pytest.fixture()
+    def canvas(self, client, mind_map):
+        response = client.get(f"/mapas/{mind_map.uuid}")
+        assert response.status_code == 200
+        return response.get_data(as_text=True)
+
+    @pytest.fixture()
+    def source(self, app):
+        base = pathlib.Path(app.root_path) / "static" / "js" / "modules" / "mindmap"
+        return {
+            name: (base / f"{name}.js").read_text(encoding="utf-8")
+            for name in ("canvas", "interactions", "minimap")
+        }
+
+    @pytest.fixture()
+    def canvas_css(self, app):
+        return (
+            pathlib.Path(app.root_path) / "static" / "css" / "mindmap.css"
+        ).read_text(encoding="utf-8")
+
+    def test_the_centre_is_one_topic_not_every_orphan(self, source):
+        """`!node.parent` answers "is this a root", which is not the same
+        question."""
+        canvas = source["canvas"]
+        assert "roots[0].uuid === node.uuid" in canvas
+        assert "element.dataset.root = centre ? 'true' : 'false';" in canvas
+        assert "element.dataset.root = node.parent ? 'false' : 'true';" not in canvas
+
+    def test_the_accent_goes_to_the_centre_only(self, source):
+        assert "shown.color || (centre ? accent : '')" in source["canvas"]
+
+    def test_the_minimap_answers_the_same_question(self, source):
+        """Three accent dots in the miniature would say there are three maps."""
+        assert "roots[0].uuid === node.uuid" in source["minimap"]
+        assert "if (!node.parent) rect.dataset.root" not in source["minimap"]
+
+    def test_a_loose_topic_says_so_quietly(self, source, canvas_css):
+        assert "element.dataset.loose = loose ? 'true' : 'false';" in source["canvas"]
+        assert '.mm-node[data-loose="true"] { border-style: dashed; }' in canvas_css
+
+    def test_hanging_a_topic_back_is_reachable_without_dragging(self, source, canvas):
+        interactions = source["interactions"]
+        assert "function beginAttach(uuid, mode = 'move')" in interactions
+        assert "actions.reparent(child, uuid)" in interactions, (
+            "pendurar precisa devolver hierarquia, não criar uma associação"
+        )
+        assert 'data-action="mm-attach"' in canvas
+
+    def test_the_two_halves_of_the_gesture_sit_together(self, canvas):
+        """Cutting and re-hanging are one decision seen from two sides."""
+        actions = re.search(
+            r'<div class="mm-inspector-actions">(?:(?!</div>).)*?data-action="mm-add-child".*?</div>',
+            canvas, re.S
+        ).group(0)
+
+        assert 'data-action="mm-detach"' in actions
+        assert 'data-action="mm-attach"' in actions
+
+    def test_a_half_made_attachment_is_always_cancellable(self, source):
+        """Senão o próximo clique em qualquer lugar mexe na estrutura.
+
+        Todo caminho que abandona o gesto o encerra: o Esc, o clique no vazio
+        e a troca de ferramenta. A única exceção é trocar *para* a ferramenta
+        que é o gesto - o que não é abandoná-lo, é escolhê-lo.
+        """
+        interactions = source["interactions"]
+
+        assert "clearConnect();\n    clearAttach();" in interactions, "no vazio"
+        assert "clearConnect();\n        clearAttach();" in interactions, "no Esc"
+        assert "if (next !== 'share') clearAttach();" in interactions, (
+            "trocar de ferramenta encerra o gesto, menos ao escolher a dele"
+        )
+
+
+class TestTheOutlineShowsAndTheBoardEdits:
+    """A Estrutura mostra a forma do mapa; quem a muda é a tela.
+
+    Duas superfícies editando a mesma estrutura era pedir para alguém
+    arrastar num lugar e procurar o resultado no outro. O painel ficou com o
+    que é leitura - abrir e fechar um ramo, encontrar um tópico na tela - e a
+    tela ficou com a edição, que é onde ela já estava.
+
+    O que não podia se perder junto é o teclado: a tela é uma figura, e uma
+    figura é inalcançável por leitor de tela. Por isso Alt e as setas mudam a
+    hierarquia do tópico selecionado, no palco.
+    """
+
+    @pytest.fixture()
+    def canvas(self, client, mind_map):
+        response = client.get(f"/mapas/{mind_map.uuid}")
+        assert response.status_code == 200
+        return response.get_data(as_text=True)
+
+    @pytest.fixture()
+    def source(self, app):
+        base = pathlib.Path(app.root_path) / "static" / "js" / "modules" / "mindmap"
+        return {
+            name: (base / f"{name}.js").read_text(encoding="utf-8")
+            for name in ("inspector", "interactions", "actions")
+        }
+
+    def test_the_panel_no_longer_rearranges(self, source):
+        inspector = source["inspector"]
+        for gone in ("dragstart", "dropZone", "dropAllowed", "actions.indent"):
+            assert gone not in inspector, gone
+
+    def test_but_it_still_folds_and_finds(self, source):
+        inspector = source["inspector"]
+        assert "actions.toggleCollapse(uuid)" in inspector
+        assert "context.onReveal(uuid)" in inspector
+        assert "event.key === 'Enter' || event.key === ' '" in inspector
+
+    def test_the_board_took_the_keyboard_that_restructures(self, source):
+        """Sem isto não sobraria caminho nenhum de teclado para mudar a
+        hierarquia, e o painel acessível teria virado só um espelho."""
+        interactions = source["interactions"]
+        assert "event.altKey && !event.shiftKey" in interactions
+        assert "actions.indent(primary)" in interactions
+        assert "actions.outdent(primary)" in interactions
+        assert "actions.shiftSibling(primary, -1)" in interactions
+
+    def test_the_shortcut_sheet_says_so(self, canvas):
+        sheet = re.search(r'<dl class="mm-shortcuts">.*?</dl>', canvas, re.S).group(0)
+        assert "Alt" in sheet and "hierarquia" in sheet
+        assert "Na Estrutura" not in sheet, "o painel não reorganiza mais"
+
+    def test_the_empty_panel_is_drawn(self, source):
+        """Um painel em branco não diz se o mapa está vazio ou se o painel
+        quebrou. Todo estado é desenhado, inclusive este."""
+        assert "mm-outline-empty" in source["inspector"]
+        assert "Ainda não há tópicos" in source["inspector"]
+
+    def test_the_panel_says_what_it_is(self, canvas):
+        hint = re.search(r'<p class="mm-outline-hint">.*?</p>', canvas, re.S).group(0)
+        assert "A forma do mapa" in hint
+        assert "Arraste" not in hint
+
+
+class TestASharedTopic:
+    """Um tópico que vale para várias etapas.
+
+    O caso de verdade: "Objetivo de campanha" tem seis filhos - Vendas, Leads,
+    Tráfego, App, Alcance, Visitas - e "Modelo de alcance", com os seis modelos
+    de campanha dentro, estava pendurado só em Vendas. Ele vale para todas.
+
+    Uma árvore não sabe dizer isso: um tópico tem um pai. O espelho é como
+    passa a ser dito sem que o mapa deixe de ser uma árvore - uma linha como
+    qualquer outra, e na ponta dela um tópico que mora noutro lugar. É o mesmo
+    tópico, não uma cópia, e é essa diferença que estes testes guardam: seis
+    cópias divergem no dia em que alguém corrige uma; um tópico compartilhado
+    não tem como divergir de si mesmo.
+    """
+
+    @pytest.fixture()
+    def other(self, app):
+        return MindMapService.create("Outro mapa", "")
+
+    @pytest.fixture()
+    def stages(self, app, mind_map, root):
+        """Vendas e Leads, com o bloco comum pendurado em Vendas."""
+        vendas = add(mind_map, parent=root.uuid, text="Vendas")
+        leads = add(mind_map, parent=root.uuid, text="Leads")
+        bloco = add(mind_map, parent=vendas, text="Modelo de alcance")
+        add(mind_map, parent=bloco, text="Shopping")
+        add(mind_map, parent=bloco, text="Performance MAX")
+        return vendas, leads, bloco
+
+    def share(self, mind_map, parent, target):
+        identifier = new_id()
+        MindMapService.apply_operations(
+            MindMapService.require(mind_map.uuid),
+            [{"type": "node.create", "uuid": identifier, "parent": parent,
+              "fields": {"mirror_of": target}}],
+        )
+        return identifier
+
+    def test_the_same_topic_appears_under_another_stage(self, app, mind_map, stages):
+        _vendas, leads, bloco = stages
+
+        mirror = self.share(mind_map, leads, bloco)
+
+        assert node_by_uuid(mirror).mirror_of_id == node_by_uuid(bloco).id
+        payload = MindMapService.graph_payload(MindMapService.require(mind_map.uuid))
+        shown = next(n for n in payload["nodes"] if n["uuid"] == mirror)
+        assert shown["mirror_of"] == bloco
+
+    def test_renaming_the_original_renames_every_appearance(self, app, mind_map, stages):
+        """É o mesmo tópico. Seis cópias divergiriam no dia em que alguém
+        corrigisse uma; esta é a diferença que o espelho compra."""
+        _vendas, leads, bloco = stages
+        mirror = self.share(mind_map, leads, bloco)
+
+        MindMapService.apply_operations(
+            MindMapService.require(mind_map.uuid),
+            [{"type": "node.update", "uuid": bloco, "fields": {"text": "Modelos"}}],
+        )
+
+        # O espelho não guarda texto nenhum: ele mostra o de lá.
+        assert node_by_uuid(mirror).text == ""
+        assert node_by_uuid(bloco).text == "Modelos"
+
+    def test_the_board_shows_one_box_and_a_line_from_each_place(
+        self, app, mind_map, stages
+    ):
+        """Sete caixas com o mesmo nome dizem menos do que uma caixa com sete
+        linhas chegando nela.
+
+        A primeira tentativa repetia a caixa embaixo de cada etapa, e o quadro
+        virou uma fileira de rótulos idênticos - "muitos mecanismos
+        repetidos". Uma segunda aparição deixou de ocupar lugar no arranjo: o
+        que a desenha é a linha que sai do pai dela e chega no tópico de
+        verdade.
+        """
+        _vendas, leads, bloco = stages
+        self.share(mind_map, leads, bloco)
+
+        nodes = MindMapRepository.nodes_of(MindMapService.require(mind_map.uuid))
+        by_id = {node.id: node.uuid for node in nodes}
+        placed = compute_layout(
+            [
+                LayoutNode(
+                    node.uuid,
+                    by_id.get(node.parent_id) if node.parent_id else None,
+                    node.width, node.height, node.is_collapsed, node.layout,
+                    by_id.get(node.mirror_of_id) if node.mirror_of_id else None,
+                )
+                for node in nodes
+            ],
+            "tree",
+        )
+
+        espelhos = [n.uuid for n in nodes if n.mirror_of_id]
+        assert espelhos, "o teste precisa de um tópico compartilhado"
+        assert not any(uuid in placed for uuid in espelhos), (
+            "uma segunda aparição não ocupa lugar: ela é uma linha, não uma caixa"
+        )
+        assert bloco in placed, "o tópico de verdade continua desenhado"
+
+    def board_with(self, blocks):
+        """Um mapa de seis etapas com vários blocos compartilhados.
+
+        `blocks` é ``{nome: etapas que o compartilham}``. Cada bloco leva três
+        subtópicos, para que o ramo dele tenha largura de verdade.
+        """
+        nodes = [LayoutNode("raiz", None, 180, 48)]
+        etapas = [f"etapa{i}" for i in range(6)]
+        nodes += [LayoutNode(e, "raiz", 180, 48) for e in etapas]
+        for bloco, compartilhado in blocks.items():
+            nodes.append(LayoutNode(bloco, etapas[0], 180, 48))
+            nodes += [LayoutNode(f"{bloco}{i}", bloco, 180, 48) for i in range(3)]
+            nodes += [
+                LayoutNode(f"s-{bloco}-{e}", e, 180, 48, mirror_of=bloco)
+                for e in compartilhado
+            ]
+        nodes.append(LayoutNode("comum", etapas[5], 180, 48))
+        return nodes
+
+    def overlaps(self, nodes, placed):
+        from itertools import combinations
+
+        por_key = {n.key: n for n in nodes}
+        caixas = {
+            key: (x, y, x + por_key[key].width, y + por_key[key].height)
+            for key, (x, y) in placed.items()
+        }
+        return [
+            (a, b) for (a, um), (b, dois) in combinations(caixas.items(), 2)
+            if um[0] < dois[2] and dois[0] < um[2] and um[1] < dois[3] and dois[1] < um[3]
+        ]
+
+    def test_arranging_a_map_with_several_shared_topics_never_overlaps(self, app):
+        """O defeito que isto fixa: "arrumar" bagunçava o fluxo inteiro.
+
+        A primeira versão puxava cada compartilhado para o meio dos pais dele,
+        um de cada vez e sem reservar lugar - então dois deles caíam um sobre
+        o outro, e sobre quem estivesse embaixo. Seis sobreposições em cada
+        arranjo, num mapa de dezoito caixas.
+
+        Agora eles saem do fluxo e vão para uma faixa no pé do mapa, lado a
+        lado. Um lugar reservado é a única forma de não haver choque.
+        """
+        nodes = self.board_with({"modelo": [f"etapa{i}" for i in range(1, 6)],
+                                 "publico": [f"etapa{i}" for i in range(2, 5)]})
+
+        for arranjo in LAYOUTS:
+            placed = compute_layout(nodes, arranjo)
+            assert not self.overlaps(nodes, placed), (
+                f"{arranjo}: {self.overlaps(nodes, placed)[:3]}"
+            )
+
+    def test_the_shared_band_keeps_each_branch_together(self, app):
+        """Um bloco compartilhado é um mapinha, e continua parecendo um: o
+        ramo dele viaja junto e fica abaixo dele."""
+        nodes = self.board_with({"modelo": ["etapa1", "etapa2"],
+                                 "publico": ["etapa3", "etapa4"]})
+        placed = compute_layout(nodes, "tree")
+
+        for bloco in ("modelo", "publico"):
+            assert all(
+                placed[f"{bloco}{i}"][1] > placed[bloco][1] for i in range(3)
+            ), bloco
+
+        # E os dois blocos ficam na mesma faixa, não empilhados.
+        assert placed["modelo"][1] == placed["publico"][1]
+
+    def test_the_band_follows_the_axis_the_map_grows_on(self, app):
+        """Uma faixa horizontal debaixo de um mapa horizontal largava o bloco
+        *abaixo e à esquerda* dos próprios pais, com o ramo dele apontando de
+        volta para cima - dois eixos brigando no mesmo desenho.
+
+        A profundidade cresce numa direção só, e um tópico compartilhado é
+        mais fundo do que todos os pais dele.
+        """
+        nodes = self.board_with({"modelo": ["etapa1", "etapa2", "etapa3"]})
+
+        across = compute_layout(nodes, "right")
+        pais = [across[f"etapa{i}"] for i in range(1, 4)]
+        assert across["modelo"][0] > max(x for x, _ in pais), (
+            "num mapa que cresce para o lado, a faixa é uma coluna à direita"
+        )
+        assert across["modelo0"][0] > across["modelo"][0], (
+            "e o ramo do bloco continua crescendo para o mesmo lado"
+        )
+
+        for arranjo in ("tree", "down"):
+            placed = compute_layout(nodes, arranjo)
+            pais = [placed[f"etapa{i}"] for i in range(1, 4)]
+            assert placed["modelo"][1] > max(y for _, y in pais), arranjo
+            assert placed["modelo0"][1] > placed["modelo"][1], arranjo
+
+    def test_the_band_keeps_the_rhythm_of_the_arrangement(self, app):
+        """A árvore usa um vão menor entre níveis do que os outros arranjos.
+
+        A faixa usar o vão padrão quebrava a cadência do mapa justamente na
+        última linha, que é onde ela mais aparece - três níveis a 124px e o
+        quarto a 144.
+        """
+        nodes = self.board_with({"modelo": ["etapa1", "etapa2"]})
+        placed = compute_layout(nodes, "tree")
+
+        linhas = sorted({round(y) for _, y in placed.values()})
+        vaos = {b - a for a, b in zip(linhas, linhas[1:])}
+        assert len(vaos) == 1, f"a cadeia de níveis ficou irregular: {sorted(vaos)}"
+
+    def test_a_deep_branch_elsewhere_does_not_push_the_band_away(self, app):
+        """A faixa se afasta do mais fundo que *cruza com ela*, e não do mais
+        fundo do mapa: um ramo comprido do outro lado do quadro não tem por
+        que empurrar as linhas compartilhadas para longe de quem as chama."""
+        nodes = self.board_with({"modelo": ["etapa4", "etapa5"]})
+        raso = compute_layout(nodes, "tree")["modelo"][1]
+
+        # Um ramo fundo, bem longe do lado em que a faixa cai.
+        fundo = list(nodes)
+        anterior = "etapa0"
+        for nivel in range(4):
+            fundo.append(LayoutNode(f"fundo{nivel}", anterior, 180, 48))
+            anterior = f"fundo{nivel}"
+
+        assert compute_layout(fundo, "tree")["modelo"][1] == raso
+
+    def test_the_shared_topic_sits_between_the_places_that_share_it(self, app, mind_map, stages):
+        """Um tópico com um pai fica onde a árvore o pôs. Um que vale para
+        várias etapas não tem *um* lugar certo - tem vários - então desce para
+        o meio deles, que é onde as linhas se cruzam menos."""
+        vendas, leads, bloco = stages
+        self.share(mind_map, leads, bloco)
+        MindMapService.autolayout(MindMapService.require(mind_map.uuid), "tree")
+
+        nodes = {n.uuid: n for n in MindMapRepository.nodes_of(
+            MindMapService.require(mind_map.uuid))}
+        alvo, um, dois = nodes[bloco], nodes[vendas], nodes[leads]
+
+        centro = ((um.x + um.width / 2) + (dois.x + dois.width / 2)) / 2
+        assert abs((alvo.x + alvo.width / 2) - centro) < 1
+        assert alvo.y > max(um.y + um.height, dois.y + dois.height)
+
+    def test_duplicating_a_map_keeps_its_shared_topics(self, app, mind_map, stages):
+        """Uma cópia que apontasse para o mapa original seriam dois mapas se
+        editando mutuamente, que não é o que "duplicar" quer dizer."""
+        _vendas, leads, bloco = stages
+        self.share(mind_map, leads, bloco)
+
+        clone = MindMapService.duplicate(MindMapService.require(mind_map.uuid))
+        nodes = MindMapRepository.nodes_of(clone)
+        dentro = {n.id for n in nodes}
+        espelhos = [n for n in nodes if n.mirror_of_id]
+
+        assert len(espelhos) == 1, "a cópia perdeu o tópico compartilhado"
+        assert all(n.mirror_of_id in dentro for n in espelhos), (
+            "a cópia aponta para o mapa original"
+        )
+
+    def test_a_mirror_never_grows_a_branch_of_its_own(self, app, mind_map, stages):
+        """Aceitar filhos aqui criaria dois lugares onde o mesmo assunto
+        continua de formas diferentes - o custo exato de duplicar."""
+        _vendas, leads, bloco = stages
+        mirror = self.share(mind_map, leads, bloco)
+
+        with pytest.raises(ValidationError, match="compartilhado"):
+            MindMapService.apply_operations(
+                MindMapService.require(mind_map.uuid),
+                [{"type": "node.create", "uuid": new_id(), "parent": mirror,
+                  "fields": {"text": "Um subtópico"}}],
+            )
+
+    def test_nor_by_moving_something_into_it(self, app, mind_map, stages):
+        vendas, leads, bloco = stages
+        mirror = self.share(mind_map, leads, bloco)
+
+        with pytest.raises(ValidationError, match="compartilhado"):
+            MindMapService.apply_operations(
+                MindMapService.require(mind_map.uuid),
+                [{"type": "node.move", "uuid": vendas, "parent": mirror}],
+            )
+
+    def test_a_topic_that_already_has_a_branch_cannot_become_a_mirror(
+        self, app, mind_map, stages
+    ):
+        """O ramo é do original. Um tópico com ramo virando espelho perderia
+        o dele de vista sem apagá-lo - dois assuntos no mesmo lugar."""
+        _vendas, leads, bloco = stages
+
+        with pytest.raises(ValidationError, match="subtópicos"):
+            MindMapService.apply_operations(
+                MindMapService.require(mind_map.uuid),
+                [{"type": "node.update", "uuid": bloco, "fields": {"mirror_of": leads}}],
+            )
+
+    def test_a_mirror_of_itself_is_refused(self, app, mind_map, stages):
+        _vendas, leads, bloco = stages
+        mirror = self.share(mind_map, leads, bloco)
+
+        with pytest.raises(ValidationError):
+            MindMapService.apply_operations(
+                MindMapService.require(mind_map.uuid),
+                [{"type": "node.update", "uuid": mirror, "fields": {"mirror_of": mirror}}],
+            )
+
+    def test_a_mirror_of_a_mirror_points_at_the_real_topic(self, app, mind_map, stages):
+        """Uma cadeia a resolver a cada desenho é uma cadeia que um dia fica
+        longa. Dois espelhos do mesmo tópico são dois espelhos, não uma fila."""
+        vendas, leads, bloco = stages
+        first = self.share(mind_map, leads, bloco)
+        second = self.share(mind_map, vendas, first)
+
+        assert node_by_uuid(second).mirror_of_id == node_by_uuid(bloco).id
+
+    def test_removing_an_appearance_leaves_the_topic_alone(self, app, mind_map, stages):
+        _vendas, leads, bloco = stages
+        mirror = self.share(mind_map, leads, bloco)
+
+        MindMapService.apply_operations(
+            MindMapService.require(mind_map.uuid),
+            [{"type": "node.delete", "uuid": mirror}],
+        )
+
+        assert node_by_uuid(mirror) is None
+        assert node_by_uuid(bloco) is not None
+        assert len(MindMapService.graph_payload(
+            MindMapService.require(mind_map.uuid)
+        )["nodes"]) == 6
+
+    def test_deleting_the_topic_takes_its_appearances(self, app, mind_map, stages):
+        """Uma referência a algo que não existe mais não é nada."""
+        _vendas, leads, bloco = stages
+        mirror = self.share(mind_map, leads, bloco)
+
+        MindMapService.apply_operations(
+            MindMapService.require(mind_map.uuid),
+            [{"type": "node.delete", "uuid": bloco}],
+        )
+
+        assert node_by_uuid(mirror) is None
+
+    def test_the_markdown_writes_it_once_and_refers_to_it(self, app, mind_map, stages):
+        """Repetir o ramo em cada etapa daria um arquivo que se contradiz
+        sozinho, e perderia justamente o que o espelho carrega: é o mesmo."""
+        _vendas, leads, bloco = stages
+        self.share(mind_map, leads, bloco)
+
+        text = to_markdown(
+            MindMapService.require(mind_map.uuid),
+            MindMapRepository.nodes_of(MindMapService.require(mind_map.uuid)),
+        )
+
+        assert text.count("Shopping") == 1, "o ramo saiu duas vezes"
+        assert text.count("Modelo de alcance") == 2
+        assert "o mesmo tópico, ver acima" in text
+
+    def test_the_drawing_shows_one_box_and_two_lines(self, app, mind_map, stages):
+        """A figura exportada e o quadro na tela dizem a mesma coisa.
+
+        E o que os dois dizem é uma caixa só. Repetir a caixa embaixo de cada
+        etapa foi a primeira tentativa, e sete caixas com o mesmo nome dizem
+        menos do que uma caixa com sete linhas chegando nela.
+        """
+        _vendas, leads, bloco = stages
+        self.share(mind_map, leads, bloco)
+
+        svg = to_svg(
+            MindMapService.require(mind_map.uuid),
+            MindMapRepository.nodes_of(MindMapService.require(mind_map.uuid)),
+        )
+
+        assert svg.count("Modelo de alcance") == 1, "a caixa saiu repetida"
+        assert 'stroke-dasharray="6 5"' in svg, (
+            "o segundo caminho até um tópico precisa se distinguir do primeiro"
+        )
+
+    def test_the_gesture_is_reachable_from_the_board(self, client, mind_map, app):
+        """O defeito que isto fixa: a ação existia só dentro do painel do
+        tópico, e o painel começa fechado.
+
+        Funcionava - o teste de serviço passava, o clique programático criava
+        o espelho - e mesmo assim ninguém conseguia usar, porque não havia
+        como chegar até ela. Uma ação atrás de um painel fechado é uma ação
+        que não existe. Agora ela está na barra de ferramentas, ao lado das
+        outras três, com tecla própria.
+        """
+        html = client.get(f"/mapas/{mind_map.uuid}").get_data(as_text=True)
+
+        barra = re.search(r'<div class="mm-toolbar".*?</div>', html, re.S)
+        assert barra, "sem barra de ferramentas"
+        assert 'data-tool-button="share"' in barra.group(0), (
+            "a ação precisa estar onde as outras ferramentas estão"
+        )
+        assert "(S)" in barra.group(0), "e anunciar a própria tecla"
+
+        interactions = (
+            pathlib.Path(app.root_path)
+            / "static" / "js" / "modules" / "mindmap" / "interactions.js"
+        ).read_text(encoding="utf-8")
+        assert "if (tool === 'share')" in interactions
+        assert "setTool('share')" in interactions, "a tecla S liga a ferramenta"
+        assert "if (tool === 'share') setTool('select')" in interactions, (
+            "terminar devolve a seleção, senão o próximo clique recomeça sozinho"
+        )
+
+    def test_moving_a_topic_says_where_the_other_gesture_is(self, app):
+        """O engano que este aviso corta: "conectei numa e desconectou da
+        outra".
+
+        Conectar move - é o que uma árvore quer dizer - e quem queria o mesmo
+        bloco valendo para seis etapas descobre isso uma etapa de cada vez,
+        sem nada na tela dizendo que existe outro caminho. O aviso aparece no
+        instante do engano e carrega as duas saídas: desfazer, e a ferramenta
+        que faz o que a pessoa queria.
+        """
+        interactions = (
+            pathlib.Path(app.root_path)
+            / "static" / "js" / "modules" / "mindmap" / "interactions.js"
+        ).read_text(encoding="utf-8")
+
+        assert "function noteItMoved(uuid, from)" in interactions
+        assert "Ctrl+Z" in interactions and "(S)" in interactions, (
+            "o aviso precisa carregar as duas saídas"
+        )
+        # Nos três caminhos em que uma pessoa "conecta".
+        assert interactions.count("noteItMoved(") == 4, (
+            "o arraste, o Conectar a… e a ferramenta Conectar, mais a definição"
+        )
+        # E só quando algo de fato saiu de algum lugar.
+        corpo = interactions[interactions.index("function noteItMoved"):]
+        assert "if (!from) return;" in corpo[:400], (
+            "um tópico solto que ganha um pai não saiu de lugar nenhum"
+        )
+
+    def test_sharing_stays_open_for_the_next_place(self, app):
+        """Um bloco que vale para uma etapa quase sempre vale para as outras.
+
+        "Modelo de alcance" existe embaixo de seis, e fechar o modo a cada
+        clique obrigaria a percorrer o mesmo caminho seis vezes para dizer uma
+        coisa só.
+        """
+        interactions = (
+            pathlib.Path(app.root_path)
+            / "static" / "js" / "modules" / "mindmap" / "interactions.js"
+        ).read_text(encoding="utf-8")
+
+        passo = interactions[interactions.index("function attachStep(uuid)"):]
+        passo = passo[: passo.index("\n  }\n")]
+
+        assert "if (attachMode === 'share')" in passo
+        assert passo.index("attachMode === 'share'") < passo.index("clearAttach()"), (
+            "compartilhar não pode passar pelo encerramento do modo"
+        )
+        assert "shared += 1" in passo and "Esc para terminar" in passo
+
+    def test_it_is_offered_where_a_topic_is_edited(self, client, mind_map):
+        html = client.get(f"/mapas/{mind_map.uuid}").get_data(as_text=True)
+
+        assert 'data-action="mm-share"' in html
+        panel = re.search(
+            r'<div class="mm-inspector-form" data-mirror-form.*?\n        </div>',
+            html, re.S
+        )
+        assert panel, "sem painel para o tópico compartilhado"
+        assert "não uma cópia" in panel.group(0) or "editar num lugar muda em todos" in panel.group(0), (
+            "o painel precisa dizer que editar num lugar muda em todos"
+        )
+        assert 'data-action="mm-goto-original"' in panel.group(0)
+
+    def test_a_forged_mirror_cannot_reach_another_map(self, app, mind_map, root, other):
+        outsider = add(other, text="De outro mapa")
+
+        with pytest.raises((ValidationError, NotFoundError)):
+            MindMapService.apply_operations(
+                mind_map,
+                [{"type": "node.create", "uuid": new_id(), "parent": root.uuid,
+                  "fields": {"mirror_of": outsider}}],
+            )
+
+    def test_hostile_shapes_never_reach_the_column(self, app, mind_map, stages):
+        _vendas, leads, bloco = stages
+        mirror = self.share(mind_map, leads, bloco)
+
+        for hostile in ({"a": 1}, ["x"], 7, True, "../../etc"):
+            with pytest.raises((ValidationError, NotFoundError)):
+                MindMapService.apply_operations(
+                    MindMapService.require(mind_map.uuid),
+                    [{"type": "node.update", "uuid": mirror,
+                      "fields": {"mirror_of": hostile}}],
+                )
+        assert node_by_uuid(mirror).mirror_of_id == node_by_uuid(bloco).id
+
+
 class TestExchange:
     def test_the_outline_reflects_the_hierarchy(self, app, mind_map, root):
         child = add(mind_map, parent=root.uuid, text="Marketing")
@@ -1644,7 +2347,7 @@ class TestExchange:
 
         db.session.commit()
 
-        drawing = to_svg(mind_map, MindMapRepository.nodes_of(mind_map), [])
+        drawing = to_svg(mind_map, MindMapRepository.nodes_of(mind_map))
         assert "onload" not in drawing
 
     def test_an_empty_map_still_draws(self, app, mind_map):
@@ -2020,19 +2723,18 @@ class TestOneMapCannotReachAnother:
 
         assert node_by_uuid(child).parent_id == root.id
 
-    def test_an_edge_cannot_span_two_maps(self, app, mind_map, root, other):
-        stranger = MindMapRepository.nodes_of(other)[0]
+    def test_a_topic_cannot_be_hung_under_another_map(self, app, mind_map, root, other):
+        """A fronteira que a aresta livre atravessava continua fechada para a
+        única linha que sobrou."""
+        outsider = add(other, text="De outro mapa")
 
-        with pytest.raises(NotFoundError):
+        with pytest.raises((ValidationError, NotFoundError)):
             MindMapService.apply_operations(
                 mind_map,
-                [{
-                    "type": "edge.create", "uuid": new_id(),
-                    "source": root.uuid, "target": stranger.uuid,
-                }],
+                [{"type": "node.move", "uuid": outsider, "parent": root.uuid}],
             )
 
-        assert MindMapRepository.edge_count(mind_map.id) == 0
+        assert node_by_uuid(outsider).map_id == other.id
 
     def test_the_batch_reads_only_its_own_map(self, app, mind_map, other):
         """Cheap to assert, and it is the invariant the four tests above rest on."""
@@ -2305,6 +3007,31 @@ class TestWhereALooseTopicIsBorn:
     topics created at one coordinate, stacked, so dragging the top one looked
     like dragging nothing.
     """
+
+    def test_the_board_comes_up(self, app, tmp_path, mind_map, root):
+        """Um mapa recém-criado abre com os tópicos na tela.
+
+        Dois defeitos desta classe chegaram ao produto na mesma sessão, e os
+        dois deixavam a área de trabalho em branco: uma remoção grande levou
+        junto código vizinho - uma função de ícone, depois as declarações do
+        índice de filhos - e o primeiro desenho estourou. O laço de render
+        morre junto, e não sobra nada na tela.
+
+        A suíte roda com os módulos de verdade e um dublê só para o DOM, e é
+        este teste que lhe entrega o grafo que o servidor realmente produz -
+        assim nem o formato do payload pode divergir do que a tela espera.
+        """
+        add(mind_map, parent=root.uuid, text="Um ramo")
+        graph = tmp_path / "grafo.json"
+        graph.write_text(
+            json.dumps(MindMapService.graph_payload(mind_map)), encoding="utf-8"
+        )
+
+        result = subprocess.run(  # noqa: S603 - fixed argv, no shell, no user input
+            [shutil.which("node"), str(BOOT_SUITE), str(graph)],
+            capture_output=True, text=True, encoding="utf-8", timeout=60, check=False,
+        )
+        assert result.returncode == 0, f"\n{result.stdout}\n{result.stderr}"
 
     def test_the_javascript_suite_passes(self):
         result = subprocess.run(  # noqa: S603 - fixed argv, no shell, no user input

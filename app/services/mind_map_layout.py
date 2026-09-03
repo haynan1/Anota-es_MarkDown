@@ -112,6 +112,15 @@ class LayoutNode:
     # it hangs from. This is what lets one board hold every kind of map at
     # once - see :func:`effective_layouts`.
     layout: str | None = None
+    # Quando presente, esta linha não é um tópico: é um segundo pai para o
+    # tópico que ela nomeia.
+    #
+    # Um tópico que vale para várias etapas primeiro foi desenhado repetido -
+    # uma caixa igual embaixo de cada etapa - e sete caixas com o mesmo nome
+    # dizem menos do que uma caixa com sete linhas chegando nela. Então a
+    # segunda aparição não ocupa lugar no arranjo: o que se desenha é a linha
+    # do pai até o tópico de verdade.
+    mirror_of: str | None = None
 
 
 @dataclass(slots=True)
@@ -180,22 +189,215 @@ def compute_layout(
     (branches fan out around the root).
 
     A node may name its own, and then that branch is arranged that way while
-    everything above it stays as it was - an organogram hanging off a radial
-    fan hanging off a horizontal spine, all on one board. See :func:`_compose`
-    for how the pieces are fitted together, and :func:`effective_layouts` for
-    what a node ends up arranged by when it names nothing.
+    everything above it stays as it was - see :func:`_compose` and
+    :func:`effective_layouts`.
 
-    ``down`` and ``tree`` share this arithmetic and differ in how the
-    connection between a parent and a child is drawn - which is not a detail
-    the layout hides from anyone: :func:`branch_routing` names the difference,
-    and the canvas and the exporter both read it from here.
+    Um tópico que vale para várias etapas sai da árvore
+    ---------------------------------------------------
+    Ele não tem *um* lugar na árvore - tem vários - então não disputa lugar
+    com ninguém: sai do fluxo, e ele e o ramo dele vão para uma faixa no pé do
+    mapa, lado a lado com os outros compartilhados, na ordem em que os pais
+    deles aparecem. As linhas descem até lá.
+
+    Tentar encaixá-lo no fluxo *e* puxá-lo para o meio dos pais foi a primeira
+    versão, e ela deixava um buraco onde ele estava e o punha por cima de quem
+    estivesse embaixo. Um lugar reservado é a única forma de não haver choque.
     """
     if not nodes:
         return {}
 
-    by_key = {node.key: node for node in nodes}
-    tree = build_tree(nodes)
-    return _compose(tree, by_key, direction, origin)
+    by_all = {node.key: node for node in nodes}
+    boxes = [node for node in nodes if not node.mirror_of]
+    if not boxes:
+        return {}
+
+    parents_of = _shared_parents(nodes, by_all)
+    banished = _shared_subtrees(boxes, set(parents_of))
+
+    flow = [node for node in boxes if node.key not in banished]
+    if not flow:
+        # O mapa inteiro é um tópico compartilhado. Nada a tirar do fluxo.
+        flow, banished = boxes, set()
+
+    positions = _compose(build_tree(flow), {n.key: n for n in flow}, direction, origin)
+    if banished:
+        _place_shared_band(
+            positions, boxes, by_all, parents_of, banished, direction, origin
+        )
+    return positions
+
+
+def _shared_parents(
+    nodes: Sequence[LayoutNode], by_all: dict[str, LayoutNode]
+) -> dict[str, list[str]]:
+    """Para cada tópico compartilhado, todos os lugares em que ele aparece."""
+    found: dict[str, list[str]] = {}
+    for node in nodes:
+        target = node.mirror_of
+        if target and target in by_all and not by_all[target].mirror_of:
+            found.setdefault(target, [])
+            if node.parent:
+                found[target].append(node.parent)
+    for key in list(found):
+        own = by_all[key].parent
+        if own:
+            found[key].insert(0, own)
+    return found
+
+
+def _shared_subtrees(boxes: Sequence[LayoutNode], roots: set[str]) -> set[str]:
+    """Os tópicos compartilhados e tudo que pende deles."""
+    children: dict[str, list[str]] = {}
+    for node in boxes:
+        if node.parent:
+            children.setdefault(node.parent, []).append(node.key)
+
+    banished: set[str] = set()
+    stack = list(roots)
+    while stack:
+        key = stack.pop()
+        if key in banished:
+            continue
+        banished.add(key)
+        stack.extend(children.get(key, ()))
+    return banished
+
+
+def _place_shared_band(
+    positions: dict[str, tuple[float, float]],
+    boxes: Sequence[LayoutNode],
+    by_all: dict[str, LayoutNode],
+    parents_of: dict[str, list[str]],
+    banished: set[str],
+    direction: str,
+    origin: tuple[float, float],
+) -> None:
+    """Põe cada tópico compartilhado, com o ramo dele, numa faixa própria.
+
+    A faixa segue o eixo do mapa. Num mapa que desce a página ela é uma
+    fileira embaixo; num mapa que cresce para o lado ela é uma coluna à
+    direita. Pôr uma faixa horizontal debaixo de um mapa horizontal foi a
+    primeira versão, e ela largava o bloco *abaixo e à esquerda* dos próprios
+    pais, com o ramo dele apontando de volta para cima - dois eixos brigando
+    no mesmo desenho.
+
+    Três decisões, e nenhuma é enfeite:
+
+    * **O eixo é o do mapa.** A profundidade cresce numa direção só, e um
+      tópico compartilhado é mais fundo do que todos os pais dele.
+    * **O ritmo é o do arranjo.** A árvore usa um vão menor entre níveis do
+      que os outros; a faixa usar o vão padrão quebrava a cadência do mapa
+      justamente na última linha, que é onde ela mais aparece.
+    * **A faixa desce só o quanto precisa.** Ela se afasta do mais fundo que
+      *cruza com ela*, e não do mais fundo do mapa: um ramo comprido do outro
+      lado do quadro não tem por que empurrar as linhas compartilhadas para
+      longe dos tópicos que as chamam.
+    """
+    by_key = {node.key: node for node in boxes}
+    children: dict[str, list[str]] = {}
+    for node in boxes:
+        if node.parent:
+            children.setdefault(node.parent, []).append(node.key)
+
+    horizontal = direction not in VERTICAL_LAYOUTS and direction != "radial"
+    gap_main = TREE_GAP_MAIN if direction == "tree" else GAP_MAIN
+    gap_cross = TREE_GAP_CROSS if direction == "tree" else GAP_CROSS
+
+    def centre_of(key: str, axis: int) -> float:
+        node = by_key[key]
+        size = node.width if axis == 0 else node.height
+        return positions[key][axis] + size / 2
+
+    cross_axis = 1 if horizontal else 0
+
+    def wanted(key: str) -> float:
+        marks = [
+            centre_of(parent, cross_axis)
+            for parent in parents_of.get(key, [])
+            if parent in positions and parent in by_key
+        ]
+        return sum(marks) / len(marks) if marks else 0.0
+
+    # ── Primeiro o eixo transversal: onde cada bloco fica lado a lado ───────
+    #
+    # Empacotar aqui não depende de saber onde a faixa começa, e é o que torna
+    # possível medir o quanto ela precisa descer: depois deste passo já se sabe
+    # que fatia do quadro ela vai ocupar.
+    plans: list[tuple[str, dict[str, tuple[float, float]], float, float, float]] = []
+    cursor: float | None = None
+    for key in sorted(parents_of, key=wanted):
+        if key not in by_key:
+            continue
+
+        branch = [
+            LayoutNode(
+                item,
+                None if item == key else by_key[item].parent,
+                by_key[item].width,
+                by_key[item].height,
+                by_key[item].collapsed,
+                by_key[item].layout,
+            )
+            for item in _descendants(children, key)
+            if item in by_key
+        ]
+        local = compute_layout(branch, direction, (0.0, 0.0))
+        if not local:
+            continue
+
+        left = min(x for x, _ in local.values())
+        top = min(y for _, y in local.values())
+        right = max(x + by_key[item].width for item, (x, _) in local.items())
+        bottom = max(y + by_key[item].height for item, (_, y) in local.items())
+
+        span = (bottom - top) if horizontal else (right - left)
+        start = wanted(key) - span / 2
+        if cursor is not None:
+            start = max(start, cursor)
+        cursor = start + span + gap_cross * 2
+        plans.append((key, local, left if not horizontal else top, start, span))
+
+    if not plans:
+        return
+
+    # ── Depois o eixo principal: o quanto a faixa desce (ou anda) ───────────
+    band_from = min(start for *_, start, _ in plans)
+    band_to = max(start + span for *_, start, span in plans)
+
+    floor = origin[cross_axis ^ 1]
+    for key, (x, y) in positions.items():
+        node = by_key.get(key)
+        if node is None:
+            continue
+        low, high = (y, y + node.height) if horizontal else (x, x + node.width)
+        if high <= band_from or low >= band_to:
+            continue  # não cruza com a faixa: não a empurra
+        floor = max(floor, (x + node.width) if horizontal else (y + node.height))
+    main = floor + gap_main
+
+    for key, local, edge, start, _span in plans:
+        for item, (x, y) in local.items():
+            if horizontal:
+                positions[item] = (x - min(v for v, _ in local.values()) + main,
+                                   y - edge + start)
+            else:
+                positions[item] = (x - edge + start,
+                                   y - min(v for _, v in local.values()) + main)
+
+
+def _descendants(children: dict[str, list[str]], root: str) -> list[str]:
+    """``root`` e tudo que pende dele, ele primeiro."""
+    order: list[str] = []
+    stack = [root]
+    seen: set[str] = set()
+    while stack:
+        key = stack.pop(0)
+        if key in seen:
+            continue
+        seen.add(key)
+        order.append(key)
+        stack.extend(children.get(key, ()))
+    return order
 
 
 def effective_layouts(
@@ -769,22 +971,6 @@ def _edge_point(box: Box, toward_x: float, toward_y: float) -> tuple[float, floa
     scale_y = (box.height / 2) / abs(dy) if dy else inf
     reach = min(scale_x, scale_y)
     return (box.centre_x + dx * reach, box.centre_y + dy * reach)
-
-
-def free_path(style: str, source: Box, target: Box) -> str:
-    """The ``d`` of an association - the edge that is not part of the tree.
-
-    Centre to centre whatever the layout is: a free edge says "this also has
-    to do with that", and it has no orientation of its own to respect.
-    """
-    x1, y1 = source.centre_x, source.centre_y
-    x2, y2 = target.centre_x, target.centre_y
-    if style == "line":
-        return f"M{_n(x1)},{_n(y1)} L{_n(x2)},{_n(y2)}"
-
-    mid_x = (x1 + x2) / 2
-    mid_y = (y1 + y2) / 2 - abs(x2 - x1) * 0.12
-    return f"M{_n(x1)},{_n(y1)} Q{_n(mid_x)},{_n(mid_y)} {_n(x2)},{_n(y2)}"
 
 
 # ── Bounding box ────────────────────────────────────────────────────────────

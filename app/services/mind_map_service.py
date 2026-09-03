@@ -13,7 +13,7 @@ batches, each batch carrying the revision it was composed against:
   graph attached, and the canvas reloads rather than guessing. Silent
   last-write-wins is how a canvas loses an afternoon.
 * **A batch is one transaction.** Either every operation lands or none does.
-  Half a batch is a map with an edge pointing at a node that was never created.
+  Half a batch is a map with a topic hanging off one that was never created.
 * **Identity comes from the client.** A node must be drawn before the server
   has heard of it, so the browser mints its UUID and the server validates it.
   That removes the temp-id round trip and makes a retried batch harmless: the
@@ -42,14 +42,12 @@ from urllib.parse import urlsplit
 from sqlalchemy import update
 
 from app.extensions import db
-from app.models import Document, MediaAsset, MindMap, MindMapEdge, MindMapNode
+from app.models import Document, MediaAsset, MindMap, MindMapNode
 from app.models.mind_map import (
     CANVAS_LIMIT,
     DEFAULT_MAP_COLOR,
-    EDGE_STYLES,
     LAYOUTS,
     MAX_DESCRIPTION_LENGTH,
-    MAX_EDGE_LABEL_LENGTH,
     MAX_NODE_NOTE_LENGTH,
     MAX_NODE_TEXT_LENGTH,
     MAX_NODE_WIDTH,
@@ -85,7 +83,6 @@ DEFAULT_ROOT_TEXT = "Ideia central"
 # the numbers that keep "open a map" an O(1)-feeling action rather than a
 # gamble on how much someone pasted into it.
 MAX_NODES_PER_MAP = 1_000
-MAX_EDGES_PER_MAP = 2_000
 # One gesture never produces more than a few operations; a batch is a burst of
 # gestures. Five hundred is generous for "select everything and drag".
 MAX_OPERATIONS = 500
@@ -99,9 +96,6 @@ OPERATION_TYPES = frozenset(
         "node.update",
         "node.move",
         "node.delete",
-        "edge.create",
-        "edge.update",
-        "edge.delete",
     }
 )
 
@@ -245,7 +239,7 @@ class MindMapService:
     def purge(mind_map: MindMap) -> None:
         """Delete the map for good, reclaiming the pictures only it held.
 
-        Nodes and edges go with the map through ``ON DELETE CASCADE``. Files
+        Nodes go with the map through ``ON DELETE CASCADE``. Files
         are not the database's to cascade, so the ids are noted first, the
         rows are deleted, and only then is each picture offered back to
         ``release_assets`` - which keeps any that a document or a second map
@@ -262,7 +256,7 @@ class MindMapService:
 
     @staticmethod
     def duplicate(mind_map: MindMap) -> MindMap:
-        """Copy a map whole - nodes, edges, links and pictures alike.
+        """Copy a map whole - nodes, links and pictures alike.
 
         The copy points at the same uploaded assets rather than re-uploading
         them: an image is content-addressed by its row, and two maps sharing a
@@ -304,30 +298,24 @@ class MindMapService:
                 height=node.height,
                 color=node.color,
                 shape=node.shape,
+                layout=node.layout,
                 is_collapsed=node.is_collapsed,
             )
             db.session.add(copy)
             mapping[node.id] = copy
 
+        db.session.flush()
+
         # Second pass: the parent of a copy is the copy of the parent, which
-        # only exists once every node has been created.
+        # only exists once every node has been created. O mesmo vale para um
+        # tópico compartilhado: a cópia aponta para a cópia, e não para o
+        # tópico do mapa original - dois mapas que se editam mutuamente não é
+        # o que "duplicar" quer dizer.
         for node in nodes:
             if node.parent_id in mapping:
                 mapping[node.id].parent = mapping[node.parent_id]
-
-        for edge in MindMapRepository.edges_of(mind_map):
-            if edge.source_id in mapping and edge.target_id in mapping:
-                db.session.add(
-                    MindMapEdge(
-                        uuid=new_node_uuid(),
-                        map_id=clone.id,
-                        source=mapping[edge.source_id],
-                        target=mapping[edge.target_id],
-                        label=edge.label,
-                        style=edge.style,
-                        color=edge.color,
-                    )
-                )
+            if node.mirror_of_id in mapping:
+                mapping[node.id].mirror_of_id = mapping[node.mirror_of_id].id
 
         db.session.commit()
         return clone
@@ -357,7 +345,6 @@ class MindMapService:
         adopt it without a second request.
         """
         nodes = MindMapRepository.nodes_of(mind_map)
-        edges = MindMapRepository.edges_of(mind_map)
         by_id = {node.id: node.uuid for node in nodes}
 
         return {
@@ -373,21 +360,8 @@ class MindMapService:
                 "zoom": mind_map.viewport_zoom,
             },
             "nodes": [_node_payload(node, by_id) for node in nodes],
-            "edges": [
-                {
-                    "uuid": edge.uuid,
-                    "source": by_id.get(edge.source_id),
-                    "target": by_id.get(edge.target_id),
-                    "label": edge.label,
-                    "style": edge.style,
-                    "color": edge.color,
-                }
-                for edge in edges
-                if edge.source_id in by_id and edge.target_id in by_id
-            ],
             "limits": {
                 "nodes": MAX_NODES_PER_MAP,
-                "edges": MAX_EDGES_PER_MAP,
                 "text": MAX_NODE_TEXT_LENGTH,
                 "note": MAX_NODE_NOTE_LENGTH,
                 "url": MAX_URL_LENGTH,
@@ -530,6 +504,7 @@ class MindMapService:
                     height=node.height,
                     collapsed=node.is_collapsed,
                     layout=node.layout,
+                    mirror_of=by_id.get(node.mirror_of_id) if node.mirror_of_id else None,
                 )
                 for node in nodes
             ],
@@ -646,11 +621,7 @@ class MindMapService:
 
     @staticmethod
     def export_svg(mind_map: MindMap) -> str:
-        return to_svg(
-            mind_map,
-            MindMapRepository.nodes_of(mind_map),
-            MindMapRepository.edges_of(mind_map),
-        )
+        return to_svg(mind_map, MindMapRepository.nodes_of(mind_map))
 
 
 # ── The batch ───────────────────────────────────────────────────────────────
@@ -669,9 +640,6 @@ class _Batch:
         self.nodes: dict[str, MindMapNode] = {
             node.uuid: node for node in MindMapRepository.nodes_of(mind_map)
         }
-        self.edges: dict[str, MindMapEdge] = {
-            edge.uuid: edge for edge in MindMapRepository.edges_of(mind_map)
-        }
 
         by_id = {node.id: node.uuid for node in self.nodes.values()}
         # Parenthood is tracked by UUID rather than read off the ORM, because
@@ -686,7 +654,6 @@ class _Batch:
             self.children_of.setdefault(self.parent_of[uuid], []).append(uuid)
 
         self.node_budget = MAX_NODES_PER_MAP - len(self.nodes)
-        self.edge_budget = MAX_EDGES_PER_MAP - len(self.edges)
 
     # ── Dispatch ────────────────────────────────────────────────────────────
 
@@ -703,9 +670,6 @@ class _Batch:
             "node.update": self.update_node,
             "node.move": self.move_node,
             "node.delete": self.delete_node,
-            "edge.create": self.create_edge,
-            "edge.update": self.update_edge,
-            "edge.delete": self.delete_edge,
         }[kind]
         handler(operation)
 
@@ -729,6 +693,7 @@ class _Batch:
         parent = None
         if parent_uuid:
             parent = self._node(parent_uuid)
+            self._refuse_under_mirror(_require_uuid(parent_uuid))
             if self._depth(parent_uuid) + 1 >= MAX_DEPTH:
                 raise ValidationError(
                     f"O mapa chegou ao limite de {MAX_DEPTH} níveis de profundidade."
@@ -809,52 +774,57 @@ class _Batch:
         self._forget(identifier)
         db.session.delete(node)
 
-    # ── Edges ───────────────────────────────────────────────────────────────
+    def _refuse_under_mirror(self, parent_uuid: str) -> None:
+        """Um espelho nunca ganha ramo próprio.
 
-    def create_edge(self, operation: dict) -> None:
-        identifier = _require_uuid(operation.get("uuid"))
-        if identifier in self.edges:
-            self.update_edge(operation)
-            return
-        if self.edge_budget <= 0:
+        O ramo é do original, e é essa a promessa que faz o espelho ser o
+        mesmo tópico em vez de uma cópia: aceitar filhos aqui criaria dois
+        lugares onde o mesmo assunto continua de formas diferentes, que é
+        exatamente o que duplicar um bloco custa.
+        """
+        parent = self.nodes.get(parent_uuid)
+        if parent is not None and parent.mirror_of_id is not None:
             raise ValidationError(
-                f"Um mapa comporta até {MAX_EDGES_PER_MAP} conexões livres."
+                "Este é um tópico compartilhado. Adicione o subtópico no "
+                "original - ele aparece aqui junto."
             )
 
-        source = self._node(operation.get("source"))
-        target = self._node(operation.get("target"))
-        if source is target:
-            raise ValidationError("Uma conexão precisa de dois tópicos diferentes.")
+    def _assign_mirror(self, node: MindMapNode, target: object) -> None:
+        """Aponta este nó para o tópico que ele repete, ou desfaz o espelho.
 
-        for existing in self.edges.values():
-            if existing.source is source and existing.target is target:
-                # The same association twice would be drawn twice in the same
-                # place. Update the one that is already there.
-                self._assign_edge(existing, operation)
-                return
+        Três recusas, e cada uma existe por um motivo que se vê na tela:
 
-        edge = MindMapEdge(
-            uuid=identifier,
-            map_id=self.map.id,
-            source=source,
-            target=target,
-            style="curve",
-        )
-        db.session.add(edge)
-        self.edges[identifier] = edge
-        self.edge_budget -= 1
-        self._assign_edge(edge, operation)
+        * um espelho de si mesmo é uma linha que não diz nada;
+        * um espelho de um espelho seria uma cadeia a resolver a cada desenho,
+          então ele aponta direto para o tópico de verdade - dois espelhos do
+          mesmo tópico são dois espelhos, não uma fila;
+        * um espelho não é uma cópia: ele nunca tem ramo próprio, porque o
+          ramo é do original, e aceitar filhos aqui criaria dois lugares onde
+          o mesmo assunto continua de formas diferentes.
+        """
+        if target in (None, ""):
+            node.mirror_of_id = None
+            return
 
-    def update_edge(self, operation: dict) -> None:
-        edge = self.edges.get(_require_uuid(operation.get("uuid")))
-        if edge is None:
-            raise NotFoundError("Conexão não encontrada.")
-        self._assign_edge(edge, operation)
-
-    def delete_edge(self, operation: dict) -> None:
-        edge = self.edges.pop(_require_uuid(operation.get("uuid")), None)
-        if edge is not None:
-            db.session.delete(edge)
+        original = self._node(target)
+        if original is node:
+            raise ValidationError("Um tópico não pode ser um espelho de si mesmo.")
+        if self.children_of.get(node.uuid):
+            raise ValidationError(
+                "Este tópico tem subtópicos. Um espelho não tem ramo próprio - "
+                "o ramo é do original."
+            )
+        # Um espelho de um espelho aponta para o mesmo tópico que ele.
+        while original.mirror_of_id is not None:
+            nxt = next(
+                (n for n in self.nodes.values() if n.id == original.mirror_of_id), None
+            )
+            if nxt is None or nxt is original:
+                break
+            original = nxt
+        if original is node:
+            raise ValidationError("Um tópico não pode ser um espelho de si mesmo.")
+        node.mirror_of_id = original.id
 
     # ── Field assignment ────────────────────────────────────────────────────
 
@@ -915,6 +885,8 @@ class _Batch:
                 node.layout = layout
             else:
                 raise ValidationError("Disposição de ramo inválida.")
+        if "mirror_of" in source:
+            self._assign_mirror(node, source.get("mirror_of"))
         if "color" in source:
             node.color = _clean_color(source.get("color"), "")
         if "collapsed" in source:
@@ -937,24 +909,6 @@ class _Batch:
 
         node.updated_at = utcnow()
 
-    def _assign_edge(self, edge: MindMapEdge, operation: dict) -> None:
-        fields = operation.get("fields")
-        source = fields if isinstance(fields, dict) else operation
-
-        if "label" in source:
-            edge.label = sanitize_plain_text(
-                _as_text(source.get("label")), max_length=MAX_EDGE_LABEL_LENGTH
-            )
-        if "style" in source:
-            style = source.get("style")
-            if style not in EDGE_STYLES:
-                raise ValidationError("Estilo de conexão inválido.")
-            edge.style = style
-        if "color" in source:
-            edge.color = _clean_color(source.get("color"), "")
-
-    # ── Tree bookkeeping ────────────────────────────────────────────────────
-
     def _node(self, identifier: object) -> MindMapNode:
         node = self.nodes.get(_require_uuid(identifier))
         if node is None:
@@ -968,6 +922,7 @@ class _Batch:
             new_parent_uuid = _require_uuid(parent_uuid)
             if new_parent_uuid == identifier:
                 raise ValidationError("Um tópico não pode ser filho de si mesmo.")
+            self._refuse_under_mirror(new_parent_uuid)
             # Walking up from the *new* parent is the cycle test: if the node
             # being moved is anywhere on that path, the move would close a loop
             # and orphan the whole branch from the root.
@@ -1073,13 +1028,6 @@ class _Batch:
         self.nodes.pop(identifier, None)
         self.node_budget += 1
 
-        for edge_uuid, edge in list(self.edges.items()):
-            if edge.source is None or edge.target is None:  # pragma: no cover
-                continue
-            if edge.source.uuid == identifier or edge.target.uuid == identifier:
-                self.edges.pop(edge_uuid, None)
-                self.edge_budget += 1
-
 
 # ── Value cleaning ──────────────────────────────────────────────────────────
 
@@ -1120,6 +1068,9 @@ def _node_payload(node: MindMapNode, by_id: dict[int, str]) -> dict:
         "color": node.color,
         "shape": node.shape,
         "collapsed": node.is_collapsed,
+        # Quando presente, este nó *é* aquele: uma segunda aparição do mesmo
+        # tópico. O texto, a cor e o resto vêm de lá, na tela e na exportação.
+        "mirror_of": by_id.get(node.mirror_of_id) if node.mirror_of_id else None,
         # ``""`` rather than ``null``: the canvas compares this field against
         # the server's copy on every save, and a select whose "same as the
         # map" option carried the value ``null`` would compare unequal to its

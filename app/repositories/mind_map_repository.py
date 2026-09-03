@@ -12,14 +12,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import joinedload
 
 from app.extensions import db
-from app.models import Document, MediaAsset, MindMap, MindMapEdge, MindMapNode
+from app.models import Document, MediaAsset, MindMap, MindMapNode
 
 # Ceilings so a doctored database can never turn a page render into an
 # unbounded query. Membership is capped on the way in by the service; these are
 # the second line of defence.
 MAX_MAPS = 500
 MAX_NODES_READ = 5_000
-MAX_EDGES_READ = 5_000
 
 
 class MindMapRepository:
@@ -118,30 +117,10 @@ class MindMapRepository:
         )
 
     @staticmethod
-    def edges_of(mind_map: MindMap, limit: int = MAX_EDGES_READ) -> list[MindMapEdge]:
-        return list(
-            db.session.scalars(
-                select(MindMapEdge)
-                .where(MindMapEdge.map_id == mind_map.id)
-                .order_by(MindMapEdge.id)
-                .limit(limit)
-            ).all()
-        )
-
-    @staticmethod
     def node_count(map_id: int) -> int:
         return (
             db.session.scalar(
                 select(func.count(MindMapNode.id)).where(MindMapNode.map_id == map_id)
-            )
-            or 0
-        )
-
-    @staticmethod
-    def edge_count(map_id: int) -> int:
-        return (
-            db.session.scalar(
-                select(func.count(MindMapEdge.id)).where(MindMapEdge.map_id == map_id)
             )
             or 0
         )

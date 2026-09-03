@@ -114,14 +114,67 @@ def run_migrations_online():
     connectable = get_engine()
 
     with connectable.connect() as connection:
+        restore_foreign_keys = _disable_foreign_keys(connection)
+
         context.configure(
             connection=connection,
             target_metadata=get_metadata(),
             **conf_args
         )
 
-        with context.begin_transaction():
-            context.run_migrations()
+        try:
+            with context.begin_transaction():
+                context.run_migrations()
+        finally:
+            restore_foreign_keys()
+
+
+def _disable_foreign_keys(connection):
+    """Desliga as chaves estrangeiras enquanto as migrações rodam.
+
+    SQLite não sabe alterar uma coluna: o Alembic reescreve a tabela inteira -
+    cria uma temporária, copia as linhas, **derruba a original** e renomeia.
+    A aplicação liga ``PRAGMA foreign_keys`` em toda conexão, porque sem isso
+    os ``ON DELETE CASCADE`` não fazem nada; e com ela ligada, aquele DROP
+    dispara os cascades que apontam para a tabela sendo reescrita. Numa tabela
+    que referencia a si mesma - os tópicos de um mapa, cada um filho de outro -
+    isso apaga todo filho e deixa só as raízes.
+
+    A própria documentação do SQLite manda desligá-las durante uma
+    reconstrução de tabela. Aqui, e não em cada migração uma a uma, até alguém
+    esquecer.
+
+    Na conexão crua e com a transação fechada, porque ``PRAGMA foreign_keys``
+    é ignorada em silêncio dentro de uma transação - e uma pragma ignorada em
+    silêncio aqui é a diferença entre uma migração e uma perda de dados. Se
+    ela não pegar, a migração não roda.
+    """
+    if connection.dialect.name != "sqlite":
+        return lambda: None
+
+    raw = connection.connection.dbapi_connection
+    connection.rollback()
+    raw.execute("PRAGMA foreign_keys=OFF")
+    if raw.execute("PRAGMA foreign_keys").fetchone()[0]:
+        raise RuntimeError(
+            "Não foi possível desligar as chaves estrangeiras para migrar. "
+            "Migrar com elas ligadas pode apagar linhas ao reescrever uma "
+            "tabela, então a migração foi interrompida."
+        )
+
+    def restore() -> None:
+        # Depois, e não antes: uma violação que a migração tenha deixado deve
+        # aparecer agora, e não no primeiro pedido de quem for usar o sistema.
+        connection.rollback()
+        violations = raw.execute("PRAGMA foreign_key_check").fetchall()
+        raw.execute("PRAGMA foreign_keys=ON")
+        if violations:
+            raise RuntimeError(
+                f"A migração deixou {len(violations)} referências quebradas: "
+                f"{violations[:3]}"
+            )
+
+    return restore
 
 
 if context.is_offline_mode():

@@ -112,6 +112,7 @@ export function createActions({ store, selection, limits, notify }) {
       color: '',
       shape: 'rounded',
       collapsed: false,
+      mirror_of: '',
       // Explicitly empty, not absent: `normalizeNode` gives every node the
       // server sends an empty string here, and a locally created node with
       // the key missing altogether would be a second shape for one model -
@@ -329,6 +330,136 @@ export function createActions({ store, selection, limits, notify }) {
     return true;
   }
 
+  /**
+   * Cut the line to the topic above: the node stops being a child and becomes
+   * a loose topic, standing exactly where it stood.
+   *
+   * Nothing is deleted and nothing moves - the branch underneath comes along,
+   * still hanging off the node that was cut free.
+   */
+  function detach(uuid) {
+    const node = store.get(uuid);
+    if (!node || !node.parent) return false;
+    return reparent(uuid, null);
+  }
+
+  /**
+   * Põe o mesmo tópico também embaixo de `parentUuid`.
+   *
+   * Uma árvore não sabe dizer "isto vale para todas as etapas": um tópico tem
+   * um pai. O espelho é como isso é dito sem que o mapa deixe de ser uma
+   * árvore - uma linha como qualquer outra, e na ponta dela um tópico que
+   * mora noutro lugar. Renomear ali renomeia aqui, porque é o mesmo tópico.
+   */
+  function shareInto(uuid, parentUuid) {
+    const original = store.original(store.get(uuid));
+    const parent = store.get(parentUuid);
+    if (!original || !parent || original.uuid === parent.uuid) return null;
+    if (parent.mirror_of) {
+      notify('Um tópico compartilhado não recebe subtópicos.', 'error');
+      return null;
+    }
+    // O mesmo tópico duas vezes no mesmo lugar seriam duas linhas dizendo a
+    // mesma coisa.
+    const already = store.children(parent.uuid).some(
+      (child) => store.original(child).uuid === original.uuid
+    );
+    if (already) {
+      notify('Este tópico já aparece aqui.', 'info');
+      return null;
+    }
+    if (atCapacity()) return null;
+
+    const node = blankNode({
+      parent: parent.uuid,
+      position: store.children(parent.uuid).length,
+      mirror_of: original.uuid,
+      ...childPlacement(parent),
+    });
+    store.mutate(() => {
+      store.nodes.set(node.uuid, node);
+      if (parent.collapsed) parent.collapsed = false;
+    }, { structural: true });
+    selection.only(node.uuid);
+    return node;
+  }
+
+  /* ── Reordenar e reaninhar ──────────────────────────────────────────── */
+
+  /**
+   * Move a topic under `parentUuid` at a given place among its siblings, and
+   * renumber that whole list.
+   *
+   * `reparent` appends, which is right for a drop on the board - the pointer
+   * said where, and "where" was a place on the canvas, not a place in a list.
+   * The outline is the opposite: it *is* the list, so a move there has to land
+   * on an index and leave the numbering dense behind it. Renumbering the whole
+   * sibling list is a handful of small writes and it is what stops positions
+   * from drifting into ties that only the uuid tiebreak resolves.
+   */
+  function moveInto(uuid, parentUuid, index) {
+    const node = store.get(uuid);
+    if (!node) return false;
+    if (parentUuid && (uuid === parentUuid || store.ancestorOf(uuid, parentUuid))) {
+      notify('Um tópico não pode virar filho do próprio ramo.', 'error');
+      return false;
+    }
+
+    const target = parentUuid || null;
+    const siblings = store.children(target).filter((item) => item.uuid !== uuid);
+    const at = Math.max(0, Math.min(index, siblings.length));
+    const ordered = [...siblings.slice(0, at), node, ...siblings.slice(at)];
+
+    store.mutate(() => {
+      node.parent = target;
+      ordered.forEach((item, position) => {
+        item.position = position;
+      });
+      const parent = target ? store.get(target) : null;
+      // A branch that gains a child while folded would hide it the instant it
+      // arrived, which reads as the move not having happened.
+      if (parent && parent.collapsed) parent.collapsed = false;
+    }, { structural: true });
+    return true;
+  }
+
+  /** Hang the topic under the sibling above it - the outliner's Tab. */
+  function indent(uuid) {
+    const node = store.get(uuid);
+    if (!node) return false;
+    const siblings = store.children(node.parent);
+    const index = siblings.findIndex((item) => item.uuid === uuid);
+    // The first of its list has nothing above it to go under.
+    if (index <= 0) return false;
+
+    const above = siblings[index - 1];
+    return moveInto(uuid, above.uuid, store.children(above.uuid).length);
+  }
+
+  /** Lift the topic out to its parent's level, right after it. */
+  function outdent(uuid) {
+    const node = store.get(uuid);
+    if (!node || !node.parent) return false;
+    const parent = store.get(node.parent);
+    if (!parent) return false;
+
+    const uncles = store.children(parent.parent);
+    const at = uncles.findIndex((item) => item.uuid === parent.uuid);
+    return moveInto(uuid, parent.parent || null, at + 1);
+  }
+
+  /** Swap places with the sibling above (-1) or below (+1). */
+  function shiftSibling(uuid, delta) {
+    const node = store.get(uuid);
+    if (!node) return false;
+    const siblings = store.children(node.parent);
+    const index = siblings.findIndex((item) => item.uuid === uuid);
+    const target = index + delta;
+    if (index < 0 || target < 0 || target >= siblings.length) return false;
+
+    return moveInto(uuid, node.parent, target);
+  }
+
   function toggleCollapse(uuid) {
     const node = store.get(uuid);
     if (!node || !store.children(uuid).length) return;
@@ -339,13 +470,7 @@ export function createActions({ store, selection, limits, notify }) {
 
   /* ── Removing ───────────────────────────────────────────────────────── */
 
-  /**
-   * Delete the selection, branches and all.
-   *
-   * Edges touching a removed node go with it: an association to something that
-   * no longer exists is not a connection, it is a dangling reference, and the
-   * server would refuse to keep it anyway.
-   */
+  /** Delete the selection, branches and all. */
   function remove(uuids) {
     const doomed = new Set();
     uuids.forEach((uuid) => store.branch(uuid).forEach((key) => doomed.add(key)));
@@ -353,11 +478,6 @@ export function createActions({ store, selection, limits, notify }) {
 
     store.mutate(() => {
       doomed.forEach((uuid) => store.nodes.delete(uuid));
-      [...store.edges.values()].forEach((edge) => {
-        if (doomed.has(edge.source) || doomed.has(edge.target)) {
-          store.edges.delete(edge.uuid);
-        }
-      });
     }, { structural: true });
 
     selection.prune((uuid) => store.nodes.has(uuid));
@@ -368,40 +488,25 @@ export function createActions({ store, selection, limits, notify }) {
     return remove(selection.list());
   }
 
-  /* ── Connections ────────────────────────────────────────────────────── */
+  /* ── Conexões ───────────────────────────────────────────────────────── */
 
+  /*
+   * Conectar é pendurar, e é a única coisa que uma linha quer dizer.
+   *
+   * The board used to draw two kinds of line: the parent-child spine, and a
+   * free association that crossed the map without changing anything. Nothing
+   * on screen said which was which, and the gesture that produced each was
+   * near enough a coin toss - so "conectar" could leave the structure exactly
+   * as it had been. There is one line now, and connecting two topics puts one
+   * inside the other, which is what a mind map means by a connection.
+   */
+
+  /** Conecta: `targetUuid` passa a ficar dentro de `sourceUuid`.
+   *  Devolve o uuid do que se moveu, ou null quando foi recusado. */
   function connect(sourceUuid, targetUuid) {
     if (!sourceUuid || !targetUuid || sourceUuid === targetUuid) return null;
     if (!store.get(sourceUuid) || !store.get(targetUuid)) return null;
-
-    const existing = [...store.edges.values()].find(
-      (edge) => edge.source === sourceUuid && edge.target === targetUuid
-    );
-    if (existing) {
-      notify('Estes dois tópicos já estão conectados.', 'info');
-      return existing;
-    }
-    if (store.edges.size >= limits.edges) {
-      notify(`Este mapa chegou ao limite de ${limits.edges} conexões.`, 'error');
-      return null;
-    }
-
-    const edge = {
-      uuid: newId(),
-      source: sourceUuid,
-      target: targetUuid,
-      label: '',
-      style: 'curve',
-      color: '',
-    };
-    store.mutate(() => store.edges.set(edge.uuid, edge));
-    return edge;
-  }
-
-  function disconnect(edgeUuid) {
-    if (!store.edges.has(edgeUuid)) return false;
-    store.mutate(() => store.edges.delete(edgeUuid));
-    return true;
+    return reparent(targetUuid, sourceUuid) ? targetUuid : null;
   }
 
   /** How many branches carry an arrangement of their own. */
@@ -487,13 +592,18 @@ export function createActions({ store, selection, limits, notify }) {
     moveBy,
     moveTo,
     reparent,
+    detach,
+    moveInto,
+    indent,
+    outdent,
+    shiftSibling,
     ownArrangements,
     clearBranchLayouts,
     toggleCollapse,
     remove,
     removeSelection,
     connect,
-    disconnect,
+    shareInto,
     neighbour,
   };
 }

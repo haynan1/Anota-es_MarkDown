@@ -32,9 +32,9 @@ import { postJSON } from '../dom.js';
 /** Fields that travel to the server unchanged, and are compared one by one. */
 const NODE_FIELDS = [
   'text', 'note', 'url', 'image_url', 'media_uuid', 'document_uuid',
-  'kind', 'shape', 'color', 'collapsed', 'layout', 'x', 'y', 'width', 'height',
+  'kind', 'shape', 'color', 'collapsed', 'layout', 'mirror_of',
+  'x', 'y', 'width', 'height',
 ];
-const EDGE_FIELDS = ['label', 'style', 'color'];
 
 const SAVE_DEBOUNCE_MS = 700;
 const UNDO_DEPTH = 80;
@@ -46,7 +46,6 @@ export function createStore(config) {
   const listeners = { change: [], status: [], conflict: [] };
 
   let nodes = new Map();
-  let edges = new Map();
   let revision = config.revision || 1;
   /* How this map arranges itself. Held here rather than read off the page,
      because "arrumar" can change it without a reload and everything that
@@ -55,7 +54,7 @@ export function createStore(config) {
   let layout = config.layout || 'right';
 
   /** The last graph the server confirmed. Every diff is measured from here. */
-  let baseline = { nodes: new Map(), edges: new Map() };
+  let baseline = { nodes: new Map() };
   let inFlight = null;
 
   const undoStack = [];
@@ -82,14 +81,12 @@ export function createStore(config) {
 
   function adopt(graph) {
     nodes = new Map();
-    edges = new Map();
     (graph.nodes || []).forEach((node) => nodes.set(node.uuid, normalizeNode(node)));
-    (graph.edges || []).forEach((edge) => edges.set(edge.uuid, normalizeEdge(edge)));
     revision = graph.revision || revision;
     if (graph.layout) layout = graph.layout;
     childIndex = null;
     arrangementIndex = null;
-    baseline = cloneGraph(nodes, edges);
+    baseline = cloneGraph(nodes);
     undoStack.length = 0;
     redoStack.length = 0;
     setStatus('saved');
@@ -137,17 +134,9 @@ export function createStore(config) {
       // answer, and the one almost every node gives.
       layout: raw.layout || '',
       collapsed: Boolean(raw.collapsed),
-    };
-  }
-
-  function normalizeEdge(raw) {
-    return {
-      uuid: raw.uuid,
-      source: raw.source,
-      target: raw.target,
-      label: raw.label || '',
-      style: raw.style || 'curve',
-      color: raw.color || '',
+      // Quando presente, este nó *é* aquele: uma segunda aparição do mesmo
+      // tópico, noutro lugar da árvore.
+      mirror_of: raw.mirror_of || '',
     };
   }
 
@@ -160,6 +149,7 @@ export function createStore(config) {
    */
   let childIndex = null;
   let arrangementIndex = null;
+
   function children(uuid) {
     if (childIndex === null) {
       childIndex = new Map();
@@ -177,6 +167,19 @@ export function createStore(config) {
 
   function roots() {
     return children(null);
+  }
+
+  /**
+   * O tópico que este nó mostra: ele mesmo, ou o original que ele espelha.
+   *
+   * Resolvido aqui e não em cada lugar que desenha, porque são muitos - a
+   * tela, o painel, a estrutura, o minimapa - e cada um perguntando de um
+   * jeito é a receita para um espelho mostrar o texto certo num lugar e o
+   * antigo noutro. Um salto só: o serviço recusa espelho de espelho.
+   */
+  function original(node) {
+    if (!node || !node.mirror_of) return node;
+    return nodes.get(node.mirror_of) || node;
   }
 
   /**
@@ -296,15 +299,11 @@ export function createStore(config) {
   }
 
   function snapshot() {
-    return {
-      nodes: [...nodes.values()].map((node) => ({ ...node })),
-      edges: [...edges.values()].map((edge) => ({ ...edge })),
-    };
+    return { nodes: [...nodes.values()].map((node) => ({ ...node })) };
   }
 
   function restore(state) {
     nodes = new Map(state.nodes.map((node) => [node.uuid, { ...node }]));
-    edges = new Map(state.edges.map((edge) => [edge.uuid, { ...edge }]));
     childIndex = null;
     arrangementIndex = null;
     setStatus('dirty');
@@ -330,11 +329,8 @@ export function createStore(config) {
 
   /* ── Diffing ────────────────────────────────────────────────────────── */
 
-  function cloneGraph(nodeMap, edgeMap) {
-    return {
-      nodes: new Map([...nodeMap].map(([key, value]) => [key, { ...value }])),
-      edges: new Map([...edgeMap].map(([key, value]) => [key, { ...value }])),
-    };
+  function cloneGraph(nodeMap) {
+    return { nodes: new Map([...nodeMap].map(([key, value]) => [key, { ...value }])) };
   }
 
   /**
@@ -378,27 +374,6 @@ export function createStore(config) {
       if (!to.nodes.has(uuid)) removals.push({ type: 'node.delete', uuid });
     });
 
-    to.edges.forEach((edge, uuid) => {
-      const before = from.edges.get(uuid);
-      if (!before) {
-        operations.push({
-          type: 'edge.create',
-          uuid,
-          source: edge.source,
-          target: edge.target,
-          fields: fieldsOf(edge, EDGE_FIELDS),
-        });
-        return;
-      }
-      const changed = changedFields(before, edge, EDGE_FIELDS);
-      if (Object.keys(changed).length) {
-        operations.push({ type: 'edge.update', uuid, fields: changed });
-      }
-    });
-
-    from.edges.forEach((_edge, uuid) => {
-      if (!to.edges.has(uuid)) removals.push({ type: 'edge.delete', uuid });
-    });
 
     return [...operations, ...removals];
   }
@@ -434,7 +409,7 @@ export function createStore(config) {
     // flight would be measured from a baseline the server has not adopted yet.
     if (inFlight) return inFlight;
 
-    const pending = cloneGraph(nodes, edges);
+    const pending = cloneGraph(nodes);
     const operations = diff(baseline, pending);
     if (!operations.length) {
       setStatus('saved');
@@ -462,7 +437,7 @@ export function createStore(config) {
       baseline = pending;
       // Anything typed while the request was open is still unsaved, and the
       // next diff will carry it: the baseline moved, the model did not.
-      const remaining = diff(baseline, cloneGraph(nodes, edges));
+      const remaining = diff(baseline, cloneGraph(nodes));
       setStatus(remaining.length ? 'dirty' : 'saved');
       if (remaining.length) schedule();
       return { ok: true, applied: data.applied };
@@ -520,10 +495,10 @@ export function createStore(config) {
     undo,
     redo,
     get nodes() { return nodes; },
-    get edges() { return edges; },
     get revision() { return revision; },
     get layout() { return layout; },
     arrangementOf,
+    original,
     get status() { return status; },
     get canUndo() { return undoStack.length > 0; },
     get canRedo() { return redoStack.length > 0; },
@@ -534,7 +509,7 @@ export function createStore(config) {
     isVisible,
     ancestorOf,
     hasPendingChanges() {
-      return diff(baseline, cloneGraph(nodes, edges)).length > 0;
+      return diff(baseline, cloneGraph(nodes)).length > 0;
     },
   };
 }

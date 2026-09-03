@@ -23,7 +23,7 @@
  * through the CSSOM, which the strict CSP allows.
  */
 
-import { branchPath, freePath, isVertical, routingFor } from './routing.js';
+import { branchPath, isVertical, routingFor } from './routing.js';
 
 const NS_SVG = 'http://www.w3.org/2000/svg';
 const MIN_ZOOM = 0.1;
@@ -117,10 +117,14 @@ export function createCamera(page, world, stage) {
 
 /* ── Renderer ─────────────────────────────────────────────────────────── */
 
-export function createRenderer({ store, page, nodesHost, linksHost, labelsHost, accent }) {
+export function createRenderer({ store, page, nodesHost, linksHost, accent }) {
   const nodeElements = new Map();
   const linkElements = new Map();
   let selection = new Set();
+  /* Which connection is selected, as the key the link map uses: `b:<uuid>`
+     for a parent-child line, `e:<uuid>` for an association. One at a time,
+     because a connection is selected by clicking exactly one of them. */
+  let selectedLink = null;
   let draftLink = null;
 
   /* Which faces a connection uses, as one attribute - written on each node
@@ -191,11 +195,26 @@ export function createRenderer({ store, page, nodesHost, linksHost, labelsHost, 
   }
 
   function paintNode(node, element) {
+    // O que se lê num espelho é o tópico original: é o mesmo tópico, visto
+    // noutro lugar da árvore. A posição e o tamanho continuam sendo deste nó,
+    // porque é aqui que ele está desenhado.
+    const shown = store.original(node);
+    const mirror = shown !== node;
+
     element.style.setProperty('--mm-node-x', `${node.x}px`);
     element.style.setProperty('--mm-node-y', `${node.y}px`);
     element.style.setProperty('--mm-node-w', `${node.width}px`);
 
-    const colour = node.color || (node.parent ? '' : accent);
+    // O centro do mapa é um só: o primeiro tópico sem pai, o que nasceu com
+    // o mapa. Um tópico que ficou solto - desligado, ou criado à parte - é um
+    // tópico, não um segundo centro. Pintar todos com o acento fazia um ramo
+    // desligado se anunciar como o assunto principal da tela, que é
+    // exatamente o susto de ver "vira blocos fortes" ao cortar uma linha.
+    const roots = store.roots();
+    const centre = !node.parent && roots.length > 0 && roots[0].uuid === node.uuid;
+    const loose = !node.parent && !centre;
+
+    const colour = shown.color || (centre ? accent : '');
     if (colour) {
       element.style.setProperty('--mm-node-color', colour);
       element.dataset.colored = 'true';
@@ -204,47 +223,61 @@ export function createRenderer({ store, page, nodesHost, linksHost, labelsHost, 
       delete element.dataset.colored;
     }
 
-    element.dataset.kind = node.kind;
-    element.dataset.shape = node.shape;
+    element.dataset.kind = shown.kind;
+    element.dataset.shape = shown.shape;
+    element.dataset.mirror = mirror ? 'true' : 'false';
     element.dataset.orientation = orientation(store.arrangementOf(node));
     if (node.layout) element.dataset.ownLayout = 'true';
     else delete element.dataset.ownLayout;
-    element.dataset.root = node.parent ? 'false' : 'true';
+    element.dataset.root = centre ? 'true' : 'false';
+    element.dataset.loose = loose ? 'true' : 'false';
     element.dataset.selected = selection.has(node.uuid) ? 'true' : 'false';
     element.dataset.collapsed = node.collapsed ? 'true' : 'false';
 
     const label = element.querySelector('[data-label]');
     // Never while the writer is typing into it: the caret would jump to the
     // start on every keystroke that triggers a render.
-    if (label.textContent !== node.text && element.dataset.editing !== 'true') {
-      label.textContent = node.text;
+    if (label.textContent !== shown.text && element.dataset.editing !== 'true') {
+      label.textContent = shown.text;
     }
 
     const media = element.querySelector('.mm-node-media');
     const image = media.querySelector('img');
-    const source = node.kind === 'image' ? node.image : '';
+    const source = shown.kind === 'image' ? shown.image : '';
     media.hidden = !source;
     if (source && image.getAttribute('src') !== source) {
       image.setAttribute('src', source);
-      image.alt = node.text || 'Imagem do tópico';
+      image.alt = shown.text || 'Imagem do tópico';
     }
     if (!source) image.removeAttribute('src');
 
-    paintBadges(node, element.querySelector('.mm-node-badges'));
+    paintBadges(shown, element.querySelector('.mm-node-badges'));
 
-    const kids = store.children(node.uuid);
+    // O ramo é do original. Um espelho é sempre uma folha, e o número que
+    // ele carrega diz quantos subtópicos existem lá - não aqui.
+    const kids = mirror ? [] : store.children(node.uuid);
+    const shared = mirror ? store.children(shown.uuid).length : 0;
     const toggle = element.querySelector('[data-toggle]');
-    toggle.hidden = kids.length === 0;
-    if (kids.length) {
+    // Num espelho o botão vira um selo: diz quantos subtópicos o original
+    // tem, e não dobra nada, porque não há ramo aqui para dobrar.
+    toggle.hidden = mirror ? shared === 0 : kids.length === 0;
+    if (mirror && shared) {
+      toggle.textContent = String(shared);
+      toggle.setAttribute('aria-label', `${shared} subtópicos, no tópico original`);
+      toggle.title = 'O ramo é do tópico original';
+    } else if (kids.length) {
       toggle.textContent = node.collapsed ? String(countBranch(node.uuid)) : '−';
       const label2 = node.collapsed ? 'Expandir ramo' : 'Recolher ramo';
       toggle.setAttribute('aria-label', label2);
       toggle.title = label2;
     }
 
+    const name = shown.text || 'Tópico sem título';
     element.setAttribute(
       'aria-label',
-      `${node.text || 'Tópico sem título'}${kids.length ? `, ${kids.length} subtópicos` : ''}`
+      mirror
+        ? `${name}, tópico compartilhado${shared ? `, ${shared} subtópicos no original` : ''}`
+        : `${name}${kids.length ? `, ${kids.length} subtópicos` : ''}`
     );
   }
 
@@ -293,15 +326,15 @@ export function createRenderer({ store, page, nodesHost, linksHost, labelsHost, 
 
   /* -- Links -- */
 
-  function buildLink(key, kind) {
+  function buildLink(key) {
     const group = document.createElementNS(NS_SVG, 'g');
     const hit = document.createElementNS(NS_SVG, 'path');
     hit.setAttribute('class', 'mm-link mm-link-hit');
     const path = document.createElementNS(NS_SVG, 'path');
-    path.setAttribute('class', `mm-link mm-link-${kind}`);
+    path.setAttribute('class', 'mm-link mm-link-branch');
     group.append(hit, path);
     linksHost.appendChild(group);
-    linkElements.set(key, { group, path, hit, label: null, plate: null });
+    linkElements.set(key, { group, path, hit });
     return linkElements.get(key);
   }
 
@@ -315,85 +348,51 @@ export function createRenderer({ store, page, nodesHost, linksHost, labelsHost, 
       if (!node.parent) return;
       const parent = store.get(node.parent);
       if (!parent) return;
-      if (!store.isVisible(node) || !store.isVisible(parent)) return;
+
+      // A linha de uma segunda aparição vai do pai dela até o tópico de
+      // verdade, que está desenhado noutro lugar do quadro. É essa linha que
+      // diz "isto também vale aqui", e ela é a mesma linha de sempre.
+      const target = store.original(node);
+      if (!target || !store.isVisible(target) || !store.isVisible(parent)) return;
+      if (target !== node && !store.isVisible(node)) return;
 
       const key = `b:${node.uuid}`;
       wanted.add(key);
-      const entry = linkElements.get(key) || buildLink(key, 'branch');
+      const entry = linkElements.get(key) || buildLink(key);
       const path = branchPath(
-        routingFor(store.arrangementOf(parent)), parent, node
+        routingFor(store.arrangementOf(parent)), parent, target
       );
       entry.path.setAttribute('d', path);
       entry.hit.setAttribute('d', path);
+      // On the paths themselves, not only on the group: what a pointer lands
+      // on is the fat invisible hit path, and `closest` looks upwards from
+      // there. With the mark only on the group this line drew a pointer
+      // cursor and answered nothing - the worst of both, an affordance that
+      // promises a click it does not take.
       entry.group.dataset.branch = node.uuid;
-      const colour = node.color || parent.color || accent;
+      entry.hit.dataset.branch = node.uuid;
+      entry.path.dataset.branch = node.uuid;
+      paintLinkSelection(key, entry);
+      // A linha compartilhada se distingue: ela chega de longe, e quem a
+      // segue precisa saber que não é a linha "normal" daquele tópico.
+      entry.path.dataset.shared = target !== node ? 'true' : 'false';
+      const colour = target.color || parent.color || accent;
       entry.path.style.setProperty('--mm-link-color', colour);
     });
 
-    store.edges.forEach((edge) => {
-      const source = store.get(edge.source);
-      const target = store.get(edge.target);
-      if (!source || !target) return;
-      if (!store.isVisible(source) || !store.isVisible(target)) return;
-
-      const key = `e:${edge.uuid}`;
-      wanted.add(key);
-      const entry = linkElements.get(key) || buildLink(key, 'free');
-      const path = freePath(edge.style, source, target);
-      entry.path.setAttribute('d', path);
-      entry.hit.setAttribute('d', path);
-      entry.path.dataset.style = edge.style;
-      entry.group.dataset.edge = edge.uuid;
-      entry.hit.dataset.edge = edge.uuid;
-      if (edge.color) entry.path.style.setProperty('--mm-link-color', edge.color);
-      else entry.path.style.removeProperty('--mm-link-color');
-      paintEdgeLabel(entry, edge, source, target);
-    });
 
     linkElements.forEach((entry, key) => {
       if (!wanted.has(key)) {
         entry.group.remove();
-        // The label lives in its own layer, so removing the group no longer
-        // takes it along - it would sit on the board with nothing under it.
-        if (entry.label) entry.label.remove();
-        if (entry.plate) entry.plate.remove();
         linkElements.delete(key);
       }
     });
   }
 
-  function paintEdgeLabel(entry, edge, source, target) {
-    if (!edge.label) {
-      if (entry.label) {
-        entry.label.remove();
-        entry.plate.remove();
-        entry.label = null;
-        entry.plate = null;
-      }
-      return;
-    }
-    if (!entry.label) {
-      entry.plate = document.createElementNS(NS_SVG, 'rect');
-      entry.plate.setAttribute('class', 'mm-link-label-plate');
-      entry.plate.setAttribute('rx', '6');
-      entry.plate.setAttribute('height', '20');
-      entry.label = document.createElementNS(NS_SVG, 'text');
-      entry.label.setAttribute('class', 'mm-link-label');
-      // Into the layer above the nodes, not into the link's own group.
-      labelsHost.append(entry.plate, entry.label);
-    }
-    const x = (source.x + source.width / 2 + target.x + target.width / 2) / 2;
-    const y = (source.y + source.height / 2 + target.y + target.height / 2) / 2;
-    const width = edge.label.length * 7 + 14;
-    entry.label.textContent = edge.label;
-    entry.label.setAttribute('x', String(x));
-    entry.label.setAttribute('y', String(y + 4));
-    entry.plate.setAttribute('x', String(x - width / 2));
-    entry.plate.setAttribute('y', String(y - 11));
-    entry.plate.setAttribute('width', String(width));
+  function paintLinkSelection(key, entry) {
+    entry.path.classList.toggle('is-selected', key === selectedLink);
   }
 
-  /** The dashed line that follows the pointer while a connection is drawn. */
   function showDraft(from, to) {
     if (!draftLink) {
       draftLink = document.createElementNS(NS_SVG, 'path');
@@ -416,7 +415,10 @@ export function createRenderer({ store, page, nodesHost, linksHost, labelsHost, 
     const wanted = new Set();
 
     store.nodes.forEach((node) => {
-      if (!store.isVisible(node)) return;
+      // Uma segunda aparição não ganha caixa: o que a desenha é a linha que
+      // sai do pai dela e chega no tópico de verdade. Sete caixas com o mesmo
+      // nome dizem menos do que uma caixa com sete linhas chegando nela.
+      if (node.mirror_of || !store.isVisible(node)) return;
       wanted.add(node.uuid);
       const element = nodeElements.get(node.uuid) || buildNode(node.uuid);
       paintNode(node, element);
@@ -450,6 +452,13 @@ export function createRenderer({ store, page, nodesHost, linksHost, labelsHost, 
     if (changed) renderLinks();
   }
 
+  /** Highlight one connection, or none. */
+  function setLinkSelection(key) {
+    if (selectedLink === key) return;
+    selectedLink = key;
+    linkElements.forEach((entry, current) => paintLinkSelection(current, entry));
+  }
+
   function setSelection(next) {
     selection = next;
     nodeElements.forEach((element, uuid) => {
@@ -479,6 +488,7 @@ export function createRenderer({ store, page, nodesHost, linksHost, labelsHost, 
     renderLinks,
     measure,
     setSelection,
+    setLinkSelection,
     bounds,
     showDraft,
     hideDraft,

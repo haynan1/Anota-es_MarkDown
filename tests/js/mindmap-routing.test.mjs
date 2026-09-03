@@ -18,7 +18,6 @@
 
 import {
   branchPath,
-  freePath,
   isVertical,
   routingFor,
 } from '../../app/static/js/modules/mindmap/routing.js';
@@ -57,25 +56,12 @@ const CASES = [
   ['spoke', box(0, 0), box(45, 25, 61, 33)],
 ];
 
-const FREE_CASES = [
-  ['curve', box(0, 0), box(240, 124)],
-  ['curve', box(240, 124), box(0, 0)],
-  ['line', box(0, 0), box(240, 124)],
-  ['dashed', box(0, 0), box(-241, 125, 61, 33)],
-];
-
 const table = {
   branches: CASES.map(([routing, parent, child]) => ({
     routing,
     parent,
     child,
     d: branchPath(routing, parent, child),
-  })),
-  free: FREE_CASES.map(([style, source, target]) => ({
-    style,
-    source,
-    target,
-    d: freePath(style, source, target),
   })),
   routings: Object.fromEntries(
     ['right', 'down', 'tree', 'radial', 'desconhecido'].map((name) => [
@@ -104,7 +90,7 @@ function ends(d) {
 }
 
 check('nenhum caminho carrega menos-zero',
-  ![...table.branches, ...table.free].some((entry) => entry.d.includes('-0.0')));
+  !table.branches.some((entry) => entry.d.includes('-0.0')));
 
 check('uma disposição desconhecida ainda desenha',
   table.routings.desconhecido === 'horizontal');

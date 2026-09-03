@@ -132,6 +132,15 @@
         <button type="button" class="btn btn-ghost btn-icon btn-sm" data-action="mm-outline"
                 aria-label="Fechar estrutura">{{ icon('close', 'icon icon-sm') }}</button>
       </div>
+      {# A Estrutura mostra a forma do mapa - então é onde se conserta a forma
+         do mapa. Sem esta linha, as teclas existem e ninguém as encontra. #}
+      {# Este painel mostra o mapa; quem o muda é a tela. Duas superfícies
+         editando a mesma estrutura era pedir para alguém arrastar aqui e não
+         achar o resultado lá. A seta abre e fecha um ramo, que é leitura. #}
+      <p class="mm-outline-hint">
+        A forma do mapa, como ela está. A seta abre e fecha um ramo; clique
+        num tópico para encontrá-lo na tela.
+      </p>
       <div class="mm-panel-body scroll-y" data-outline></div>
     </aside>
 
@@ -145,12 +154,6 @@
         <svg class="mm-links" data-links width="1" height="1" overflow="visible"
              aria-hidden="true" focusable="false"></svg>
         <div class="mm-nodes" data-nodes></div>
-        {# Labels above the nodes, curves below them. A connection's name is an
-           annotation on the board and has to be readable over whatever it
-           passes; drawn in the layer below, any label whose midpoint landed on
-           a topic was hidden behind it. #}
-        <svg class="mm-links mm-labels" data-link-labels width="1" height="1"
-             aria-hidden="true" focusable="false"></svg>
       </div>
 
       <div class="mm-marquee" data-marquee hidden aria-hidden="true"></div>
@@ -181,6 +184,15 @@
         <button type="button" class="mm-tool" data-tool-button="connect"
                 aria-pressed="false" title="Conectar tópicos (C)" aria-label="Conectar tópicos">
           {{ icon('connect') }}
+        </button>
+        {# Um tópico que vale para várias etapas. Aqui e não só no painel do
+           tópico: o painel começa fechado, e uma ação que só existe atrás de
+           um painel fechado é uma ação que não existe. #}
+        <button type="button" class="mm-tool" data-tool-button="share"
+                aria-pressed="false"
+                title="Conectar o mesmo tópico em vários lugares, sem tirar de onde está (S)"
+                aria-label="Repetir um tópico em vários lugares">
+          {{ icon('copy') }}
         </button>
 
         <span class="mm-tool-sep" aria-hidden="true"></span>
@@ -245,27 +257,48 @@
         {# A connection is a first-class object: it can be named, restyled and
            removed. Without this panel the only thing a free link could do is
            exist. #}
-        <div class="mm-inspector-form" data-edge-form hidden>
-          <div class="field">
-            <label class="field-label" for="mm-edge-label">Rótulo da conexão</label>
-            <input class="input" type="text" id="mm-edge-label" data-edge-label
-                   maxlength="120" placeholder="Ex.: depende de, contradiz, alimenta"
-                   autocomplete="off">
-          </div>
-          <div class="field">
-            <label class="field-label" for="mm-edge-style">Traço</label>
-            <div class="select-wrap">
-              <select class="select" id="mm-edge-style" data-edge-style>
-                <option value="curve">Curva</option>
-                <option value="line">Reta</option>
-                <option value="dashed">Tracejada</option>
-              </select>
-              {{ icon('chevron-down', 'icon icon-sm') }}
-            </div>
-          </div>
+        {# Uma conexão é o campo `pai` de um tópico, não uma linha guardada
+           em algum lugar - então o que se pode fazer com ela é uma coisa só,
+           e ela está aqui sozinha. #}
+        <div class="mm-inspector-form" data-branch-form hidden>
+          <p class="mm-branch-summary">
+            <strong data-branch-child></strong> está dentro de
+            <strong data-branch-parent></strong>.
+          </p>
+          <p class="mm-link-kind">
+            <strong>Conexão.</strong> É a espinha do mapa: decide o nível do
+            tópico, o arranjo automático, o painel Estrutura e o aninhamento
+            do Markdown exportado. É a única linha que o quadro desenha.
+          </p>
+          <p class="field-hint">
+            Desconectar não apaga nada: o tópico e tudo que está abaixo dele
+            continuam na tela, soltos, exatamente onde estão.
+          </p>
           <div class="mm-inspector-actions">
-            <button type="button" class="btn btn-sm btn-danger" data-action="mm-edge-delete">
-              {{ icon('trash', 'icon icon-sm') }} Remover conexão
+            <button type="button" class="btn btn-sm btn-danger" data-action="mm-detach">
+              {{ icon('unlink', 'icon icon-sm') }} Desconectar
+            </button>
+          </div>
+        </div>
+
+        {# Um espelho não tem campos próprios: o texto, a cor e o resto são do
+           original. Mostrar os campos aqui seria oferecer edições que não
+           pertencem a este lugar. #}
+        <div class="mm-inspector-form" data-mirror-form hidden>
+          <p class="mm-branch-summary">
+            Este é o tópico <strong data-mirror-name></strong>, aparecendo
+            também aqui.
+          </p>
+          <p class="mm-link-kind">
+            <strong>Tópico compartilhado.</strong> É o mesmo tópico, não uma
+            cópia: editar num lugar muda em todos. O ramo fica no original.
+          </p>
+          <div class="mm-inspector-actions">
+            <button type="button" class="btn btn-sm" data-action="mm-goto-original">
+              {{ icon('arrow-left', 'icon icon-sm') }} Ir ao original
+            </button>
+            <button type="button" class="btn btn-sm btn-danger" data-action="mm-delete">
+              {{ icon('trash', 'icon icon-sm') }} Tirar daqui
             </button>
           </div>
         </div>
@@ -403,8 +436,21 @@
             <button type="button" class="btn btn-sm" data-action="mm-add-child">
               {{ icon('branch', 'icon icon-sm') }} Subtópico
             </button>
-            <button type="button" class="btn btn-sm" data-action="mm-connect-from">
-              {{ icon('connect', 'icon icon-sm') }} Conectar a…
+            {# Também aqui, e não só clicando na linha: uma linha não recebe
+               foco, então pelo teclado esta seria uma mudança impossível. #}
+            <button type="button" class="btn btn-sm" data-action="mm-detach">
+              {{ icon('unlink', 'icon icon-sm') }} Desconectar do de cima
+            </button>
+            {# E a volta, ao lado da ida. Arrastar o tópico para cima de outro
+               é o outro jeito, e é impraticável com um ramo já posicionado do
+               outro lado da tela. #}
+            <button type="button" class="btn btn-sm" data-action="mm-attach">
+              {{ icon('branch', 'icon icon-sm') }} Conectar a…
+            </button>
+            {# Um tópico que vale para várias etapas. Não é cópia: é o mesmo
+               tópico, visto noutro lugar da árvore. #}
+            <button type="button" class="btn btn-sm" data-action="mm-share">
+              {{ icon('copy', 'icon icon-sm') }} Conectar em vários…
             </button>
             <button type="button" class="btn btn-sm btn-danger" data-action="mm-delete">
               {{ icon('trash', 'icon icon-sm') }} Excluir ramo
@@ -535,7 +581,11 @@
         <dt><kbd>Ctrl</kbd> + roda</dt><dd>Aproximar e afastar</dd>
         <dt><kbd>F</kbd></dt><dd>Enquadrar o mapa</dd>
         <dt><kbd>0</kbd></dt><dd>Voltar para 100%</dd>
-        <dt><kbd>V</kbd> · <kbd>H</kbd> · <kbd>C</kbd></dt><dd>Selecionar · Mover · Conectar</dd>
+        <dt><kbd>V</kbd> · <kbd>H</kbd> · <kbd>C</kbd> · <kbd>S</kbd></dt>
+        <dd>Selecionar · Mover · Conectar · Repetir em vários lugares</dd>
+        <dt><kbd>Alt</kbd> + <kbd>Setas</kbd></dt><dd>Mudar o tópico de lugar na hierarquia</dd>
+        <dt>“Também em…”</dt>
+        <dd>O mesmo tópico em vários lugares: clique em quantos quiser, <kbd>Esc</kbd> encerra</dd>
       </dl>
     </div>
     <div class="modal-foot">
