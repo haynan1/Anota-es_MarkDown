@@ -69,7 +69,15 @@ function harness({ nodes = [], layout = 'right' } = {}) {
       }
       return false;
     },
-    mutate: (apply) => apply(),
+    /* O contrato do original, inclusive o valor de volta: `mutate` responde
+       se a alteração entrou, e as ações acreditam nessa resposta - uma
+       criação recusada devolve `null` em vez de um nó fantasma. Um dublê que
+       devolvesse `undefined` faria toda criação parecer recusada. */
+    locked: false,
+    mutate: (apply) => {
+      apply();
+      return true;
+    },
   };
   const actions = createActions({
     store,

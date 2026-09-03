@@ -25,6 +25,14 @@
  * The cost is holding two copies of the graph in memory. For a board capped at
  * a thousand nodes that is a few hundred kilobytes - a price worth paying to
  * never have to reason about a half-applied command log.
+ *
+ * O cadeado
+ * ---------
+ * Um mapa travado é somente leitura, e é aqui que isso é verdade. `mutate` é
+ * o único caminho por onde uma alteração passa - do teclado, do ponteiro, do
+ * painel, do arquivo arrastado - então recusar ali recusa tudo, inclusive o
+ * gesto que alguém acrescentar amanhã. O servidor confere de novo, porque uma
+ * trava que só existe no navegador não é uma trava.
  */
 
 import { postJSON } from '../dom.js';
@@ -43,7 +51,24 @@ const UNDO_DEPTH = 80;
 const SIZE_EPSILON = 1.5;
 
 export function createStore(config) {
-  const listeners = { change: [], status: [], conflict: [] };
+  /* As duas únicas portas para fora deste módulo, como parâmetros com o
+     padrão certo.
+
+     Não é injeção por gosto de injeção: a regra que diz "um lote recusado
+     nunca é reenviado" só é uma regra se alguém puder provar que ela vale, e
+     prová-la exige um servidor que responda 400 sob demanda. Com o `fetch`
+     amarrado aqui dentro, a única forma de exercitar essa linha era em
+     produção - que foi exatamente onde ela apareceu. */
+  const post = config.post || postJSON;
+  const load = config.load || ((url) =>
+    fetch(url, {
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' },
+    }));
+
+  const listeners = {
+    change: [], status: [], conflict: [], refused: [], rejected: [],
+  };
 
   let nodes = new Map();
   let revision = config.revision || 1;
@@ -52,6 +77,13 @@ export function createStore(config) {
      draws - the links, the ports, where a new subtopic is born - has to move
      with it in the same frame. */
   let layout = config.layout || 'right';
+  /* O cadeado, como o modelo o conhece.
+     Aqui e não espalhado pelos gestos: `mutate` é o único caminho por onde uma
+     alteração passa, então uma trava conferida aqui é uma trava que nenhum
+     gesto novo pode esquecer. A tela ainda desabilita o que escreve - um botão
+     que só sabe recusar não é uma affordance - mas isto é o que a torna
+     verdade, e não a aparência dela. */
+  let locked = Boolean(config.locked);
 
   /** The last graph the server confirmed. Every diff is measured from here. */
   let baseline = { nodes: new Map() };
@@ -84,6 +116,7 @@ export function createStore(config) {
     (graph.nodes || []).forEach((node) => nodes.set(node.uuid, normalizeNode(node)));
     revision = graph.revision || revision;
     if (graph.layout) layout = graph.layout;
+    if (typeof graph.locked === 'boolean') locked = graph.locked;
     childIndex = null;
     arrangementIndex = null;
     baseline = cloneGraph(nodes);
@@ -264,6 +297,13 @@ export function createStore(config) {
    * thing the child index cannot detect on its own.
    */
   function mutate(apply, { structural = false, record = true } = {}) {
+    // A porta. Travado, a alteração não chega nem ao modelo local: aplicá-la
+    // e deixar o servidor recusar depois daria um quadro que mostra uma coisa
+    // e um banco que guarda outra, até alguém recarregar a página.
+    if (locked) {
+      emit('refused', { remote: false });
+      return false;
+    }
     if (record) {
       undoStack.push(snapshot());
       if (undoStack.length > UNDO_DEPTH) undoStack.shift();
@@ -275,6 +315,7 @@ export function createStore(config) {
     setStatus('dirty');
     schedule();
     emit('change', { structural });
+    return true;
   }
 
   /**
@@ -283,6 +324,11 @@ export function createStore(config) {
    * server - layout and the SVG export both place nodes by their real size.
    */
   function measured(uuid, width, height) {
+    // Silencioso, sem `refused`: ninguém pediu isto. É o navegador contando
+    // quanto um tópico mediu, e num mapa travado essa medida não tem para
+    // onde ir - dizer "recusado" aqui seria avisar sobre uma ação que a
+    // pessoa não fez.
+    if (locked) return false;
     const node = nodes.get(uuid);
     if (!node) return false;
     if (
@@ -426,7 +472,7 @@ export function createStore(config) {
   }
 
   async function send(operations, pending, keepalive) {
-    const { ok, status: code, data } = await postJSON(
+    const { ok, status: code, data } = await post(
       config.opsUrl,
       { revision, operations },
       { keepalive }
@@ -449,8 +495,36 @@ export function createStore(config) {
       return { ok: false, conflict: true };
     }
 
+    // Travado em outro lugar enquanto esta aba editava. O que estava por
+    // salvar não vai ser salvo, e fingir o contrário é o pior dos dois
+    // resultados: o mapa do servidor é adotado e a aba passa a mostrar o que
+    // realmente existe.
+    if (code === 423) {
+      locked = true;
+      emit('refused', { remote: true });
+      await reload();
+      return { ok: false, locked: true };
+    }
+
+    // Um lote que o servidor chamou de inválido nunca fica válido por ser
+    // reenviado. Sem esta saída o `schedule()` da próxima edição remandava a
+    // mesma operação impossível, e o mapa parava de salvar em silêncio até
+    // alguém recarregar - cinco 400 idênticos em quinze segundos no log de
+    // acesso, e nada no log da aplicação.
+    //
+    // A linha é entre "recusado" e "deu errado": 4xx é um juízo sobre o
+    // conteúdo do lote e não muda com o tempo, então a tela volta ao que o
+    // servidor tem e diz por quê. Já um 5xx ou uma queda de rede (status 0)
+    // são passageiros, e a próxima edição tenta de novo como sempre.
+    const reason = (data && data.error) || 'O servidor recusou esta alteração.';
+    if (code >= 400 && code < 500) {
+      emit('rejected', { reason });
+      if (!(await reload())) setStatus('error');
+      return { ok: false, rejected: true, error: reason };
+    }
+
     setStatus('error');
-    return { ok: false, error: (data && data.error) || 'Não foi possível salvar.' };
+    return { ok: false, error: reason };
   }
 
   /* ── Server-side operations ─────────────────────────────────────────── */
@@ -461,9 +535,13 @@ export function createStore(config) {
    * version the server happened to have.
    */
   async function organize(layout) {
+    if (locked) {
+      emit('refused', { remote: false });
+      return false;
+    }
     await flush();
     setStatus('saving');
-    const { ok, data } = await postJSON(config.layoutUrl, { layout });
+    const { ok, data } = await post(config.layoutUrl, { layout });
     if (ok && data && data.ok) {
       adopt(data.graph);
       return true;
@@ -473,11 +551,8 @@ export function createStore(config) {
   }
 
   async function reload() {
-    const response = await fetch(config.graphUrl, {
-      credentials: 'same-origin',
-      headers: { Accept: 'application/json' },
-    });
-    if (!response.ok) return false;
+    const response = await load(config.graphUrl);
+    if (!response || !response.ok) return false;
     const data = await response.json();
     if (!data || !data.ok) return false;
     adopt(data.graph);
@@ -497,6 +572,7 @@ export function createStore(config) {
     get nodes() { return nodes; },
     get revision() { return revision; },
     get layout() { return layout; },
+    get locked() { return locked; },
     arrangementOf,
     original,
     get status() { return status; },

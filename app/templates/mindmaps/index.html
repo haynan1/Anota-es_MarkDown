@@ -98,6 +98,9 @@
             <a class="mm-card-title" href="{{ url_for('mindmaps.canvas', public_uuid=item.uuid) }}">
               {{ item.title }}
             </a>
+            {% if item.is_locked %}
+              {{ icon('lock', 'icon icon-sm locked-on', 'Travado contra alterações') }}
+            {% endif %}
             {% if item.is_favorite %}
               {{ icon('star', 'icon icon-sm mm-card-star', 'Favorito') }}
             {% endif %}
@@ -123,23 +126,56 @@
           {% if trashed %}
             {{ action_button(url_for('mindmaps.restore', public_uuid=item.uuid), confirm_form,
                              'restore', 'Restaurar mapa') }}
-            {{ action_button(url_for('mindmaps.purge', public_uuid=item.uuid), confirm_form,
-                             'trash', 'Excluir definitivamente',
-                             confirm='Excluir “' ~ item.title ~ '” para sempre? Esta ação não pode ser desfeita.',
-                             danger=true) }}
+            {% if not item.is_locked %}
+              {{ action_button(url_for('mindmaps.purge', public_uuid=item.uuid), confirm_form,
+                               'trash', 'Excluir definitivamente',
+                               confirm='Excluir “' ~ item.title ~ '” para sempre? Esta ação não pode ser desfeita.',
+                               danger=true) }}
+            {% endif %}
           {% else %}
             {{ action_button(url_for('mindmaps.toggle_favorite', public_uuid=item.uuid), confirm_form,
                              'star', 'Remover dos favoritos' if item.is_favorite else 'Marcar como favorito') }}
+            {{ action_button(url_for('mindmaps.toggle_lock', public_uuid=item.uuid), confirm_form,
+                             'lock' if item.is_locked else 'unlock',
+                             'Destravar o mapa' if item.is_locked else 'Travar contra alterações') }}
             {{ action_button(url_for('mindmaps.duplicate', public_uuid=item.uuid), confirm_form,
                              'copy', 'Duplicar mapa') }}
-            <a class="btn btn-ghost btn-icon btn-sm"
-               href="{{ url_for('mindmaps.download_markdown', public_uuid=item.uuid) }}"
-               title="Baixar como Markdown" aria-label="Baixar como Markdown">
-              {{ icon('download') }}
-            </a>
-            {{ action_button(url_for('mindmaps.delete', public_uuid=item.uuid), confirm_form,
-                             'trash', 'Mover para a lixeira',
-                             confirm='Mover “' ~ item.title ~ '” para a lixeira de mapas?') }}
+
+            {# Cinco formatos atrás de um botão só. Cinco botões numa fileira
+               que já tem quatro seria a galeria virando uma barra de
+               ferramentas, e a única coisa que se procura aqui é o mapa. #}
+            <details class="menu">
+              <summary class="btn btn-ghost btn-icon btn-sm" title="Exportar" aria-label="Exportar">
+                {{ icon('download') }}
+              </summary>
+              {# Sem `menu-panel-down`: o gatilho fica no rodapé do cartão, e é
+                 exatamente para esse caso que o painel abre para cima. #}
+              <div class="menu-panel">
+                <a class="menu-item" href="{{ url_for('mindmaps.download_markdown', public_uuid=item.uuid) }}">
+                  {{ icon('download', 'icon icon-sm') }} Markdown (.md)
+                </a>
+                <a class="menu-item" href="{{ url_for('mindmaps.download_picture', public_uuid=item.uuid, fmt='pdf') }}">
+                  {{ icon('printer', 'icon icon-sm') }} PDF
+                </a>
+                <a class="menu-item" href="{{ url_for('mindmaps.download_picture', public_uuid=item.uuid, fmt='png') }}">
+                  {{ icon('image', 'icon icon-sm') }} Imagem (PNG)
+                </a>
+                <a class="menu-item" href="{{ url_for('mindmaps.download_picture', public_uuid=item.uuid, fmt='jpeg') }}">
+                  {{ icon('image', 'icon icon-sm') }} Imagem (JPEG)
+                </a>
+                <a class="menu-item" href="{{ url_for('mindmaps.download_svg', public_uuid=item.uuid) }}">
+                  {{ icon('image', 'icon icon-sm') }} Desenho (SVG)
+                </a>
+              </div>
+            </details>
+
+            {# Travado, a lixeira sai da fileira. O serviço recusaria de todo
+               jeito, e um botão que só sabe dizer não não é uma affordance. #}
+            {% if not item.is_locked %}
+              {{ action_button(url_for('mindmaps.delete', public_uuid=item.uuid), confirm_form,
+                               'trash', 'Mover para a lixeira',
+                               confirm='Mover “' ~ item.title ~ '” para a lixeira de mapas?') }}
+            {% endif %}
           {% endif %}
         </div>
       </article>

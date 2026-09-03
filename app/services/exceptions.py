@@ -29,3 +29,16 @@ class ConflictError(ServiceError):
 
 class NotFoundError(ServiceError):
     status_code = 404
+
+
+class LockedError(ServiceError):
+    """The target is protected and refuses to change.
+
+    ``423 Locked`` rather than ``403``: the request was allowed, the caller is
+    who they claim to be, and nothing about the payload was wrong - the
+    resource itself is closed. The canvas reads the status to tell "you cannot
+    do this" apart from "you did this wrong", and only the first one is worth
+    offering the key for.
+    """
+
+    status_code = 423

@@ -35,6 +35,11 @@
      data-search-url="{{ url_for('api.search_suggestions') }}"
      data-upload-limit="{{ upload_limit }}"
      data-accent="{{ mind_map.color }}"
+     data-lock-url="{{ url_for('mindmaps.toggle_lock', public_uuid=mind_map.uuid) }}"
+     {# Presente quando o mapa está travado. Escrito aqui e não só no grafo
+        porque o CSS precisa dele no primeiro quadro pintado - a tela não pode
+        parecer editável por um instante antes do JavaScript dizer que não é. #}
+     {% if mind_map.is_locked %}data-locked{% endif %}
      {# Single quotes, deliberately: `tojson` escapes < > & and the single
         quote but not the double one, which inside a double-quoted attribute
         would end the attribute and scatter the rest of the graph as bogus
@@ -50,21 +55,42 @@
     {# The map's name is the page's heading, and the control that renames it.
        Wrapped rather than restyled: every other screen in the app gives a
        screen reader one h1 to land on, and the canvas had none at all - so
-       its two h2 panels opened a hierarchy that started nowhere. #}
+       its two h2 panels opened a hierarchy that started nowhere.
+
+       O lápis fica visível em repouso, e não só no hover. Ele era a única
+       coisa dizendo que o nome e a cor se editam, e uma affordance que só
+       aparece quando o ponteiro passa por cima é uma affordance que não
+       existe para quem chegou pelo teclado, pela tela sensível ao toque, ou
+       simplesmente não passou o mouse ali. A mesma ação também está no menu,
+       escrita por extenso, porque nem todo mundo tenta clicar num título. #}
     <h1 class="mm-title-heading">
       <button type="button" class="mm-title" data-action="open-dialog" data-target="map-settings"
-              title="Editar nome, cor e disposição">
+              {% if mind_map.is_locked %}disabled
+              title="Mapa travado. Destrave para editar nome, cor e disposição."
+              {% else %}title="Editar nome, cor e disposição"{% endif %}>
         <span class="mm-title-dot" data-color="{{ mind_map.color }}" aria-hidden="true"></span>
         <span class="mm-title-text">{{ mind_map.display_title }}</span>
-        {{ icon('edit', 'icon icon-sm mm-title-pencil') }}
+        {% if mind_map.is_locked %}
+          {{ icon('lock', 'icon icon-sm mm-title-lock') }}
+        {% else %}
+          {{ icon('edit', 'icon icon-sm mm-title-pencil') }}
+        {% endif %}
       </button>
     </h1>
 
-    <output class="mm-status" data-save-status data-state="saved" aria-live="polite">
-      <span class="spinner" aria-hidden="true"></span>
-      {{ icon('check', 'icon icon-sm mm-status-icon') }}
-      <span data-save-label>Salvo</span>
-    </output>
+    {# Travado, não há nada a salvar, e um "Salvo" permanente ao lado de um
+       cadeado diria a coisa errada sobre o motivo. #}
+    {% if mind_map.is_locked %}
+      <p class="mm-readonly">
+        {{ icon('lock', 'icon icon-sm') }} Somente leitura
+      </p>
+    {% else %}
+      <output class="mm-status" data-save-status data-state="saved" aria-live="polite">
+        <span class="spinner" aria-hidden="true"></span>
+        {{ icon('check', 'icon icon-sm mm-status-icon') }}
+        <span data-save-label>Salvo</span>
+      </output>
+    {% endif %}
 
     <div class="mm-header-actions">
       <button type="button" class="btn btn-ghost btn-icon" data-action="mm-outline"
@@ -82,14 +108,47 @@
         {{ icon('info') }}
       </button>
 
+      {# O cadeado fica na barra e não no menu: é a única ação que um mapa
+         travado ainda aceita, e uma saída escondida atrás de um menu é uma
+         saída que alguém procura. #}
+      <form method="post" action="{{ url_for('mindmaps.toggle_lock', public_uuid=mind_map.uuid) }}"
+            class="inline-form">
+        {{ confirm_form.hidden_tag() }}
+        <input type="hidden" name="next" value="{{ url_for('mindmaps.canvas', public_uuid=mind_map.uuid) }}">
+        <button type="submit" class="btn btn-ghost btn-icon"
+                aria-pressed="{{ 'true' if mind_map.is_locked else 'false' }}"
+                title="{{ 'Destravar o mapa' if mind_map.is_locked else 'Travar contra alterações' }}"
+                aria-label="{{ 'Destravar o mapa' if mind_map.is_locked else 'Travar contra alterações' }}">
+          {{ icon('lock' if mind_map.is_locked else 'unlock',
+                  'icon locked-on' if mind_map.is_locked else 'icon') }}
+        </button>
+      </form>
+
       <details class="menu">
         <summary class="btn btn-ghost btn-icon" aria-label="Mais ações do mapa" title="Mais ações">
           {{ icon('more') }}
         </summary>
         <div class="menu-panel menu-panel-down">
+          {# Primeiro item porque é o que se procura aqui com mais frequência,
+             e porque é a versão nomeada do lápis lá no título. #}
+          <button type="button" class="menu-item" data-action="open-dialog"
+                  data-target="map-settings"
+                  {% if mind_map.is_locked %}disabled{% endif %}>
+            {{ icon('palette', 'icon icon-sm') }} Nome e cor do mapa
+          </button>
+
+          {# Exportar é a única coisa nesta lista que um mapa travado continua
+             fazendo por inteiro - um cadeado protege contra mudança, não
+             contra levar o trabalho embora. #}
           <a class="menu-item" href="{{ url_for('mindmaps.download_markdown', public_uuid=mind_map.uuid) }}">
             {{ icon('download', 'icon icon-sm') }} Baixar como Markdown
           </a>
+          {% for value, label, icon_name in picture_formats %}
+            <a class="menu-item"
+               href="{{ url_for('mindmaps.download_picture', public_uuid=mind_map.uuid, fmt=value) }}">
+              {{ icon(icon_name, 'icon icon-sm') }} {{ label }}
+            </a>
+          {% endfor %}
           <a class="menu-item" href="{{ url_for('mindmaps.download_svg', public_uuid=mind_map.uuid) }}">
             {{ icon('image', 'icon icon-sm') }} Baixar desenho (SVG)
           </a>
@@ -108,13 +167,18 @@
             </button>
           </form>
 
-          <form method="post" action="{{ url_for('mindmaps.delete', public_uuid=mind_map.uuid) }}"
-                data-confirm="Mover “{{ mind_map.title }}” para a lixeira de mapas?">
-            {{ confirm_form.hidden_tag() }}
-            <button type="submit" class="menu-item menu-item-danger">
-              {{ icon('trash', 'icon icon-sm') }} Mover para a lixeira
-            </button>
-          </form>
+          {# Travado, a lixeira nem é oferecida. O servidor recusaria de
+             qualquer jeito; oferecer um botão que só sabe dizer não é pior
+             do que não ter o botão. #}
+          {% if not mind_map.is_locked %}
+            <form method="post" action="{{ url_for('mindmaps.delete', public_uuid=mind_map.uuid) }}"
+                  data-confirm="Mover “{{ mind_map.title }}” para a lixeira de mapas?">
+              {{ confirm_form.hidden_tag() }}
+              <button type="submit" class="menu-item menu-item-danger">
+                {{ icon('trash', 'icon icon-sm') }} Mover para a lixeira
+              </button>
+            </form>
+          {% endif %}
         </div>
       </details>
     </div>
@@ -172,6 +236,10 @@
          containing block has to be the board so they follow its left edge
          when a panel opens. As children of the page they were positioned
          against the whole window and sat on top of the outline. #}
+      {# Travado, as ferramentas que escrevem ficam desabilitadas de verdade e
+         não apenas apagadas: um botão que o leitor de tela ainda anuncia como
+         disponível, e que só sabe recusar, é pior do que um botão ausente.
+         Selecionar, mover a tela e o zoom continuam — ler não é editar. #}
       <div class="mm-toolbar" data-chrome role="toolbar" aria-label="Ferramentas do mapa">
         <button type="button" class="mm-tool is-on" data-tool-button="select"
                 aria-pressed="true" title="Selecionar (V)" aria-label="Selecionar">
@@ -181,14 +249,14 @@
                 aria-pressed="false" title="Mover a tela (H ou barra de espaço)" aria-label="Mover a tela">
           {{ icon('hand') }}
         </button>
-        <button type="button" class="mm-tool" data-tool-button="connect"
+        <button type="button" class="mm-tool" data-tool-button="connect" {% if mind_map.is_locked %}disabled{% endif %}
                 aria-pressed="false" title="Conectar tópicos (C)" aria-label="Conectar tópicos">
           {{ icon('connect') }}
         </button>
         {# Um tópico que vale para várias etapas. Aqui e não só no painel do
            tópico: o painel começa fechado, e uma ação que só existe atrás de
            um painel fechado é uma ação que não existe. #}
-        <button type="button" class="mm-tool" data-tool-button="share"
+        <button type="button" class="mm-tool" data-tool-button="share" {% if mind_map.is_locked %}disabled{% endif %}
                 aria-pressed="false"
                 title="Conectar o mesmo tópico em vários lugares, sem tirar de onde está (S)"
                 aria-label="Repetir um tópico em vários lugares">
@@ -197,22 +265,22 @@
 
         <span class="mm-tool-sep" aria-hidden="true"></span>
 
-        <button type="button" class="mm-tool" data-action="mm-add-topic"
+        <button type="button" class="mm-tool" data-action="mm-add-topic" {% if mind_map.is_locked %}disabled{% endif %}
                 title="Novo tópico solto (N)" aria-label="Novo tópico solto">
           {{ icon('plus') }}
         </button>
-        <button type="button" class="mm-tool" data-action="mm-add-note"
+        <button type="button" class="mm-tool" data-action="mm-add-note" {% if mind_map.is_locked %}disabled{% endif %}
                 title="Nova anotação" aria-label="Nova anotação">
           {{ icon('sticky') }}
         </button>
-        <button type="button" class="mm-tool" data-action="mm-upload"
+        <button type="button" class="mm-tool" data-action="mm-upload" {% if mind_map.is_locked %}disabled{% endif %}
                 title="Inserir imagem" aria-label="Inserir imagem">
           {{ icon('image') }}
         </button>
 
         <span class="mm-tool-sep" aria-hidden="true"></span>
 
-        <button type="button" class="mm-tool" data-action="mm-organize"
+        <button type="button" class="mm-tool" data-action="mm-organize" {% if mind_map.is_locked %}disabled{% endif %}
                 title="Arrumar automaticamente (Ctrl+Shift+O)" aria-label="Arrumar automaticamente">
           {{ icon('wand') }}
         </button>
@@ -275,7 +343,8 @@
             continuam na tela, soltos, exatamente onde estão.
           </p>
           <div class="mm-inspector-actions">
-            <button type="button" class="btn btn-sm btn-danger" data-action="mm-detach">
+            <button type="button" class="btn btn-sm btn-danger" data-action="mm-detach"
+                    {% if mind_map.is_locked %}disabled{% endif %}>
               {{ icon('unlink', 'icon icon-sm') }} Desconectar
             </button>
           </div>
@@ -297,7 +366,8 @@
             <button type="button" class="btn btn-sm" data-action="mm-goto-original">
               {{ icon('arrow-left', 'icon icon-sm') }} Ir ao original
             </button>
-            <button type="button" class="btn btn-sm btn-danger" data-action="mm-delete">
+            <button type="button" class="btn btn-sm btn-danger" data-action="mm-delete"
+                    {% if mind_map.is_locked %}disabled{% endif %}>
               {{ icon('trash', 'icon icon-sm') }} Tirar daqui
             </button>
           </div>
@@ -307,7 +377,12 @@
           Selecione um tópico na tela para editar o texto, a cor, a imagem e os links.
         </p>
 
-        <div class="mm-inspector-form" data-inspector-form hidden>
+        {# Um fieldset e não vinte atributos: desabilitar um fieldset
+           desabilita tudo o que há dentro dele, pelas regras do HTML. É por
+           isso que a próxima pessoa a acrescentar um campo aqui não vai
+           precisar lembrar do cadeado. #}
+        <fieldset class="mm-inspector-form" data-inspector-form hidden
+                  {% if mind_map.is_locked %}disabled{% endif %}>
           <div class="field">
             <label class="field-label" for="mm-text">Texto</label>
             <textarea class="input mm-textarea" id="mm-text" data-inspector-text rows="2"
@@ -456,28 +531,57 @@
               {{ icon('trash', 'icon icon-sm') }} Excluir ramo
             </button>
           </div>
-        </div>
+        </fieldset>
       </div>
     </aside>
   </div>
 
   {# ── Diálogos ─────────────────────────────────────────────────────────── #}
-  <dialog class="modal" id="map-settings" aria-labelledby="map-settings-title">
+  <dialog class="modal modal-scroll" id="map-settings" aria-labelledby="map-settings-title">
     <form method="post" action="{{ url_for('mindmaps.update', public_uuid=mind_map.uuid) }}">
       {{ form.hidden_tag() }}
       <div class="modal-head">
-        <h2 class="modal-title" id="map-settings-title">Configurações do mapa</h2>
+        <h2 class="modal-title" id="map-settings-title">Nome e cor do mapa</h2>
       </div>
+      {# Nome e cor primeiro: são o que traz alguém a esta caixa. A descrição e
+         a disposição continuam aqui porque não merecem uma segunda caixa, mas
+         vêm depois. #}
       <div class="modal-body stack stack-3">
+        {# Sem `autofocus`: `openDialog` já põe o foco no primeiro campo, e o
+           atributo faria o navegador disputar isso na carga da página. #}
         {{ field(form.title) }}
-        {{ field(form.description, placeholder='Uma linha sobre o que este mapa organiza') }}
-        <div class="form-grid">
-          {{ select_field(form.layout) }}
-          <div class="field">
-            {{ form.color.label(class='field-label') }}
-            {{ form.color(class='color-input', type='color') }}
+
+        <div class="field">
+          {{ form.color.label(class='field-label') }}
+          {# As mesmas oito cores que um tópico oferece, e pela mesma razão:
+             elas se distinguem entre si e continuam legíveis nos dois temas.
+             Esta é a cor que domina o tópico central e o traço de todo ramo -
+             se alguma escolha merecia a paleta curada em vez do seletor cru
+             do sistema, é justamente ela.
+
+             O seletor livre fica logo abaixo, e não some: é ele que guarda o
+             valor, é ele que funciona sem JavaScript, e é ele que atende quem
+             precisa de uma cor de marca que não está entre as oito. #}
+          <div class="mm-swatches" role="group" aria-label="Cores sugeridas">
+            {% for value, label in palette %}
+              <button type="button" class="mm-swatch" data-map-swatch="{{ value }}"
+                      data-color="{{ value }}" title="{{ label }}"
+                      aria-label="{{ label }}" aria-pressed="false"></button>
+            {% endfor %}
           </div>
+          <div class="row row-tight">
+            {{ form.color(class='color-input', type='color') }}
+            <span class="field-hint">
+              Domina o tópico central e o traço de cada ramo.
+            </span>
+          </div>
+          {% for error in form.color.errors %}
+            <span class="field-error">{{ icon('alert', 'icon icon-sm') }}{{ error }}</span>
+          {% endfor %}
         </div>
+
+        {{ field(form.description, placeholder='Uma linha sobre o que este mapa organiza') }}
+        {{ select_field(form.layout) }}
       </div>
       <div class="modal-foot">
         <button type="button" class="btn" data-action="close-dialog">Cancelar</button>

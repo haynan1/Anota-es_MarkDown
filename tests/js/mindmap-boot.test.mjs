@@ -75,6 +75,7 @@ globalThis.document = {
   addEventListener() {},
   activeElement: null,
 };
+let minted = 0;
 globalThis.window = {
   addEventListener() {},
   requestAnimationFrame() {},
@@ -83,7 +84,17 @@ globalThis.window = {
   setTimeout() { return 0; },
   clearTimeout() {},
   getSelection: () => ({ removeAllRanges() {}, addRange() {} }),
-  crypto: { randomUUID: () => `00000000-0000-4000-8000-${String(Date.now()).slice(-12)}` },
+  /* Um contador, e não o relógio.
+     `Date.now()` devolvia o mesmo identificador para duas chamadas no mesmo
+     milissegundo, e um nó criado logo depois do outro sobrescrevia o irmão -
+     ou o próprio pai - dentro do modelo. Um dublê capaz de cunhar
+     identificadores repetidos torna duvidoso todo teste construído sobre ele,
+     e o servidor recusa o segundo `create` do mesmo uuid justamente porque
+     duplicata é erro. Mesmo contador da suíte de colocação. */
+  crypto: {
+    randomUUID: () =>
+      `00000000-0000-4000-8000-${String((minted += 1)).padStart(12, '0')}`,
+  },
 };
 globalThis.CSS = { escape: (value) => value };
 globalThis.fetch = async () => ({ ok: true, json: async () => ({ ok: true }) });
@@ -228,6 +239,300 @@ check('criar, conectar, desconectar e reaninhar rodam de ponta a ponta', () => {
   actions.removeSelection();
 
   if (!store.nodes.size) throw new Error('o mapa ficou vazio depois dos gestos');
+});
+
+/* ── E um mapa travado não se move ──────────────────────────────────────── */
+
+/*
+ * O cadeado tem um único ponto de verdade no navegador - `store.mutate` - e é
+ * exatamente por isso que ele precisa deste teste: um teste por gesto seria um
+ * teste esquecido no dia em que alguém acrescentar o gesto seguinte. Aqui os
+ * mesmos gestos do bloco acima rodam contra um mapa travado, e o que se afirma
+ * é sobre o modelo inteiro: nem um nó a mais, nem um a menos, nem um campo
+ * diferente.
+ */
+
+function fingerprint(store) {
+  return JSON.stringify(
+    [...store.nodes.values()]
+      .map((node) => ({ ...node }))
+      .sort((a, b) => a.uuid.localeCompare(b.uuid))
+  );
+}
+
+check('um mapa travado recusa todos os gestos, e não muda nada', () => {
+  const { store, actions } = boot({ ...payload, locked: true });
+  const root = store.roots()[0];
+  const before = fingerprint(store);
+
+  if (!store.locked) throw new Error('o store não adotou o cadeado do grafo');
+
+  if (actions.addChild(root.uuid) !== null) {
+    throw new Error('addChild devolveu um nó que o modelo não recebeu');
+  }
+  if (actions.addLoose({ x: 0, y: 0 }) !== null) throw new Error('addLoose criou');
+  if (actions.addNote({ x: 0, y: 0 }) !== null) throw new Error('addNote criou');
+  if (actions.duplicate(root.uuid) !== null) throw new Error('duplicate copiou');
+  if (actions.remove([root.uuid]) !== 0) throw new Error('remove apagou');
+  if (actions.clearBranchLayouts() !== 0) throw new Error('clearBranchLayouts mexeu');
+
+  actions.update(root.uuid, { text: 'outro texto' });
+  actions.moveBy([root.uuid], 50, 50);
+  actions.moveTo(root.uuid, 999, 999);
+  actions.toggleCollapse(root.uuid);
+  actions.detach(root.uuid);
+
+  if (fingerprint(store) !== before) throw new Error('o mapa travado mudou');
+  if (store.hasPendingChanges()) throw new Error('sobrou algo para salvar');
+});
+
+check('um mapa travado não guarda a medida que o navegador tirou', () => {
+  const { store } = boot({ ...payload, locked: true });
+  const root = store.roots()[0];
+  if (store.measured(root.uuid, 400, 400)) {
+    throw new Error('a medida entrou num mapa travado');
+  }
+});
+
+check('destravado, os mesmos gestos continuam funcionando', () => {
+  const { store, actions } = boot(payload);
+  const root = store.roots()[0];
+  // Contado como diferença e não contra um número: o grafo aqui pode vir do
+  // servidor, pelo pytest, e aí ele já chega com mais de um tópico.
+  const before = store.nodes.size;
+  if (!actions.addChild(root.uuid)) throw new Error('addChild parou de funcionar');
+  if (store.nodes.size !== before + 1) throw new Error('o nó não entrou no modelo');
+});
+
+/* ── Um espelho não ganha ramo, por nenhum dos caminhos ─────────────────── */
+
+/*
+ * O defeito que isto prende chegou ao produto e ficou visível só no log de
+ * acesso: cinco `POST /operacoes` iguais devolvendo 400 em quinze segundos.
+ *
+ * A causa era uma regra dita em quatro lugares e cumprida em um. O servidor
+ * sempre recusou um subtópico dentro de um espelho - o ramo é do original -
+ * e o cliente só checava isso em `shareInto`. Por Tab, por arrastar e pelo
+ * painel Estrutura o modelo local aceitava, o lote ia, voltava 400, e como a
+ * baseline só anda quando o servidor diz sim, toda gravação seguinte
+ * reenviava a mesma operação impossível: o mapa parava de salvar em silêncio.
+ */
+
+const COM_ESPELHO = {
+  ...payload,
+  nodes: [
+    { uuid: 'raiz', parent: null },
+    { uuid: 'original', parent: 'raiz' },
+    { uuid: 'espelho', parent: 'raiz', mirror_of: 'original' },
+    { uuid: 'solto', parent: null },
+  ].map((item, index) => ({
+    position: index, kind: 'topic', text: item.uuid, note: '', url: '',
+    image_url: '', media_uuid: '', document: null, x: 0, y: index * 80,
+    width: 180, height: 48, color: '', shape: 'rounded',
+    collapsed: false, layout: '', ...item,
+  })),
+};
+
+check('nenhum caminho põe um subtópico dentro de um espelho', () => {
+  const { store, actions } = boot(COM_ESPELHO);
+  const antes = store.nodes.size;
+
+  if (actions.addChild('espelho') !== null) throw new Error('Tab criou filho no espelho');
+  if (actions.reparent('solto', 'espelho')) throw new Error('arrastar pendurou no espelho');
+  if (actions.moveInto('solto', 'espelho', 0)) throw new Error('a Estrutura pendurou no espelho');
+  if (actions.shareInto('original', 'espelho')) throw new Error('shareInto pendurou no espelho');
+
+  if (store.nodes.size !== antes) throw new Error('o modelo mudou mesmo assim');
+  if (store.get('solto').parent !== null) throw new Error('o tópico solto foi movido');
+  if (store.hasPendingChanges()) throw new Error('sobrou uma operação impossível para enviar');
+});
+
+check('e o caminho legítimo continua aberto', () => {
+  const { store, actions } = boot(COM_ESPELHO);
+  if (!actions.addChild('original')) throw new Error('o original parou de aceitar subtópicos');
+  if (!actions.reparent('solto', 'original')) throw new Error('arrastar parou de funcionar');
+  if (!store.get('espelho')) throw new Error('o espelho sumiu');
+});
+
+/* ── E um lote recusado não volta para a fila ───────────────────────────── */
+
+/*
+ * A segunda metade do mesmo defeito, e a que vale independentemente da causa:
+ * um lote que o servidor chamou de inválido nunca fica válido por ser
+ * reenviado. Sem esta regra, *qualquer* operação impossível - a de amanhã,
+ * que ainda não conhecemos - tranca o mapa do mesmo jeito.
+ *
+ * O transporte do store é um parâmetro justamente para isto poder ser
+ * exercitado sem um servidor.
+ */
+
+function servidorQue(resposta) {
+  const enviados = [];
+  const store = createStore({
+    opsUrl: '/ops', graphUrl: '/graph', layoutUrl: '/layout',
+    mediaUrl: '/media/00000000-0000-0000-0000-000000000000',
+    documentUrl: '/doc/00000000-0000-0000-0000-000000000000',
+    revision: payload.revision, layout: payload.layout,
+    post: (url, body) => {
+      enviados.push(body.operations);
+      return Promise.resolve(resposta);
+    },
+    load: () => Promise.resolve({
+      ok: true,
+      json: () => Promise.resolve({ ok: true, graph: payload }),
+    }),
+  });
+  store.adopt(payload);
+  return { store, enviados };
+}
+
+const RECUSA = {
+  ok: false, status: 400,
+  data: { ok: false, error: 'Este é um tópico compartilhado.' },
+};
+const QUEDA = { ok: false, status: 0, data: null };
+const ERRO_DO_SERVIDOR = { ok: false, status: 500, data: null };
+
+await (async () => {
+  const { store, enviados } = servidorQue(RECUSA);
+  const motivos = [];
+  store.on('rejected', ({ reason }) => motivos.push(reason));
+
+  store.mutate(() => store.nodes.set('novo', { ...store.roots()[0], uuid: 'novo' }),
+    { structural: true });
+  await store.flush();
+
+  check('uma recusa é dita à pessoa, com o motivo do servidor', () => {
+    if (motivos.length !== 1) throw new Error(`avisos: ${motivos.length}`);
+    if (!motivos[0].includes('compartilhado')) throw new Error(motivos[0]);
+  });
+
+  check('e o lote impossível não fica na fila', () => {
+    if (store.hasPendingChanges()) {
+      throw new Error('a operação recusada continuou pendente e voltaria a ser enviada');
+    }
+  });
+
+  await store.flush();
+  check('uma segunda gravação não reenvia nada', () => {
+    if (enviados.length !== 1) throw new Error(`o cliente enviou ${enviados.length} lotes`);
+  });
+})();
+
+for (const [nome, resposta] of [['a rede caiu', QUEDA], ['o servidor errou', ERRO_DO_SERVIDOR]]) {
+  await (async () => {
+    const { store } = servidorQue(resposta);
+    let recusas = 0;
+    store.on('rejected', () => { recusas += 1; });
+
+    store.mutate(() => store.nodes.set('novo', { ...store.roots()[0], uuid: 'novo' }),
+      { structural: true });
+    await store.flush();
+
+    check(`${nome}: continua sendo transitório, e a alteração espera`, () => {
+      if (recusas) throw new Error('uma falha passageira foi tratada como recusa');
+      if (!store.hasPendingChanges()) throw new Error('a alteração foi descartada');
+      if (store.status !== 'error') throw new Error(`status ${store.status}`);
+    });
+  })();
+}
+
+/* ── E o teto de níveis é o mesmo dos dois lados ────────────────────────── */
+
+/*
+ * O mesmo defeito do espelho, no outro teto: o servidor recusa um subtópico
+ * que passe de `MAX_DEPTH` níveis, e a tela não sabia disso. Vinte Tabs
+ * seguidos produziam um lote que nunca seria aceito.
+ *
+ * A conta está escrita duas vezes - em Python e aqui - porque nenhuma das
+ * duas pode esperar pela outra: o servidor decide, e a tela precisa recusar o
+ * gesto onde ele acontece. Duas escritas de uma regra é risco de divergência,
+ * então o ponto exato da recusa é fixado aqui e em
+ * `test_depth_is_bounded`, que constrói a mesma corrente do lado de lá.
+ */
+
+const TETO = 20;
+
+function corrente(comprimento) {
+  const nodes = [];
+  for (let i = 0; i < comprimento; i += 1) {
+    nodes.push({
+      uuid: `n${i}`, parent: i === 0 ? null : `n${i - 1}`, position: 0,
+      kind: 'topic', text: `n${i}`, note: '', url: '', image_url: '',
+      media_uuid: '', document: null, x: 0, y: i * 80, width: 180, height: 48,
+      color: '', shape: 'rounded', collapsed: false, layout: '',
+    });
+  }
+  return boot({ ...payload, nodes, limits: { ...payload.limits, depth: TETO } });
+}
+
+check('o último nível permitido ainda aceita um subtópico', () => {
+  // A mesma corrente que `test_depth_is_bounded` monta: a raiz e mais
+  // dezenove. Pendurar em n18 ainda cabe.
+  const { actions } = corrente(TETO);
+  if (!actions.addChild(`n${TETO - 2}`)) {
+    throw new Error('a tela recusou um subtópico que o servidor aceitaria');
+  }
+});
+
+check('e o seguinte é recusado aqui, e não pelo servidor', () => {
+  const { store, actions } = corrente(TETO);
+  const antes = store.nodes.size;
+
+  if (actions.addChild(`n${TETO - 1}`) !== null) {
+    throw new Error('a tela deixou passar um lote que o servidor recusaria');
+  }
+  if (store.nodes.size !== antes) throw new Error('o modelo cresceu mesmo assim');
+  if (store.hasPendingChanges()) throw new Error('sobrou operação impossível na fila');
+});
+
+/* Não é só o tópico que desce: o ramo inteiro desce com ele. Sem contar a
+   altura, mover um galho de três níveis para perto do teto passaria aqui e
+   morreria no servidor.
+
+   A conta é a do servidor, letra por letra - `profundidade do novo pai + 1 +
+   altura do que se move >= teto` - então os dois lados da fronteira são
+   fixados: em n15 dá 19 e cabe; em n16 dá 20 e não cabe. Afirmar só a recusa
+   deixaria passar um guarda exagerado, que recusa o que o servidor aceita e é
+   igualmente um defeito - só mais silencioso. */
+function ramoDeTresNiveis(actions) {
+  const ramo = actions.addLoose({ x: 900, y: 0 });
+  let ponta = ramo.uuid;
+  for (let i = 0; i < 3; i += 1) ponta = actions.addChild(ponta).uuid;
+  return ramo.uuid;
+}
+
+check('um ramo alto ainda cabe no último nível que o comporta', () => {
+  const { store, actions } = corrente(TETO - 3);
+  const ramo = ramoDeTresNiveis(actions);
+
+  if (!actions.reparent(ramo, `n${TETO - 5}`)) {
+    throw new Error('a tela recusou um movimento que o servidor aceitaria');
+  }
+  if (store.get(ramo).parent !== `n${TETO - 5}`) throw new Error('o ramo não foi movido');
+});
+
+check('e um nível abaixo disso é recusado aqui, não pelo servidor', () => {
+  const { store, actions } = corrente(TETO - 3);
+  const ramo = ramoDeTresNiveis(actions);
+
+  if (actions.reparent(ramo, `n${TETO - 4}`)) {
+    throw new Error('a tela desceu um ramo alto para além do teto');
+  }
+  if (store.get(ramo).parent !== null) throw new Error('o ramo foi movido mesmo assim');
+});
+
+check('sem teto conhecido, quem decide continua sendo o servidor', () => {
+  /* Um mapa aberto por um servidor que ainda não manda `limits.depth` não
+     pode ficar sem criar subtópico nenhum. */
+  const nodes = [{
+    uuid: 'raiz', parent: null, position: 0, kind: 'topic', text: 'raiz',
+    note: '', url: '', image_url: '', media_uuid: '', document: null,
+    x: 0, y: 0, width: 180, height: 48, color: '', shape: 'rounded',
+    collapsed: false, layout: '',
+  }];
+  const { actions } = boot({ ...payload, nodes, limits: { nodes: 1000 } });
+  if (!actions.addChild('raiz')) throw new Error('sem teto, a tela travou sozinha');
 });
 
 if (failures) {

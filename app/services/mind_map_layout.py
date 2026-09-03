@@ -863,8 +863,60 @@ def _sign(value: float) -> float:
     return -1.0 if value < 0 else 0.0
 
 
-def branch_path(routing: str, parent: Box, child: Box) -> str:
-    """The ``d`` of the line from ``parent`` to ``child``."""
+# A line, before it is a string.
+#
+# ``branch_path`` used to build the ``d`` attribute directly, which was fine
+# while SVG was the only picture this application produced. It is not any more:
+# the same line has to reach a PDF page and a bitmap, and neither of those
+# speaks SVG. Parsing back a string this module had just written would have
+# been the shortcut, and it would have put a parser between the geometry and
+# every drawing made from it.
+#
+# So the geometry is the geometry, and the ``d`` is one rendering of it. The
+# string still comes out byte for byte as it did - the rounding happens at
+# serialisation, exactly where it happened before - which is what keeps the
+# character-for-character parity test against ``routing.js`` meaningful.
+
+
+@dataclass(frozen=True, slots=True)
+class MoveTo:
+    x: float
+    y: float
+
+
+@dataclass(frozen=True, slots=True)
+class LineTo:
+    x: float
+    y: float
+
+
+@dataclass(frozen=True, slots=True)
+class CurveTo:
+    """A cubic Bezier: two control points, then the end."""
+
+    x1: float
+    y1: float
+    x2: float
+    y2: float
+    x: float
+    y: float
+
+
+@dataclass(frozen=True, slots=True)
+class QuadTo:
+    """A quadratic Bezier: one control point, then the end."""
+
+    x1: float
+    y1: float
+    x: float
+    y: float
+
+
+Segment = MoveTo | LineTo | CurveTo | QuadTo
+
+
+def branch_segments(routing: str, parent: Box, child: Box) -> tuple[Segment, ...]:
+    """The line from ``parent`` to ``child``, as geometry rather than syntax."""
     if routing == "vertical":
         return _vertical_curve(parent, child)
     if routing == "elbow":
@@ -874,7 +926,30 @@ def branch_path(routing: str, parent: Box, child: Box) -> str:
     return _horizontal_curve(parent, child)
 
 
-def _horizontal_curve(parent: Box, child: Box) -> str:
+def branch_path(routing: str, parent: Box, child: Box) -> str:
+    """The ``d`` of the line from ``parent`` to ``child``."""
+    return segments_to_path(branch_segments(routing, parent, child))
+
+
+def segments_to_path(segments: Iterable[Segment]) -> str:
+    """Segments as an SVG ``d``. The one place a number becomes a character."""
+    return " ".join(_segment_to_path(segment) for segment in segments)
+
+
+def _segment_to_path(segment: Segment) -> str:
+    if isinstance(segment, MoveTo):
+        return f"M{_n(segment.x)},{_n(segment.y)}"
+    if isinstance(segment, LineTo):
+        return f"L{_n(segment.x)},{_n(segment.y)}"
+    if isinstance(segment, QuadTo):
+        return f"Q{_n(segment.x1)},{_n(segment.y1)} {_n(segment.x)},{_n(segment.y)}"
+    return (
+        f"C{_n(segment.x1)},{_n(segment.y1)} "
+        f"{_n(segment.x2)},{_n(segment.y2)} {_n(segment.x)},{_n(segment.y)}"
+    )
+
+
+def _horizontal_curve(parent: Box, child: Box) -> tuple[Segment, ...]:
     """A cubic leaving the parent sideways and arriving the same way."""
     x1, x2 = parent.right, child.x
     if child.right < parent.x:
@@ -886,12 +961,12 @@ def _horizontal_curve(parent: Box, child: Box) -> str:
     reach = max(abs(x2 - x1) * 0.5, CURVE_REACH)
     lean = 1.0 if x2 >= x1 else -1.0
     return (
-        f"M{_n(x1)},{_n(y1)} C{_n(x1 + reach * lean)},{_n(y1)} "
-        f"{_n(x2 - reach * lean)},{_n(y2)} {_n(x2)},{_n(y2)}"
+        MoveTo(x1, y1),
+        CurveTo(x1 + reach * lean, y1, x2 - reach * lean, y2, x2, y2),
     )
 
 
-def _vertical_curve(parent: Box, child: Box) -> str:
+def _vertical_curve(parent: Box, child: Box) -> tuple[Segment, ...]:
     """The same curve stood on end: out of the bottom face, into the top."""
     y1, y2 = parent.bottom, child.y
     if child.bottom < parent.y:
@@ -901,12 +976,12 @@ def _vertical_curve(parent: Box, child: Box) -> str:
     reach = max(abs(y2 - y1) * 0.5, CURVE_REACH)
     lean = 1.0 if y2 >= y1 else -1.0
     return (
-        f"M{_n(x1)},{_n(y1)} C{_n(x1)},{_n(y1 + reach * lean)} "
-        f"{_n(x2)},{_n(y2 - reach * lean)} {_n(x2)},{_n(y2)}"
+        MoveTo(x1, y1),
+        CurveTo(x1, y1 + reach * lean, x2, y2 - reach * lean, x2, y2),
     )
 
 
-def _elbow(parent: Box, child: Box) -> str:
+def _elbow(parent: Box, child: Box) -> tuple[Segment, ...]:
     """Down, across, down again - the org-chart connector.
 
     The turn happens exactly halfway between the two rows, and that is what
@@ -930,23 +1005,25 @@ def _elbow(parent: Box, child: Box) -> str:
         # line when the two centres agree - the common case for an only child,
         # and the one place a curve would look like a mistake.
         return (
-            f"M{_n(x1)},{_n(y1)} L{_n(x1)},{_n(middle)} "
-            f"L{_n(x2)},{_n(middle)} L{_n(x2)},{_n(y2)}"
+            MoveTo(x1, y1),
+            LineTo(x1, middle),
+            LineTo(x2, middle),
+            LineTo(x2, y2),
         )
 
     first = _sign(middle - y1)
     second = _sign(y2 - middle)
     return (
-        f"M{_n(x1)},{_n(y1)} "
-        f"L{_n(x1)},{_n(middle - radius * first)} "
-        f"Q{_n(x1)},{_n(middle)} {_n(x1 + radius * across)},{_n(middle)} "
-        f"L{_n(x2 - radius * across)},{_n(middle)} "
-        f"Q{_n(x2)},{_n(middle)} {_n(x2)},{_n(middle + radius * second)} "
-        f"L{_n(x2)},{_n(y2)}"
+        MoveTo(x1, y1),
+        LineTo(x1, middle - radius * first),
+        QuadTo(x1, middle, x1 + radius * across, middle),
+        LineTo(x2 - radius * across, middle),
+        QuadTo(x2, middle, x2, middle + radius * second),
+        LineTo(x2, y2),
     )
 
 
-def _spoke(parent: Box, child: Box) -> str:
+def _spoke(parent: Box, child: Box) -> tuple[Segment, ...]:
     """A straight run between two boxes, cut at the faces it crosses.
 
     Radial is the one layout where a child can sit in any direction at all
@@ -957,7 +1034,7 @@ def _spoke(parent: Box, child: Box) -> str:
     """
     start = _edge_point(parent, child.centre_x, child.centre_y)
     end = _edge_point(child, parent.centre_x, parent.centre_y)
-    return f"M{_n(start[0])},{_n(start[1])} L{_n(end[0])},{_n(end[1])}"
+    return (MoveTo(start[0], start[1]), LineTo(end[0], end[1]))
 
 
 def _edge_point(box: Box, toward_x: float, toward_y: float) -> tuple[float, float]:

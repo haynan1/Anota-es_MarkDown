@@ -149,6 +149,19 @@ class MindMap(TimestampMixin, db.Model):
     is_favorite: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, index=True
     )
+    # O cadeado. Um documento se protege contra sumir; um mapa precisa se
+    # proteger contra *mudar*, e a diferença não é acadêmica: numa tela, uma
+    # tecla errada com um tópico selecionado apaga um ramo, e um arrastar
+    # distraído reescreve a hierarquia sem pedir nada a ninguém. Travado, o
+    # mapa fica somente leitura - nenhuma operação, nenhum "arrumar", nenhuma
+    # troca de nome ou cor, e nem a lixeira.
+    #
+    # O que continua liberado é o que não altera o mapa: abrir, navegar,
+    # favoritar, duplicar (a cópia nasce destravada) e exportar em qualquer
+    # formato. Guardar o enquadramento também, porque olhar não é editar.
+    is_locked: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
     is_deleted: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, index=True
     )

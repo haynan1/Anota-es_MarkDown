@@ -37,6 +37,18 @@ weasyprint==69.0              # CVE: <68.0 bypass de SSRF via redirect
 # ── PDF (motor alternativo, Python puro, sem dependências nativas) ──────────
 xhtml2pdf==0.2.17
 
+# ── Figuras dos mapas mentais (PDF, PNG e JPEG) ─────────────────────────────
+# Chegaram como transitivas do xhtml2pdf e agora são dependências diretas:
+# app/services/mind_map_picture.py desenha o PDF com o ReportLab e o bitmap
+# com o Pillow. Nenhuma das duas precisa de biblioteca nativa — foi por isso
+# que elas venceram o cairosvg e o rasterizador do navegador.
+#
+# O ReportLab também é de onde vem a fonte do desenho (Bitstream Vera Sans,
+# em reportlab/fonts). Rebaixá-lo abaixo de 4.5 tira os arquivos do lugar em
+# que mind_map_picture os procura.
+reportlab==4.5.1
+pillow==12.3.0                # CVE: <11.3.0 estouro de buffer ao ler DDS
+
 # Transitivas do xhtml2pdf, fixadas aqui só pelo piso de segurança: sem estas
 # linhas o pip resolve para versões com advisories abertos. Nenhuma das duas é
 # usada diretamente por esta aplicação.

@@ -7,9 +7,9 @@
  * visits, and the toolbar buttons that call into the modules.
  *
  * The board still degrades honestly. With JavaScript unavailable the canvas
- * cannot draw, but the map is not lost: the gallery, the settings form, the
- * Markdown and SVG exports, "salvar como documento", duplicate and delete are
- * all plain server-rendered pages and form posts.
+ * cannot draw, but the map is not lost: the gallery, the settings form, every
+ * export - Markdown, PDF, PNG, JPEG, SVG - "salvar como documento", duplicate,
+ * o cadeado e delete are all plain server-rendered pages and form posts.
  */
 
 import { $, $$, closeDialog, debounce, openDialog, postJSON } from './modules/dom.js';
@@ -63,6 +63,7 @@ function boot() {
     mediaUrl: page.dataset.mediaUrl,
     documentUrl: page.dataset.documentUrl,
     revision: Number(page.dataset.revision) || 1,
+    locked: page.hasAttribute('data-locked'),
   });
 
   const camera = createCamera(page, world, stage);
@@ -200,6 +201,9 @@ function boot() {
   });
 
   store.on('status', (status) => {
+    // Travado, o indicador nem existe na página: um "Salvo" permanente ao
+    // lado de um cadeado diria a coisa certa pelo motivo errado.
+    if (!statusOutput || !statusLabel) return;
     statusOutput.dataset.state = status === 'dirty' ? 'saving' : status;
     statusLabel.textContent = {
       saved: 'Salvo',
@@ -207,6 +211,41 @@ function boot() {
       dirty: 'Salvando…',
       error: 'Não salvo',
     }[status] || 'Salvo';
+  });
+
+  /* Uma recusa acontece por dois motivos e a diferença importa: ou o mapa já
+     estava travado quando esta aba abriu - e a pessoa acabou de tentar algo
+     que a tela já mostrava desabilitado - ou ele foi travado em outro lugar
+     enquanto se editava aqui, e nesse caso o que estava por salvar não foi
+     salvo. O segundo caso merece a frase inteira. */
+  store.on('refused', ({ remote } = {}) => {
+    if (remote) {
+      notify(
+        'Este mapa foi travado em outro lugar. As alterações não salvas foram ' +
+          'descartadas e recarregamos a versão do servidor.',
+        'warning',
+        { timeout: 9000 }
+      );
+      window.setTimeout(() => window.location.reload(), 1200);
+      return;
+    }
+    notify(
+      'Mapa travado. Use o cadeado no topo para poder editar.',
+      'info',
+      { timeout: 3200 }
+    );
+  });
+
+  /* O servidor recusou o lote. Isto não é "não deu para salvar agora" - é
+     "isto não pode ser salvo", e a diferença é a única coisa que a pessoa
+     precisa saber para não ficar tentando. O motivo vem do servidor, escrito
+     para ser lido, e a tela já voltou ao que existe de verdade. */
+  store.on('rejected', ({ reason }) => {
+    notify(
+      `${reason} A última alteração não foi salva e o mapa voltou à versão do servidor.`,
+      'error',
+      { timeout: 9000 }
+    );
   });
 
   store.on('conflict', () => {
@@ -238,6 +277,10 @@ function boot() {
      someone who noticed - and on a large board the difference between "tidied"
      and "lost my arrangement" takes a moment to surface. So it is asked. */
   function confirmOrganize() {
+    if (store.locked) {
+      notify('Mapa travado. Use o cadeado no topo para poder editar.', 'info');
+      return;
+    }
     const dialog = $('#map-organize');
     if (!dialog) {
       organize(store.layout);
@@ -366,13 +409,49 @@ function boot() {
   function refreshHistoryButtons() {
     const undoButton = $('[data-action="mm-undo"]', page);
     const redoButton = $('[data-action="mm-redo"]', page);
-    if (undoButton) undoButton.disabled = !store.canUndo;
-    if (redoButton) redoButton.disabled = !store.canRedo;
+    // O `||` e não só a pilha: travado, a pilha está vazia de qualquer jeito,
+    // mas ela ficaria com conteúdo se alguém travasse o mapa noutro lugar
+    // durante esta sessão - e aí os botões voltariam a acender sozinhos.
+    if (undoButton) undoButton.disabled = store.locked || !store.canUndo;
+    if (redoButton) redoButton.disabled = store.locked || !store.canRedo;
+  }
+
+  /* ── Nome e cor do mapa ───────────────────────────────────────────── */
+
+  /*
+   * A paleta do diálogo e o seletor de cor são um controle só, e o seletor é
+   * quem guarda o valor: ele é o campo do formulário, ele é o que chega ao
+   * servidor, e ele é o que continua funcionando com o JavaScript fora do ar.
+   * As oito cores são um atalho para ele - nunca uma segunda fonte da verdade,
+   * que é como um formulário acaba enviando uma cor diferente da que está
+   * marcada na tela.
+   */
+  const mapColor = $('#map-settings .color-input', page);
+
+  function paintMapSwatches() {
+    if (!mapColor) return;
+    const current = (mapColor.value || '').toLowerCase();
+    $$('[data-map-swatch]', page).forEach((swatch) => {
+      const mine = swatch.dataset.mapSwatch.toLowerCase() === current;
+      swatch.setAttribute('aria-pressed', mine ? 'true' : 'false');
+    });
+  }
+
+  if (mapColor) {
+    mapColor.addEventListener('input', paintMapSwatches);
+    paintMapSwatches();
   }
 
   /* ── Toolbar ──────────────────────────────────────────────────────── */
 
   page.addEventListener('click', (event) => {
+    const swatch = event.target.closest('[data-map-swatch]');
+    if (swatch && mapColor) {
+      mapColor.value = swatch.dataset.mapSwatch;
+      paintMapSwatches();
+      return;
+    }
+
     const toolButton = event.target.closest('[data-tool-button]');
     if (toolButton) {
       interactions.setTool(toolButton.dataset.toolButton);

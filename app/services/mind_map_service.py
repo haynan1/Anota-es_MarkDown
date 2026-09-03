@@ -30,7 +30,10 @@ Invariants that are checked rather than hoped for
 * a map has a node ceiling, so one request cannot ask the browser to render an
   unbounded board;
 * every string is sanitised and every number clamped at this boundary, so the
-  templates and the SVG exporter both receive values that are already safe.
+  templates and the SVG exporter both receive values that are already safe;
+* a locked map is read-only, and it is this layer that says so - every write
+  path goes through :meth:`MindMapService.ensure_unlocked`, so the guard
+  cannot be forgotten by whichever route is added next.
 """
 
 from __future__ import annotations
@@ -63,7 +66,12 @@ from app.models.mind_map import (
 )
 from app.models.mind_map import new_uuid as new_node_uuid
 from app.repositories.mind_map_repository import MAX_MAPS, MindMapRepository
-from app.services.exceptions import ConflictError, NotFoundError, ValidationError
+from app.services.exceptions import (
+    ConflictError,
+    LockedError,
+    NotFoundError,
+    ValidationError,
+)
 from app.services.media_service import release_assets
 from app.services.mind_map_export import (
     OutlineItem,
@@ -71,7 +79,9 @@ from app.services.mind_map_export import (
     to_markdown,
     to_svg,
 )
+from app.services.mind_map_drawing import build_scene
 from app.services.mind_map_layout import LayoutNode, bounding_box, compute_layout
+from app.services.mind_map_picture import Picture, to_jpeg, to_pdf, to_png
 from app.services.sanitizer import sanitize_multiline_text, sanitize_plain_text
 from app.utils.dates import utcnow
 from app.utils.files import safe_slug
@@ -174,7 +184,15 @@ class MindMapService:
                 root_text or clean_title, max_length=MAX_NODE_TEXT_LENGTH
             ),
             shape="pill",
-            color=mind_map.color,
+            # Sem cor própria, de propósito.
+            #
+            # O centro copiava a cor do mapa aqui, e a cópia é o que fazia
+            # "cor predominante" não predominar: mudada a cor do mapa depois,
+            # o tópico central continuava com a cor da fundação, porque uma
+            # cor gravada num nó é uma escolha daquele nó e ganha do acento.
+            # Vazio, ele *segue* o mapa - que é o que a tela, a exportação e o
+            # nome do campo sempre disseram que ele faria.
+            color="",
             x=0.0,
             y=0.0,
             width=200.0,
@@ -192,6 +210,7 @@ class MindMapService:
         color: str | None = None,
         layout: str | None = None,
     ) -> MindMap:
+        MindMapService.ensure_unlocked(mind_map)
         if title is not None:
             clean_title = sanitize_plain_text(title, max_length=MAX_TITLE_LENGTH)
             if not clean_title:
@@ -223,8 +242,34 @@ class MindMapService:
         return mind_map.is_favorite
 
     @staticmethod
+    def toggle_lock(mind_map: MindMap) -> bool:
+        """Trava ou destrava o mapa. Devolve como ele ficou."""
+        mind_map.is_locked = not mind_map.is_locked
+        mind_map.updated_at = utcnow()
+        db.session.commit()
+        return mind_map.is_locked
+
+    @staticmethod
+    def ensure_unlocked(mind_map: MindMap) -> None:
+        """A porta por onde toda escrita passa.
+
+        Chamada aqui e não no blueprint de propósito. A tela fala com o
+        servidor por um caminho e as páginas por outro, e uma trava conferida
+        na rota é uma trava que a próxima rota esquece. Este é o único lugar
+        que sabe que um mapa pode estar fechado, e todo caminho de escrita
+        passa por ele - operações, arrumar, renomear, lixeira e exclusão
+        definitiva.
+        """
+        if mind_map.is_locked:
+            raise LockedError(
+                f"“{mind_map.display_title}” está travado. Destrave o mapa "
+                "para poder alterá-lo."
+            )
+
+    @staticmethod
     def soft_delete(mind_map: MindMap) -> None:
         """Send the map to the trash. Nothing is destroyed."""
+        MindMapService.ensure_unlocked(mind_map)
         mind_map.is_deleted = True
         mind_map.deleted_at = utcnow()
         db.session.commit()
@@ -246,6 +291,7 @@ class MindMapService:
         still points at. Reading the references *after* the delete is what
         makes that answer correct rather than optimistic.
         """
+        MindMapService.ensure_unlocked(mind_map)
         asset_ids = {asset.id for asset in MindMapRepository.assets_of(mind_map.id)}
 
         db.session.delete(mind_map)
@@ -262,6 +308,10 @@ class MindMapService:
         them: an image is content-addressed by its row, and two maps sharing a
         picture is exactly what the reference is for. Purging one map therefore
         checks nothing else claims the file first (see :meth:`purge`).
+
+        Duplicar um mapa travado é permitido, e a cópia nasce destravada: o
+        cadeado protege *este* mapa, e uma cópia que já viesse fechada faria
+        de "duplicar para experimentar" um caminho sem saída.
         """
         clone = MindMap(
             title=sanitize_plain_text(
@@ -353,6 +403,7 @@ class MindMapService:
             "description": mind_map.description,
             "color": mind_map.color,
             "layout": mind_map.layout,
+            "locked": mind_map.is_locked,
             "revision": mind_map.revision,
             "viewport": {
                 "x": mind_map.viewport_x,
@@ -362,6 +413,11 @@ class MindMapService:
             "nodes": [_node_payload(node, by_id) for node in nodes],
             "limits": {
                 "nodes": MAX_NODES_PER_MAP,
+                # A tela precisa deste número para recusar o gesto onde ele
+                # acontece. Sem ele, o vigésimo Tab seguido produzia um lote
+                # que o servidor nunca aceitaria - e um lote impossível na
+                # fila é um mapa que para de salvar.
+                "depth": MAX_DEPTH,
                 "text": MAX_NODE_TEXT_LENGTH,
                 "note": MAX_NODE_NOTE_LENGTH,
                 "url": MAX_URL_LENGTH,
@@ -390,6 +446,11 @@ class MindMapService:
         expected_revision: int | None = None,
     ) -> ApplyResult:
         """Apply a batch of canvas operations atomically. See module docstring."""
+        # Before anything is parsed, and before the revision is claimed: a
+        # refused batch must leave the counter exactly where it found it, or a
+        # locked map would invalidate the other tab's work just by being
+        # written to.
+        MindMapService.ensure_unlocked(mind_map)
         if not isinstance(operations, list):
             raise ValidationError("Operações inválidas.")
         if len(operations) > MAX_OPERATIONS:
@@ -489,6 +550,7 @@ class MindMapService:
         only the part that needs a database - reading the sizes the browser
         measured, and writing the coordinates back.
         """
+        MindMapService.ensure_unlocked(mind_map)
         chosen = direction if direction in LAYOUTS else mind_map.layout
         nodes = MindMapRepository.nodes_of(mind_map)
         if not nodes:
@@ -622,6 +684,25 @@ class MindMapService:
     @staticmethod
     def export_svg(mind_map: MindMap) -> str:
         return to_svg(mind_map, MindMapRepository.nodes_of(mind_map))
+
+    #: Cada formato de figura, e quem o desenha. Um dicionário e não uma
+    #: cadeia de ``if``: a rota recebe o formato do endereço, e uma tabela é
+    #: o que faz "só estes quatro" ser verdade por construção em vez de por
+    #: um ``else`` que alguém precisa lembrar de manter.
+    PICTURE_FORMATS = {"pdf": to_pdf, "png": to_png, "jpeg": to_jpeg}
+
+    @staticmethod
+    def export_picture(mind_map: MindMap, fmt: str) -> Picture:
+        """O mapa como PDF, PNG ou JPEG - o mesmo desenho, três transcrições.
+
+        A cena é montada uma vez e entregue ao motor do formato pedido. Nada
+        aqui sabe desenhar; isto é só a fronteira onde o banco de dados vira
+        geometria.
+        """
+        draw = MindMapService.PICTURE_FORMATS.get(fmt)
+        if draw is None:
+            raise ValidationError("Formato de imagem não suportado.")
+        return draw(build_scene(mind_map, MindMapRepository.nodes_of(mind_map)))
 
 
 # ── The batch ───────────────────────────────────────────────────────────────

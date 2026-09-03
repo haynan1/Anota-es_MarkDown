@@ -65,6 +65,15 @@ NODE_PALETTE = (
     ("#EC4899", "Rosa"),
 )
 
+# Os formatos de figura como o menu os oferece: o valor que a rota entende, o
+# nome que se lê e o ícone que o acompanha. Uma lista e não quatro trechos de
+# HTML quase iguais - acrescentar um formato passa a ser uma linha.
+PICTURE_MENU = (
+    ("pdf", "Baixar como PDF", "printer"),
+    ("png", "Baixar imagem (PNG)", "image"),
+    ("jpeg", "Baixar imagem (JPEG)", "image"),
+)
+
 SHAPE_LABELS = {
     "rounded": "Arredondado",
     "pill": "Cápsula",
@@ -149,6 +158,7 @@ def canvas(public_uuid: str):
         upload_accept=PICKER_ACCEPT,
         upload_limit=max_bytes_for("image"),
         max_nodes=MAX_NODES_PER_MAP,
+        picture_formats=PICTURE_MENU,
     )
 
 
@@ -187,6 +197,28 @@ def toggle_favorite(public_uuid: str):
         "success",
     )
     return redirect(_back_to(url_for("mindmaps.index")))
+
+
+@mindmaps_bp.post("/mapas/<public_uuid>/travar")
+def toggle_lock(public_uuid: str):
+    """Trava ou destrava o mapa contra alterações.
+
+    Um POST com CSRF como qualquer outra ação, e não um verbo da API da tela:
+    travar é a única coisa que se pode fazer com um mapa travado, então ela
+    tem de continuar existindo numa página que não depende de JavaScript.
+    """
+    mind_map = MindMapService.require(public_uuid)
+    if not ConfirmForm().validate_on_submit():
+        return _expired(url_for("mindmaps.canvas", public_uuid=mind_map.uuid))
+
+    locked = MindMapService.toggle_lock(mind_map)
+    flash(
+        "Mapa travado. Ninguém altera este mapa até você destravá-lo."
+        if locked
+        else "Mapa destravado. As alterações voltaram a ser possíveis.",
+        "success",
+    )
+    return redirect(_back_to(url_for("mindmaps.canvas", public_uuid=mind_map.uuid)))
 
 
 @mindmaps_bp.post("/mapas/<public_uuid>/duplicar")
@@ -300,6 +332,35 @@ def download_svg(public_uuid: str) -> Response:
         download_name=safe_filename(mind_map.title, ".svg", fallback="mapa"),
     )
     response.headers["Content-Security-Policy"] = "default-src 'none'; sandbox"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@mindmaps_bp.get("/mapas/<public_uuid>/exportar/<fmt>")
+def download_picture(public_uuid: str, fmt: str) -> Response:
+    """O desenho como PDF, PNG ou JPEG.
+
+    Uma rota para os três porque é uma decisão só: qual motor desenha a mesma
+    cena. Três rotas quase iguais seriam três lugares para esquecer o mesmo
+    cabeçalho de segurança.
+
+    O formato vem do endereço e é conferido contra a tabela do serviço antes
+    de qualquer coisa - ele nunca chega a um nome de arquivo, a um caminho ou
+    a um cabeçalho sem ter passado por ali.
+    """
+    mind_map = MindMapService.require(public_uuid)
+    picture = MindMapService.export_picture(mind_map, fmt)
+
+    response = send_file(
+        io.BytesIO(picture.data),
+        mimetype=picture.mimetype,
+        as_attachment=True,
+        download_name=safe_filename(mind_map.title, picture.extension, fallback="mapa"),
+    )
+    # Sempre anexo, e sempre com o tipo declarado. Um PDF é um documento que
+    # um navegador executa; servi-lo inline da nossa própria origem desfaria a
+    # regra em volta da qual o resto dos downloads foi construído.
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Cache-Control"] = "no-store"
     return response

@@ -6,6 +6,12 @@
  * Tab, by clicking a port, or by pressing a button in a side panel. Three
  * implementations of one verb is how a canvas ends up with a gesture that
  * quietly does something slightly different from its menu item.
+ *
+ * Nada aqui pergunta se o mapa está travado. `store.mutate` responde isso, e
+ * responde para todo mundo de uma vez. O que estas funções fazem é *acreditar*
+ * na resposta: uma criação recusada devolve `null` em vez do nó que não
+ * existe, para que quem chamou não saia editando um tópico que o modelo nunca
+ * recebeu.
  */
 
 import { isVertical } from './routing.js';
@@ -89,6 +95,76 @@ export function createSelection(onChange) {
 }
 
 export function createActions({ store, selection, limits, notify }) {
+  /**
+   * Um espelho nunca ganha ramo próprio: o ramo é do original.
+   *
+   * O servidor sempre recusou isto, e o cliente checava em *um* dos quatro
+   * caminhos que levam até lá. Pelos outros três - Tab com um espelho
+   * selecionado, arrastar um tópico para cima dele, movê-lo para dentro pelo
+   * painel Estrutura - o modelo local aceitava alegremente, e aí acontecia o
+   * pior desfecho possível: o lote ia para o servidor, voltava 400, e como a
+   * baseline só anda quando o servidor diz sim, *toda* gravação seguinte
+   * reenviava a mesma operação impossível. O mapa parava de salvar em
+   * silêncio e ficava assim até alguém recarregar a página.
+   *
+   * Uma regra dita em quatro lugares e cumprida em um é a forma mais cara de
+   * não ter regra nenhuma. Agora ela mora aqui, e os quatro perguntam.
+   */
+  function refusesChildren(parentUuid) {
+    const parent = parentUuid ? store.get(parentUuid) : null;
+    if (!parent || !parent.mirror_of) return false;
+    notify(
+      'Este é um tópico compartilhado. Adicione o subtópico no original — ' +
+        'ele aparece aqui junto.',
+      'error'
+    );
+    return true;
+  }
+
+  /**
+   * Um ramo não passa do teto de níveis do mapa.
+   *
+   * A mesma conta do servidor, e pelo mesmo motivo do espelho acima: um lote
+   * que ele vai recusar não pode sair daqui. `descendo` é quanta árvore vem
+   * junto - zero para um tópico novo, a altura do ramo para um que está sendo
+   * movido - porque mover um galho de cinco níveis para o fundo do mapa
+   * estoura o teto tanto quanto criar cinco tópicos lá.
+   */
+  function tooDeep(parentUuid, descendo = 0) {
+    if (!parentUuid) return false;
+    const ceiling = limits.depth;
+    // Um mapa antigo, aberto por um servidor que ainda não mandava este
+    // número, não pode ficar sem criar subtópico nenhum: sem teto conhecido,
+    // quem decide continua sendo o servidor.
+    if (!ceiling) return false;
+
+    let depth = 0;
+    let cursor = store.get(parentUuid);
+    while (cursor && cursor.parent && depth <= ceiling * 2) {
+      depth += 1;
+      cursor = store.get(cursor.parent);
+    }
+    if (depth + 1 + descendo < ceiling) return false;
+
+    notify(
+      `Este mapa vai até ${ceiling} níveis de profundidade. ` +
+        'Continue o assunto num tópico ao lado, ou num mapa próprio.',
+      'error'
+    );
+    return true;
+  }
+
+  /** Quantos níveis pendem de um nó - a altura do ramo que ele carrega. */
+  function heightOf(uuid) {
+    let height = 0;
+    let frontier = store.children(uuid);
+    while (frontier.length && height <= (limits.depth || 64) * 2) {
+      height += 1;
+      frontier = frontier.flatMap((node) => store.children(node.uuid));
+    }
+    return height;
+  }
+
   /* ── Creating ───────────────────────────────────────────────────────── */
 
   function blankNode(overrides) {
@@ -165,7 +241,8 @@ export function createActions({ store, selection, limits, notify }) {
 
   function addChild(parentUuid, overrides = {}) {
     const parent = store.get(parentUuid);
-    if (!parent || atCapacity()) return null;
+    if (!parent || refusesChildren(parentUuid) || tooDeep(parentUuid)) return null;
+    if (atCapacity()) return null;
 
     const placement = childPlacement(parent);
     const node = blankNode({
@@ -175,12 +252,13 @@ export function createActions({ store, selection, limits, notify }) {
       ...overrides,
     });
 
-    store.mutate(() => {
+    const applied = store.mutate(() => {
       store.nodes.set(node.uuid, node);
       // A branch that gains a child while folded would hide it the instant it
       // was created, which reads as the key not having worked.
       if (parent.collapsed) parent.collapsed = false;
     }, { structural: true });
+    if (!applied) return null;
 
     selection.only(node.uuid);
     return node;
@@ -233,7 +311,9 @@ export function createActions({ store, selection, limits, notify }) {
       ...overrides,
       ...placement,
     });
-    store.mutate(() => store.nodes.set(node.uuid, node), { structural: true });
+    if (!store.mutate(() => store.nodes.set(node.uuid, node), { structural: true })) {
+      return null;
+    }
     selection.only(node.uuid);
     return node;
   }
@@ -258,7 +338,9 @@ export function createActions({ store, selection, limits, notify }) {
       y: node.y + 28,
       position: store.children(node.parent).length,
     });
-    store.mutate(() => store.nodes.set(copy.uuid, copy), { structural: true });
+    if (!store.mutate(() => store.nodes.set(copy.uuid, copy), { structural: true })) {
+      return null;
+    }
     selection.only(copy.uuid);
     return copy;
   }
@@ -319,15 +401,16 @@ export function createActions({ store, selection, limits, notify }) {
       notify('Um tópico não pode virar filho do próprio ramo.', 'error');
       return false;
     }
+    if (refusesChildren(parentUuid)) return false;
+    if (tooDeep(parentUuid, heightOf(uuid))) return false;
     if (node.parent === parentUuid) return false;
 
-    store.mutate(() => {
+    return store.mutate(() => {
       node.parent = parentUuid || null;
       node.position = store.children(parentUuid).length;
       const parent = parentUuid ? store.get(parentUuid) : null;
       if (parent && parent.collapsed) parent.collapsed = false;
     }, { structural: true });
-    return true;
   }
 
   /**
@@ -355,10 +438,7 @@ export function createActions({ store, selection, limits, notify }) {
     const original = store.original(store.get(uuid));
     const parent = store.get(parentUuid);
     if (!original || !parent || original.uuid === parent.uuid) return null;
-    if (parent.mirror_of) {
-      notify('Um tópico compartilhado não recebe subtópicos.', 'error');
-      return null;
-    }
+    if (refusesChildren(parent.uuid) || tooDeep(parent.uuid)) return null;
     // O mesmo tópico duas vezes no mesmo lugar seriam duas linhas dizendo a
     // mesma coisa.
     const already = store.children(parent.uuid).some(
@@ -376,10 +456,11 @@ export function createActions({ store, selection, limits, notify }) {
       mirror_of: original.uuid,
       ...childPlacement(parent),
     });
-    store.mutate(() => {
+    const applied = store.mutate(() => {
       store.nodes.set(node.uuid, node);
       if (parent.collapsed) parent.collapsed = false;
     }, { structural: true });
+    if (!applied) return null;
     selection.only(node.uuid);
     return node;
   }
@@ -404,13 +485,15 @@ export function createActions({ store, selection, limits, notify }) {
       notify('Um tópico não pode virar filho do próprio ramo.', 'error');
       return false;
     }
+    if (refusesChildren(parentUuid)) return false;
+    if (tooDeep(parentUuid, heightOf(uuid))) return false;
 
     const target = parentUuid || null;
     const siblings = store.children(target).filter((item) => item.uuid !== uuid);
     const at = Math.max(0, Math.min(index, siblings.length));
     const ordered = [...siblings.slice(0, at), node, ...siblings.slice(at)];
 
-    store.mutate(() => {
+    return store.mutate(() => {
       node.parent = target;
       ordered.forEach((item, position) => {
         item.position = position;
@@ -420,7 +503,6 @@ export function createActions({ store, selection, limits, notify }) {
       // arrived, which reads as the move not having happened.
       if (parent && parent.collapsed) parent.collapsed = false;
     }, { structural: true });
-    return true;
   }
 
   /** Hang the topic under the sibling above it - the outliner's Tab. */
@@ -476,9 +558,10 @@ export function createActions({ store, selection, limits, notify }) {
     uuids.forEach((uuid) => store.branch(uuid).forEach((key) => doomed.add(key)));
     if (!doomed.size) return 0;
 
-    store.mutate(() => {
+    const applied = store.mutate(() => {
       doomed.forEach((uuid) => store.nodes.delete(uuid));
     }, { structural: true });
+    if (!applied) return 0;
 
     selection.prune((uuid) => store.nodes.has(uuid));
     return doomed.size;
@@ -523,12 +606,12 @@ export function createActions({ store, selection, limits, notify }) {
   function clearBranchLayouts() {
     const own = [...store.nodes.values()].filter((node) => node.layout);
     if (!own.length) return 0;
-    store.mutate(() => {
+    const applied = store.mutate(() => {
       own.forEach((node) => {
         node.layout = '';
       });
     });
-    return own.length;
+    return applied ? own.length : 0;
   }
 
   /* ── Moving around ──────────────────────────────────────────────────── */

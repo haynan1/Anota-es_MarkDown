@@ -163,6 +163,12 @@ function initDialogs() {
   document.addEventListener('click', (event) => {
     const opener = event.target.closest('[data-action="open-dialog"]');
     if (opener) {
+      // Um item de menu que abre um diálogo tem de fechar o menu atrás dele.
+      // `initMenus` só fecha os *outros*, o que é certo para um item que
+      // navega e errado para um que empilha uma caixa por cima - o painel
+      // ficava aberto atrás do diálogo e reaparecia ao fechá-lo.
+      const menu = opener.closest('details.menu[open]');
+      if (menu) menu.removeAttribute('open');
       openDialog($(`#${opener.getAttribute('data-target')}`));
     }
 

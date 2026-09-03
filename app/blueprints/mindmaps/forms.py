@@ -39,7 +39,7 @@ class MindMapForm(FlaskForm):
         description="Opcional. Uma linha sobre o que este mapa organiza.",
     )
     color = StringField(
-        "Cor",
+        "Cor predominante",
         validators=[
             Optional(),
             Regexp(

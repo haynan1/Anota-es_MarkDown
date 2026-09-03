@@ -36,6 +36,11 @@ ERROR_COPY: dict[int, tuple[str, str]] = {
         "O arquivo enviado ultrapassa o limite permitido. Reduza o tamanho e "
         "tente novamente.",
     ),
+    423: (
+        "Protegido por cadeado",
+        "Este item está travado contra alterações. Destrave-o antes de "
+        "editá-lo ou removê-lo.",
+    ),
     500: (
         "Algo deu errado",
         "Não foi possível concluir esta ação. Seus dados continuam protegidos. "
@@ -54,6 +59,21 @@ def wants_json() -> bool:
 def register_error_handlers(app: Flask) -> None:
     @app.errorhandler(ServiceError)
     def handle_service_error(error: ServiceError):
+        # Uma recusa é um evento operacional, e até aqui ela não deixava
+        # rastro nenhum: o log de acesso mostrava um 400 vermelho e o log da
+        # aplicação, nada. Quem fosse diagnosticar tinha uma captura de tela
+        # do console e adivinhação.
+        #
+        # WARNING e não ERROR porque nada quebrou - o pedido foi entendido e
+        # respondido. E é barato: estas exceções são recusas, não o caminho
+        # feliz, então a linha só aparece quando alguém precisa dela.
+        logger.warning(
+            "%s %s recusado (%s): %s",
+            request.method,
+            request.path,
+            error.status_code,
+            error.message,
+        )
         payload = {"ok": False, "error": error.message}
         if getattr(error, "server_state", None):
             payload["server_state"] = error.server_state

@@ -13,6 +13,7 @@ The promises pinned here are the ones a canvas can quietly break:
 
 from __future__ import annotations
 
+import logging
 import pathlib
 import re
 import json
@@ -286,6 +287,57 @@ class TestHierarchy:
             add(mind_map, parent=parent, text="Fundo demais")
 
         assert str(MAX_DEPTH) in excinfo.value.message
+
+    def test_the_ceiling_is_published_so_the_board_can_honour_it(self, app, mind_map):
+        """A tela precisa do número, não só da recusa.
+
+        Sem ele, o vigésimo Tab seguido montava um lote que o servidor jamais
+        aceitaria - e um lote impossível na fila trava a gravação do mapa, não
+        só aquele gesto. O teto viaja no grafo e a tela recusa na origem; a
+        fronteira exata é fixada dos dois lados, aqui e em
+        ``tests/js/mindmap-boot.test.mjs``.
+        """
+        assert MindMapService.graph_payload(mind_map)["limits"]["depth"] == MAX_DEPTH
+
+    def test_moving_a_tall_branch_is_measured_by_its_own_height(
+        self, app, mind_map, root
+    ):
+        """Não é só o tópico que desce: o ramo inteiro desce com ele.
+
+        A conta - profundidade do novo pai + 1 + altura do que se move - é a
+        que a tela repete. Os dois lados da fronteira ficam presos: no
+        penúltimo nível o movimento cabe, no seguinte não. Afirmar só a recusa
+        deixaria passar um guarda exagerado do lado do navegador, que recusa o
+        que este lado aceita.
+        """
+        chain = [root.uuid]
+        for _ in range(MAX_DEPTH - 5):
+            chain.append(add(mind_map, parent=chain[-1], text="Nível"))
+
+        def tall_branch():
+            """Um ramo solto de três níveis abaixo da própria raiz."""
+            top = add(mind_map, text="Galho")
+            tip = top
+            for _ in range(3):
+                tip = add(mind_map, parent=tip, text="Folha")
+            return top
+
+        # chain[-1] está a MAX_DEPTH - 5 de profundidade: 15 + 1 + 3 = 19, cabe.
+        cabe = tall_branch()
+        MindMapService.apply_operations(
+            mind_map, [{"type": "node.move", "uuid": cabe, "parent": chain[-1]}]
+        )
+        assert node_by_uuid(cabe).parent.uuid == chain[-1]
+
+        deeper = add(mind_map, parent=chain[-1], text="Mais um nível")
+        nao_cabe = tall_branch()
+        with pytest.raises(ValidationError) as excinfo:
+            MindMapService.apply_operations(
+                mind_map, [{"type": "node.move", "uuid": nao_cabe, "parent": deeper}]
+            )
+
+        assert str(MAX_DEPTH) in excinfo.value.message
+        assert node_by_uuid(nao_cabe).parent is None
 
     def test_deleting_a_branch_takes_the_branch(self, app, mind_map, root):
         child = add(mind_map, parent=root.uuid, text="Ramo")
@@ -1414,13 +1466,16 @@ class TestWhatABranchInherits:
     def test_the_exporter_inherits_exactly_the_same_way(self, app, mind_map, root):
         """Two walks of one rule.
 
-        The layout resolves inheritance over its own nodes and the SVG export
+        The layout resolves inheritance over its own nodes and the drawing
         resolves it over database rows, because neither can use the other's
         input. Pinned against each other here, over one tree, so a change that
         reaches only one of them fails rather than producing an export drawn
         unlike its board.
         """
-        from app.services.mind_map_export import _arrangements, _index
+        from app.services.mind_map_drawing import (
+            effective_arrangements,
+            index_nodes,
+        )
 
         branch = add(mind_map, parent=root.uuid, text="Ramo", layout="tree")
         inner = add(mind_map, parent=branch, text="Dentro")
@@ -1432,7 +1487,9 @@ class TestWhatABranchInherits:
         by_id = {node.id: node.uuid for node in nodes}
         from_export = {
             by_id[identifier]: value
-            for identifier, value in _arrangements(mind_map, nodes, _index(nodes)).items()
+            for identifier, value in effective_arrangements(
+                mind_map, nodes, index_nodes(nodes)
+            ).items()
         }
 
         from app.services.mind_map_layout import build_tree
@@ -2551,6 +2608,132 @@ class TestRoutes:
             assert response.status_code == 400
 
 
+class TestTheNameAndColourAreEditable:
+    """O nome e a cor predominante do mapa, e o caminho até eles.
+
+    O defeito que isto prende não é "não dá para editar" - dava. É o defeito
+    anterior a esse: o lápis ao lado do título era ``opacity: 0`` até o hover,
+    então a única coisa que dizia que o nome e a cor se editam só existia para
+    quem já tinha levado o ponteiro exatamente ali. Num toque não há hover
+    nenhum, e pelo teclado o ícone aparecia depois de o foco já ter chegado.
+
+    Uma capacidade que ninguém encontra é uma capacidade que não existe, então
+    o que se afirma aqui é sobre *alcance* tanto quanto sobre efeito: o lápis
+    aparece em repouso, a mesma ação está escrita por extenso no menu, e a cor
+    vem da paleta curada em vez do seletor cru do sistema.
+    """
+
+    def test_the_name_and_the_colour_change_together(self, app, client, mind_map):
+        response = client.post(
+            f"/mapas/{mind_map.uuid}/editar",
+            data={
+                "title": "Outro nome",
+                "description": mind_map.description,
+                "color": "#EF4444",
+                "layout": mind_map.layout,
+            },
+            follow_redirects=True,
+        )
+
+        assert response.status_code == 200
+        assert mind_map.title == "Outro nome"
+        assert mind_map.color == "#EF4444"
+
+    def test_the_address_follows_the_name(self, app, mind_map):
+        MindMapService.update(mind_map, title="Nome completamente outro")
+        assert mind_map.slug == "nome-completamente-outro"
+
+    def test_the_colour_reaches_the_board_and_the_exports(self, app, mind_map, root):
+        """A cor predominante não é enfeite: ela pinta o tópico central, o
+        traço de cada ramo e sai assim em toda figura exportada."""
+        MindMapService.update(mind_map, color="#14B8A6")
+
+        assert MindMapService.graph_payload(mind_map)["color"] == "#14B8A6"
+        assert "#14B8A6" in MindMapService.export_svg(mind_map)
+
+    def test_a_colour_that_is_not_a_colour_is_refused(self, app, client, mind_map):
+        before = mind_map.color
+        response = client.post(
+            f"/mapas/{mind_map.uuid}/editar",
+            data={"title": "Nome", "color": "javascript:alert(1)", "layout": "right"},
+            follow_redirects=True,
+        )
+
+        assert response.status_code == 200
+        assert mind_map.color == before
+
+    def test_an_empty_name_is_refused(self, app, client, mind_map):
+        before = mind_map.title
+        client.post(
+            f"/mapas/{mind_map.uuid}/editar",
+            data={"title": "   ", "color": mind_map.color, "layout": "right"},
+        )
+        assert mind_map.title == before
+
+    # ── O caminho até o controle ────────────────────────────────────────────
+
+    def test_the_pencil_is_visible_without_hovering(self):
+        """A regra é de CSS, então é no CSS que ela é conferida."""
+        rules = pathlib.Path("app/static/css/mindmap.css").read_text(encoding="utf-8")
+        opacity = re.search(r"\.mm-title-pencil \{ opacity: ([0-9.]+)", rules)
+
+        assert opacity, "a regra do lápis sumiu"
+        assert float(opacity.group(1)) > 0, (
+            "o lápis voltou a ser invisível em repouso: a única affordance de "
+            "editar nome e cor deixaria de existir para toque e teclado"
+        )
+
+    def test_the_same_action_is_written_out_in_the_menu(self, app, client, mind_map):
+        html = client.get(f"/mapas/{mind_map.uuid}").get_data(as_text=True)
+
+        assert "Nome e cor do mapa" in html
+        # E aponta para o mesmo diálogo que o lápis abre - uma ação, um lugar.
+        assert html.count('data-target="map-settings"') == 2
+
+    def test_the_dialog_offers_the_curated_palette_and_a_free_picker(
+        self, app, client, mind_map
+    ):
+        html = client.get(f"/mapas/{mind_map.uuid}").get_data(as_text=True)
+        offered = re.findall(r'data-map-swatch="(#[0-9A-Fa-f]{6})"', html)
+
+        from app.blueprints.mindmaps.routes import NODE_PALETTE
+
+        assert offered == [value for value, _label in NODE_PALETTE]
+        # O seletor livre continua, e é ele que guarda o valor: é o campo do
+        # formulário, funciona sem JavaScript, e atende a cor de marca que não
+        # está entre as oito.
+        assert 'class="color-input"' in html
+        assert f'value="{mind_map.color}"' in html
+
+    def test_the_dialog_opens_on_the_colour_the_map_actually_has(self, app, client):
+        created = MindMapService.create("Com cor", color="#EC4899")
+        html = client.get(f"/mapas/{created.uuid}").get_data(as_text=True)
+
+        assert 'value="#EC4899"' in html
+
+    # ── E o cadeado ─────────────────────────────────────────────────────────
+
+    def test_a_locked_map_offers_neither_path(self, app, client, mind_map):
+        MindMapService.toggle_lock(mind_map)
+        html = client.get(f"/mapas/{mind_map.uuid}").get_data(as_text=True)
+
+        # O lápis vira cadeado, e o item de menu fica desabilitado de verdade.
+        assert "mm-title-lock" in html
+        assert "mm-title-pencil" not in html
+        assert 'data-target="map-settings"\n                  disabled' in html
+
+    def test_a_locked_map_refuses_the_post_and_keeps_both(self, app, client, mind_map):
+        MindMapService.toggle_lock(mind_map)
+        title, colour = mind_map.title, mind_map.color
+
+        client.post(
+            f"/mapas/{mind_map.uuid}/editar",
+            data={"title": "Nome proibido", "color": "#000000", "layout": "right"},
+        )
+
+        assert (mind_map.title, mind_map.color) == (title, colour)
+
+
 # ── Fronteiras ──────────────────────────────────────────────────────────────
 
 
@@ -2860,6 +3043,91 @@ class TestTheApiSurvivesHostileInput:
         response = client.get(path.format(identifier))
 
         assert response.status_code in {301, 308, 404, 400}, response.status_code
+
+
+class TestARefusalLeavesATrace:
+    """Uma recusa da API tem de aparecer no log da aplicação.
+
+    O defeito que isto prende não foi de código, foi de diagnóstico. A tela
+    entrou num laço reenviando um lote impossível - cinco ``POST /operacoes``
+    devolvendo 400 em quinze segundos - e o log da aplicação não tinha uma
+    linha sequer sobre isso. A única evidência disponível era uma captura de
+    tela do log de acesso: os números, sem o motivo.
+
+    ``ServiceError`` é sempre uma recusa nossa, escrita por nós, e nunca o
+    caminho feliz. Registrá-la custa uma linha rara e devolve a diferença
+    entre investigar e adivinhar.
+    """
+
+    @pytest.fixture()
+    def mirror(self, app, mind_map, root):
+        """Um tópico compartilhado - o lugar onde nada pode ser pendurado."""
+        original = add(mind_map, parent=root.uuid, text="Modelo de alcance")
+        outra_etapa = add(mind_map, parent=root.uuid, text="Leads")
+        return add(mind_map, parent=outra_etapa, mirror_of=original)
+
+    def refused_batch(self, client, mind_map, mirror):
+        """Um subtópico dentro de um espelho: recusado, sempre."""
+        return client.post(
+            f"/api/mapas/{mind_map.uuid}/operacoes",
+            json={
+                "revision": MindMapService.require(mind_map.uuid).revision,
+                "operations": [
+                    {
+                        "type": "node.create",
+                        "uuid": new_id(),
+                        "parent": mirror,
+                        "fields": {"text": "Impossível"},
+                    }
+                ],
+            },
+        )
+
+    def test_the_reason_reaches_the_log(self, app, client, caplog, mind_map, mirror):
+        with caplog.at_level(logging.WARNING, logger="app.errors"):
+            response = self.refused_batch(client, mind_map, mirror)
+
+        assert response.status_code == 400
+        assert caplog.records, "a recusa não deixou rastro nenhum"
+
+        line = caplog.records[-1].getMessage()
+        # O suficiente para achar o pedido no log de acesso e saber o porquê
+        # sem ter de reproduzir nada.
+        assert "POST" in line
+        assert f"/api/mapas/{mind_map.uuid}/operacoes" in line
+        assert "400" in line
+        assert "compartilhado" in line
+
+    def test_it_is_a_warning_and_not_an_error(self, app, client, caplog, mind_map, mirror):
+        """Nada quebrou: o pedido foi entendido e respondido.
+
+        Um ERROR aqui treinaria quem opera a ignorar ERROR, que é o único
+        nível em que uma falha de verdade tem para aparecer.
+        """
+        with caplog.at_level(logging.WARNING, logger="app.errors"):
+            self.refused_batch(client, mind_map, mirror)
+
+        assert [record.levelname for record in caplog.records] == ["WARNING"]
+
+    def test_a_request_that_succeeds_stays_quiet(self, app, client, caplog, mind_map, root):
+        with caplog.at_level(logging.WARNING, logger="app.errors"):
+            response = client.post(
+                f"/api/mapas/{mind_map.uuid}/operacoes",
+                json={
+                    "revision": mind_map.revision,
+                    "operations": [
+                        {
+                            "type": "node.create",
+                            "uuid": new_id(),
+                            "parent": root.uuid,
+                            "fields": {"text": "Possível"},
+                        }
+                    ],
+                },
+            )
+
+        assert response.status_code == 200
+        assert not caplog.records
 
 
 class TestTheBoardOffersAWayBack:

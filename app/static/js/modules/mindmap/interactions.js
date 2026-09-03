@@ -12,6 +12,12 @@
  * * **Nothing destructive happens by accident.** Re-parenting only fires when
  *   the pointer is genuinely over another node and the drop target is lit;
  *   overlapping two boxes is not a request to restructure the map.
+ * * **Um mapa travado não começa o gesto.** O modelo recusa toda alteração
+ *   sozinho (ver `store.mutate`), então nada aqui é o que torna a trava
+ *   verdadeira. O que os testes abaixo evitam é o outro problema: um arrasto
+ *   que anda e não move nada, um cursor que pisca dentro de um tópico e perde
+ *   o que foi digitado. Recusar o gesto na origem é o que faz "somente
+ *   leitura" parecer somente leitura em vez de parecer quebrado.
  */
 
 const DRAG_THRESHOLD = 4;
@@ -32,6 +38,17 @@ export function createInteractions(context) {
   let connectSource = null;
 
   /* ── Small helpers ──────────────────────────────────────────────────── */
+
+  /** True quando o mapa está travado - e, ao dizer que sim, explica por quê.
+   *
+   *  O aviso vem daqui e não de cada chamador porque a frase é uma só: um
+   *  cadeado que se explica de seis maneiras diferentes é seis frases para
+   *  manter iguais. */
+  function readOnly() {
+    if (!store.locked) return false;
+    showHint('Mapa travado. Destrave no cadeado, no topo, para editar.');
+    return true;
+  }
 
   const isTyping = () => {
     const active = document.activeElement;
@@ -91,6 +108,9 @@ export function createInteractions(context) {
   /* ── Text editing ───────────────────────────────────────────────────── */
 
   function beginEdit(uuid, { fresh = false, retry = true } = {}) {
+    // Antes de tornar o tópico editável, e não depois: um cursor piscando
+    // dentro de uma caixa é uma promessa, e a promessa aqui seria falsa.
+    if (readOnly()) return;
     const element = renderer.elementFor(uuid);
     const node = store.get(uuid);
     if (!node) return;
@@ -306,6 +326,11 @@ export function createInteractions(context) {
 
     if (toggle && nodeElement) {
       event.preventDefault();
+      // Dobrar um ramo é um campo guardado, não uma preferência de quem olha.
+      // Num mapa travado ele também não muda - "nada muda" é a promessa
+      // inteira, e uma exceção nela é uma promessa que precisa de nota de
+      // rodapé.
+      if (readOnly()) return;
       actions.toggleCollapse(nodeElement.dataset.uuid);
       return;
     }
@@ -333,12 +358,14 @@ export function createInteractions(context) {
 
       if (attachChild) {
         event.preventDefault();
+        if (readOnly()) return;
         attachStep(uuid);
         return;
       }
 
       if (tool === 'connect') {
         event.preventDefault();
+        if (readOnly()) return;
         connectStep(uuid);
         return;
       }
@@ -349,6 +376,7 @@ export function createInteractions(context) {
          atrás de um painel fechado é uma ação que não existe. */
       if (tool === 'share') {
         event.preventDefault();
+        if (readOnly()) return;
         beginAttach(uuid, 'share');
         return;
       }
@@ -359,7 +387,10 @@ export function createInteractions(context) {
       } else if (!selection.has(uuid)) {
         selection.only(uuid);
       }
-      startDrag(event, uuid);
+      // Selecionar continua: ler o painel de um tópico não altera o mapa.
+      // Arrastar, não - um arrasto que anda e não move nada é pior do que um
+      // arrasto que não começa.
+      if (!store.locked) startDrag(event, uuid);
       return;
     }
 
@@ -422,6 +453,7 @@ export function createInteractions(context) {
   }
 
   function startResize(event, uuid) {
+    if (readOnly()) return;
     event.preventDefault();
     event.stopPropagation();
     stage.setPointerCapture(event.pointerId);
@@ -438,6 +470,7 @@ export function createInteractions(context) {
   }
 
   function startConnection(event, uuid, side) {
+    if (readOnly()) return;
     event.preventDefault();
     event.stopPropagation();
     stage.setPointerCapture(event.pointerId);
@@ -631,6 +664,7 @@ export function createInteractions(context) {
     if (event.detail !== 3) return;
     if (event.target.closest('.mm-node')) return;
     if (event.target.closest('[data-chrome]')) return;
+    if (readOnly()) return;
 
     const point = camera.toWorld(event.clientX, event.clientY);
     const created = actions.addLoose({ x: point.x - 90, y: point.y - 24 });
@@ -702,7 +736,11 @@ export function createInteractions(context) {
     stage.addEventListener(type, (event) => {
       if (!event.dataTransfer || !event.dataTransfer.types.includes('Files')) return;
       event.preventDefault();
-      showHint('Solte a imagem para criar um tópico com ela.');
+      showHint(
+        store.locked
+          ? 'Mapa travado. Destrave no cadeado, no topo, para editar.'
+          : 'Solte a imagem para criar um tópico com ela.'
+      );
     })
   );
 
@@ -712,6 +750,10 @@ export function createInteractions(context) {
     const files = event.dataTransfer && event.dataTransfer.files;
     if (!files || !files.length) return;
     event.preventDefault();
+    // O aviso do `readOnly` substitui o "solte a imagem" que o dragover pôs
+    // ali, o que já é a resposta - largar o arquivo não fez nada, e a tela diz
+    // por quê.
+    if (readOnly()) return;
     showHint('');
     const point = camera.toWorld(event.clientX, event.clientY);
     const target = nodeAt(point);
@@ -743,12 +785,14 @@ export function createInteractions(context) {
 
     if (control && event.key.toLowerCase() === 'z') {
       event.preventDefault();
+      if (readOnly()) return;
       if (event.shiftKey) context.redo();
       else context.undo();
       return;
     }
     if (control && event.key.toLowerCase() === 'y') {
       event.preventDefault();
+      if (readOnly()) return;
       context.redo();
       return;
     }
@@ -766,15 +810,34 @@ export function createInteractions(context) {
     }
     if (control && event.key.toLowerCase() === 'd') {
       event.preventDefault();
+      if (readOnly()) return;
       if (primary) actions.duplicate(primary);
       return;
     }
     if (control && event.shiftKey && event.key.toLowerCase() === 'o') {
       event.preventDefault();
+      if (readOnly()) return;
       context.organize();
       return;
     }
     if (control) return;
+
+    // Daqui para baixo as teclas se dividem em duas famílias, e a linha entre
+    // elas é a mesma que o cadeado desenha: navegar, enquadrar e escolher uma
+    // ferramenta continuam; criar, apagar, mover e reaninhar param.
+    const WRITES = new Set([
+      'Tab', 'Enter', 'F2', 'Delete', 'Backspace', 'n', 'N', 'c', 'C', 's', 'S',
+    ]);
+    const restructures =
+      event.altKey && event.key.startsWith('Arrow');
+    const nudges = event.shiftKey && event.key.startsWith('Arrow');
+    if ((WRITES.has(event.key) || restructures || nudges) && readOnly()) {
+      // `Tab` sem isto sairia da tela para o próximo controle da página, o
+      // que num mapa travado é o pior dos dois fins: a tecla não faz o que
+      // faria e ainda leva o foco embora.
+      if (event.key === 'Tab') event.preventDefault();
+      return;
+    }
 
     switch (event.key) {
       case 'Tab': {

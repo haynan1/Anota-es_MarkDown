@@ -261,6 +261,11 @@ export function createRenderer({ store, page, nodesHost, linksHost, accent }) {
     // Num espelho o botão vira um selo: diz quantos subtópicos o original
     // tem, e não dobra nada, porque não há ramo aqui para dobrar.
     toggle.hidden = mirror ? shared === 0 : kids.length === 0;
+    // Desabilitado e não escondido num mapa travado. Dobrar um ramo é um
+    // campo guardado, então a trava o alcança - mas esconder o botão
+    // esconderia junto o "+" que diz que há mais coisa ali embaixo, e um ramo
+    // fechado sem sinal nenhum é um mapa que mente sobre o próprio tamanho.
+    toggle.disabled = Boolean(store.locked) && !mirror;
     if (mirror && shared) {
       toggle.textContent = String(shared);
       toggle.setAttribute('aria-label', `${shared} subtópicos, no tópico original`);

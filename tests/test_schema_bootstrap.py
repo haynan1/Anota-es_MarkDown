@@ -130,12 +130,79 @@ def test_pending_migration_is_applied_on_startup(tmp_path):
 
     assert revision(database) == head(application)
     # Not only the number: a test that compared revisions alone would pass
-    # against a migration that ran and did nothing at all.
-    assert after != before, "a migration da vez subiu sem mexer no schema"
-    # And the concrete fact, which names today's head on purpose. This line
-    # moves with the head; a generic assertion cannot tell "did the right
-    # thing" from "did some thing".
-    assert ("mind_map_nodes", "mirror_of_id") in after - before
+    # against a migration that ran and did nothing at all. So the effect of
+    # today's head is named concretely, and this line moves with the head - a
+    # generic assertion cannot tell "did the right thing" from "did some
+    # thing".
+    #
+    # The shape of the line follows what the head actually does. Today's head
+    # changes *data*, not schema: it clears the colour a map's centre used to
+    # carry a copy of. So the schema is asserted to be untouched here, and the
+    # data it did change is asserted in the test below.
+    assert after == before, "esta head não deveria alterar o schema"
+
+
+def seed_a_map_with_a_pinned_centre(database):
+    """Um mapa como a versão anterior o criava: a cor copiada para o centro.
+
+    Escrito em SQL cru de propósito. O serviço já não copia a cor - é essa a
+    correção - então semear pelo ORM produziria justamente o estado que a
+    migração deveria consertar, e o teste passaria sem ter testado nada.
+    """
+    connection = sqlite3.connect(database)
+    try:
+        connection.execute(
+            "insert into mind_maps (uuid, title, slug, description, color, layout,"
+            " revision, viewport_x, viewport_y, viewport_zoom, is_favorite,"
+            " is_locked, is_deleted, created_at, updated_at)"
+            " values ('map-uuid', 'Mapa', 'mapa', '', '#4F46E5', 'right', 1,"
+            " 0, 0, 1, 0, 0, 0, '2026-01-01', '2026-01-01')"
+        )
+        map_id = connection.execute("select id from mind_maps").fetchone()[0]
+        for uuid, position, colour in (
+            ("centro", 0, "#4F46E5"),   # herdada: a cópia que a migração desfaz
+            ("solto", 1, "#4F46E5"),    # outro topo com a mesma cor: não é o centro
+            ("pintado", 2, "#EF4444"),  # escolha de alguém: intocável
+        ):
+            connection.execute(
+                "insert into mind_map_nodes (uuid, map_id, parent_id, position, kind,"
+                " text, note, url, image_url, x, y, width, height, color, shape,"
+                " is_collapsed, created_at, updated_at)"
+                " values (?, ?, null, ?, 'topic', ?, '', '', '', 0, 0, 180, 48, ?,"
+                " 'pill', 0, '2026-01-01', '2026-01-01')",
+                (uuid, map_id, position, uuid, colour),
+            )
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def colours(database):
+    connection = sqlite3.connect(database)
+    try:
+        return dict(connection.execute("select uuid, color from mind_map_nodes"))
+    finally:
+        connection.close()
+
+
+def test_the_head_migration_repaints_only_the_inherited_centre(tmp_path):
+    """A migração de dados da vez, e o que ela tem o direito de tocar.
+
+    Uma migração que apaga um pouco demais é pior do que uma que não roda: ela
+    descarta escolhas que alguém fez, e não há como saber depois quais eram.
+    """
+    database = tmp_path / "cor.db"
+    application = build(tmp_path, database)
+    rewind(application)
+    seed_a_map_with_a_pinned_centre(database)
+
+    build(tmp_path, database)
+
+    after = colours(database)
+    assert after["centro"] == "", "o centro continuou preso à cor da fundação"
+    assert after["solto"] == "#4F46E5", "um tópico solto não é o centro do mapa"
+    assert after["pintado"] == "#EF4444", "uma cor escolhida foi apagada"
+    assert revision(database) == head(application)
 
 
 def test_pending_migration_leaves_a_snapshot_behind(tmp_path):

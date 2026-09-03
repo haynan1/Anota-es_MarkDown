@@ -99,9 +99,21 @@
   border-radius: var(--radius-full);
   background: var(--category-color, var(--accent));
 }
-.mm-title-pencil { opacity: 0; transition: opacity var(--dur) var(--ease); }
+/* Visível em repouso.
+   Era zero até o hover, e o resultado é que o título parecia texto: a única
+   coisa dizendo que o nome e a cor se editam só aparecia para quem já tinha
+   levado o ponteiro até lá. Num toque não há hover nenhum. Fica discreto -
+   0.45 é sussurro, não grito - e sobe ao alcançar. */
+.mm-title-pencil { opacity: 0.45; transition: opacity var(--dur) var(--ease); }
 .mm-title:hover .mm-title-pencil,
-.mm-title:focus-visible .mm-title-pencil { opacity: 0.6; }
+.mm-title:focus-visible .mm-title-pencil { opacity: 0.9; }
+
+/* Travado, o cadeado toma o lugar do lápis e não se apaga: ele é a resposta
+   para "por que não consigo editar o nome?", e na mesma cor do selo
+   "Somente leitura" no topo, para os dois se lerem como uma coisa só. */
+.mm-title-lock { color: var(--warning); }
+.mm-title:disabled { cursor: default; }
+.mm-title:disabled:hover { background: transparent; border-color: transparent; }
 
 .mm-header-actions {
   display: flex;
@@ -138,6 +150,60 @@
 .mm-status[data-state="saving"] .spinner { display: block; }
 .mm-status[data-state="error"] { background: var(--danger-soft); color: var(--danger); }
 .mm-status[data-state="error"] .mm-status-icon { display: none; }
+
+/* ── Travado ────────────────────────────────────────────────────────────── */
+
+/* O selo que substitui o indicador de "Salvo". Mesmo formato e mesmo lugar,
+   porque é a mesma pergunta sendo respondida - "o que está acontecendo com o
+   meu trabalho?" - e a resposta agora é "nada, de propósito". */
+.mm-readonly {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-left: var(--sp-2);
+  padding: var(--sp-1) var(--sp-3);
+  border-radius: var(--radius-full);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: var(--fs-2xs);
+  font-weight: 560;
+  white-space: nowrap;
+}
+.mm-readonly .icon { color: var(--warning); }
+
+/* A tela travada continua sendo a tela: mesma cor, mesmo grid, mesma
+   tipografia. O que muda é o que a mão encontra - nenhum tópico se pega, e o
+   cursor diz isso antes do primeiro clique. Escurecer o quadro seria dizer
+   "isto está desativado", e não está: está pronto para ser lido. */
+.mm-page[data-locked] .mm-stage,
+.mm-page[data-locked] .mm-node,
+.mm-page[data-locked] .mm-node-label { cursor: default; }
+
+/* As alças e as portas somem em vez de ficarem inertes: são convites - puxe
+   daqui para conectar, arraste aqui para redimensionar - e um convite que não
+   leva a lugar nenhum é ruído sobre o desenho.
+   A porta precisa de mais peso do que a regra que a acende por disposição,
+   que já traz duas classes e dois atributos; daí o seletor mais longo. */
+.mm-page[data-locked] .mm-node .mm-handle,
+.mm-page[data-locked] .mm-node .mm-port[data-side] { display: none; }
+
+/* O botão de dobrar fica, apagado: ele é o único sinal de que um ramo fechado
+   tem mais coisa embaixo. Ver `paintNode`. */
+.mm-page[data-locked] .mm-node-toggle:disabled {
+  opacity: 0.45;
+  cursor: default;
+  transform: none;
+}
+
+/* Um fieldset desabilitado não deve trazer a moldura que o navegador dá a
+   ele, nem o `min-width` que impede o painel de encolher. */
+.mm-inspector-form {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.mm-inspector-form:disabled { opacity: 0.62; }
 
 .spinner {
   width: 13px; height: 13px;
@@ -1219,6 +1285,10 @@ kbd {
      still announce the state, in colour and to a screen reader both. */
   .mm-status { margin-left: 0; padding: var(--sp-1) var(--sp-2); }
   .mm-status [data-save-label] { display: none; }
+  /* O cadeado sozinho já diz, e diz na mesma cor. O texto volta assim que
+     houver largura para ele. */
+  .mm-readonly { margin-left: 0; padding: var(--sp-1); font-size: 0; gap: 0; }
+  .mm-readonly .icon { font-size: var(--fs-2xs); }
 }
 
 @media (prefers-reduced-motion: reduce) {

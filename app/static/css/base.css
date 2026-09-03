@@ -1078,6 +1078,16 @@ dialog.modal::backdrop { background: rgba(15, 23, 42, 0.55); backdrop-filter: bl
 .modal-body { padding: 0 var(--sp-5) var(--sp-4); color: var(--text-muted); }
 .modal-foot { display: flex; justify-content: flex-end; gap: var(--sp-2); padding: var(--sp-4) var(--sp-5); border-top: 1px solid var(--border); background: var(--surface-2); border-radius: 0 0 var(--radius-lg) var(--radius-lg); }
 
+/* O corpo rola, o rodapé fica.
+   Sem isto, um diálogo mais alto que a janela rola inteiro - e a primeira
+   coisa a sair da vista é justamente o botão que confirma o que a pessoa
+   acabou de digitar. `modal-wide` já resolvia isso para si; esta é a mesma
+   solução sem a largura extra, para um diálogo que ficou alto e não largo. */
+dialog.modal.modal-scroll .modal-body {
+  max-height: min(58vh, 460px);
+  overflow-y: auto;
+}
+
 dialog.modal.modal-wide { width: min(900px, calc(100vw - 2rem)); }
 dialog.modal.modal-wide .modal-body {
   max-height: 60vh;
