@@ -1,0 +1,123 @@
+{% extends 'base.html' %}
+{% from 'components/macros.html' import icon, select_field, checkbox_field, field, empty_state %}
+
+{% set topbar_title = 'Jornada' %}
+{% block title %}Frases e preferências · {{ app_name }}{% endblock %}
+
+{% block styles %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/goals.css') }}">
+{% endblock %}
+
+{% block content %}
+{% include 'goals/_nav.html' %}
+
+<div class="page-head">
+  <div class="page-head-row">
+    <div>
+      <h1 class="page-title">Frases e preferências</h1>
+      <p class="page-subtitle">
+        As palavras que acompanham o seu painel, e os poucos ajustes que mudam
+        como a jornada aparece.
+      </p>
+    </div>
+  </div>
+</div>
+
+<blockquote class="phrase-now">
+  {{ icon('quote', 'icon icon-sm') }}
+  <p>{{ current_phrase }}</p>
+</blockquote>
+
+<div class="grid grid-2 section-gap">
+  <section class="card card-pad">
+    <h2 class="card-title">Preferências</h2>
+    <form method="post" class="stack stack-4">
+      {{ settings_form.hidden_tag() }}
+      <input type="hidden" name="acao" value="preferencias">
+      {{ checkbox_field(settings_form.enabled) }}
+      {{ select_field(settings_form.interval) }}
+      {{ checkbox_field(settings_form.undated_on_board) }}
+      <p class="field-hint">
+        A frase troca sozinha enquanto a página está aberta, e é a mesma para o
+        servidor e para a tela — recarregar não sorteia outra.
+      </p>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">
+          {{ icon('save', 'icon icon-sm') }} Salvar preferências
+        </button>
+      </div>
+    </form>
+  </section>
+
+  <section class="card card-pad">
+    <h2 class="card-title">Escrever uma frase</h2>
+    <form method="post" class="stack stack-4">
+      {{ phrase_form.hidden_tag() }}
+      {{ field(phrase_form.text,
+               placeholder='Ex.: Eu consigo fazer um pequeno progresso hoje.',
+               input_cls='textarea') }}
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">
+          {{ icon('plus', 'icon icon-sm') }} Adicionar à rotação
+        </button>
+      </div>
+    </form>
+  </section>
+</div>
+
+<section class="section-gap">
+  <h2 class="card-title">Suas frases</h2>
+  {% if custom_phrases %}
+    <div class="phrase-grid">
+      {% for phrase in custom_phrases %}
+        <article class="phrase-card">
+          <p>{{ phrase.text }}</p>
+          <form method="post"
+                action="{{ url_for('goals.delete_phrase', public_uuid=phrase.uuid) }}"
+                class="inline-form" data-confirm="Remover esta frase da rotação?">
+            {{ confirm_form.hidden_tag() }}
+            <button type="submit" class="btn btn-ghost btn-icon btn-sm btn-danger"
+                    title="Remover frase" aria-label="Remover esta frase">
+              {{ icon('trash', 'icon icon-sm') }}
+            </button>
+          </form>
+        </article>
+      {% endfor %}
+    </div>
+  {% else %}
+    {{ empty_state('quote', 'Nenhuma frase sua ainda',
+                   'Escreva a primeira acima. Ela entra na rotação junto com as de fábrica.') }}
+  {% endif %}
+</section>
+
+<section class="section-gap">
+  <h2 class="card-title">Frases de fábrica</h2>
+  <div class="phrase-grid">
+    {% for phrase in default_phrases %}
+      <article class="phrase-card phrase-card-default"><p>{{ phrase }}</p></article>
+    {% endfor %}
+  </div>
+</section>
+
+{#
+  A zona de risco fica no fim, atrás de uma palavra digitada — o mesmo contrato
+  da lixeira e da restauração de backup. Nenhum clique isolado apaga uma
+  jornada inteira.
+#}
+<section class="card card-pad section-gap goal-danger">
+  <h2 class="card-title">Recomeçar a jornada</h2>
+  <p class="subtle">
+    Apaga todas as metas, predefinidas e conquistas. Seus documentos, grupos e
+    mapas mentais não são tocados. Não há como desfazer.
+  </p>
+  <form method="post" action="{{ url_for('goals.clear') }}" class="row row-tight">
+    {{ confirm_form.hidden_tag() }}
+    <label class="visually-hidden" for="confirmar-limpeza">Digite LIMPAR para confirmar</label>
+    <input class="input" id="confirmar-limpeza" name="confirmacao"
+           placeholder="Digite LIMPAR" autocomplete="off" required>
+    <button type="submit" class="btn btn-danger">
+      {{ icon('trash', 'icon icon-sm') }} Apagar tudo
+    </button>
+  </form>
+</section>
+{% endblock %}

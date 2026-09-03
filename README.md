@@ -9,6 +9,7 @@ depender de internet para funcionar.
 ## Índice
 
 - [Funcionalidades](#funcionalidades)
+- [Metas: a jornada](#metas-a-jornada)
 - [As telas](#as-telas)
 - [Arquitetura](#arquitetura)
 - [Requisitos](#requisitos)
@@ -133,11 +134,89 @@ depender de internet para funcionar.
   uma por vez, com a imagem a subir nomeada entre elas (ver abaixo)
 - Backup completo em ZIP e restauração com mesclagem ou substituição
 
+**Metas**
+- Metas com data, horário, prioridade, categoria e situação
+- Repetição: dias úteis, fins de semana, por uma quantidade de dias ou todos os
+  dias — concluídas um dia de cada vez, sem que marcar a terça marque a quinta
+- Metas sem prazo, que ficam no acervo até você trazê-las para hoje
+- Esteira em três colunas com arrastar e soltar, atrasadas recolhidas acima e
+  acervo sem prazo recolhido abaixo
+- Plano da semana ou do mês, dia a dia, incluindo os dias livres
+- Metas predefinidas: um molde guardado, ativado no dia que você escolher
+- **Uma meta pode apontar para um documento daqui** — “terminar a proposta”
+  abre a proposta
+- XP, nível, sequência de dias, recorde e mais de oitenta conquistas
+- Frases motivacionais de fábrica e suas próprias, com intervalo de troca
+- As metas viajam no backup, com as exceções de cada dia
+
 **Interface**
 - Tema claro, escuro ou automático; cor principal configurável
 - Responsiva: sidebar recolhível no desktop, navegação inferior no celular
 - Acessibilidade: navegação por teclado, foco visível, ARIA, `prefers-reduced-motion`
 - Nenhum estado comunicado apenas por cor
+
+---
+
+## Metas: a jornada
+
+Um documento guarda o que você escreveu. Uma meta guarda o que você combinou
+consigo mesmo — e as duas coisas se comportam de formas opostas, o que é o
+motivo de as metas terem tabelas próprias em vez de virarem um tipo de
+documento.
+
+**Uma meta é uma regra, não uma linha por dia.** “Correr às terças e quintas
+até o fim do mês” é uma meta com uma regra de repetição; os catorze dias em que
+ela cai são calculados, não armazenados. O que fica gravado é a *exceção*: o
+dia em que o estado fugiu do padrão da série. Um dia sem linha nenhuma é um dia
+que ainda está como a série manda — e é isso que permite uma meta “todos os
+dias, sem prazo final” existir sem criar milhares de linhas.
+
+**Concluir é do dia, não da meta.** Uma série nunca nasce concluída: marcar a
+série inteira concluiria terças que ainda nem chegaram. Cada dia é concluído
+sozinho, e cada conclusão vale 10 XP — um hábito cumprido trinta vezes vale
+trinta, não um.
+
+**A meta olha para dentro da biblioteca.** `document_id` é o que faz esta
+funcionalidade pertencer a *esta* aplicação: a missão aponta para o documento
+de que ela trata, e abre com um clique. Apagar o documento tira o atalho, nunca
+o compromisso.
+
+**Tudo que se faz arrastando também se faz por um botão.** A esteira move
+cartões com o ponteiro *e* com um formulário que recarrega a página — porque um
+teclado, um leitor de tela e um navegador sem JavaScript precisam chegar aos
+mesmos lugares.
+
+### Como XP, nível e sequência são calculados
+
+| Número | Regra |
+|:-------|:------|
+| **XP** | 10 por conclusão. Criar uma meta não vale nada: o prêmio é por fazer. |
+| **Nível** | O nível N custa N × 150 XP. Subir fica mais difícil, sem teto. |
+| **Sequência** | Dias seguidos com ao menos uma conclusão. O dia de hoje ainda não conta contra você: a sequência só quebra quando o dia passa em branco. |
+| **Recorde** | A maior sequência que já existiu, mesmo que tenha terminado. |
+| **Dias produtivos** | Quantos dias distintos tiveram alguma conclusão. |
+
+Nada disso é armazenado — tudo é lido das conclusões. Um contador de XP numa
+coluna criaria uma segunda verdade, que passa a divergir na primeira meta
+apagada.
+
+### O que ficou de fora, e por quê
+
+Esta funcionalidade nasceu de um projeto separado que tinha contas de usuário,
+plano Premium e lembretes. Nada disso veio junto, de propósito:
+
+- **Contas, login e recuperação de senha.** Esta aplicação roda na sua máquina
+  e tem um dono só. Uma tela de login não protegeria nada e cobraria de todo
+  mundo.
+- **Plano Premium e o limite de 5 metas.** Um paywall dentro de um programa
+  local é cenário, não funcionalidade. Tudo que o Premium liberava — frases
+  personalizadas, intervalo de troca, relatórios — está disponível.
+- **Lembretes.** No projeto de origem havia a tabela e o agendador, mas nenhuma
+  tarefa registrada: era um interruptor que não acendia nada. O que ficou no
+  lugar é o que já funciona — as atrasadas recolhidas na esteira e a sequência
+  em risco visível no painel.
+- **Foto de perfil e alternância pt-BR/en-US.** Sem contas não há perfil, e a
+  interface inteira é em português.
 
 ---
 
@@ -154,6 +233,13 @@ depender de internet para funcionar.
 | **Grupo** | `/grupos/<uuid>` | Documentos do grupo na ordem definida, reordenar, adicionar e remover |
 | **Categorias** | `/documentos/categorias` | Criar e remover categorias e etiquetas, com contagem de uso |
 | **Importar** | `/documentos/importar` | Um arquivo, vários de uma vez ou um `.zip`, por seleção ou arrastar e soltar, com prévia antes de salvar e relatório depois; e a exportação de todo o acervo em Markdown |
+| **Metas** | `/metas/` | O acervo inteiro, com filtros por situação, prioridade e categoria, e a faixa de progresso |
+| **Esteira** | `/metas/esteira` | As metas de hoje em três colunas, com arrastar e soltar, atrasadas e acervo sem prazo |
+| **Plano** | `/metas/plano` | A semana ou o mês, dia a dia, incluindo os dias livres |
+| **Predefinidas** | `/metas/predefinidas` | Moldes guardados, ativados no dia que você escolher |
+| **Histórico da jornada** | `/metas/historico` | Conclusões por dia, peso de cada categoria e a conta por trás dos números |
+| **Conquistas** | `/metas/conquistas` | O catálogo inteiro, com o que já foi desbloqueado e quando |
+| **Frases** | `/metas/frases` | Frases motivacionais, intervalo de troca e o recomeço da jornada |
 | **Configurações** | `/configuracoes/` | Aparência, PDF, fuso horário, autosave, backups e manutenção |
 
 ---
@@ -634,16 +720,26 @@ O ZIP contém:
 
 ```
 manifest.json          versão do formato, versão da aplicação, data e contagens
-data.json              documentos, versões, categorias, etiquetas e configurações
+data.json              documentos, versões, categorias, etiquetas, grupos,
+                       configurações, metas (com as exceções de cada dia),
+                       predefinidas, frases e conquistas
 documents/*.md         cópias legíveis em Markdown puro
 ```
 
 Os arquivos `.md` tornam o backup útil mesmo sem esta aplicação.
 
+A jornada viaja junto de propósito: um backup que salva os documentos e perde
+as metas restaura metade da aplicação — e a metade perdida é justamente a que
+não se reconstrói relendo os `.md` do arquivo. Metas apontam para documentos
+pelo UUID, e não pelo id, para que a ligação sobreviva a uma restauração em
+outra instalação.
+
 **Restaurar:** Configurações → *Restaurar a partir de um arquivo*, em um de dois
 modos:
 
-- **Mesclar** — adiciona apenas documentos que ainda não existem. Nada é apagado.
+- **Mesclar** — adiciona apenas o que ainda não existe (documentos, metas,
+  predefinidas, frases e conquistas, cada um pelo seu identificador). Nada é
+  apagado.
 - **Substituir** — apaga tudo e restaura o backup. Exige digitar `SUBSTITUIR`
   e **cria automaticamente um backup de segurança antes** de qualquer remoção.
 
@@ -767,26 +863,32 @@ MarkDown_Projetos/
 │   ├── errors.py                handlers de erro
 │   ├── cli.py                   comandos flask personalizados
 │   ├── models/                  Document, DocumentVersion, Category, Tag,
-│   │                            Group, MediaAsset, Setting
+│   │                            Group, MediaAsset, MindMap, Setting,
+│   │                            Goal, GoalOccurrence, GoalTemplate,
+│   │                            MotivationalPhrase, AchievementUnlock
 │   ├── services/                markdown, sanitizer, align, attachment,
 │   │                            document, group, history, search, pdf, media,
-│   │                            wix, import, backup, settings
-│   ├── repositories/            document, version, taxonomy, group
-│   ├── blueprints/              dashboard, documents, groups, editor, history,
-│   │                            trash, exports, settings, media, api
+│   │                            wix, import, backup, settings, mind_map*,
+│   │                            goal_schedule, goal, progress, achievement*,
+│   │                            phrase
+│   ├── repositories/            document, version, taxonomy, group, mind_map,
+│   │                            goal, achievement, phrase
+│   ├── blueprints/              dashboard, documents, groups, goals, editor,
+│   │                            history, trash, exports, settings, media,
+│   │                            mindmaps, api
 │   ├── templates/
 │   │   ├── base.html
-│   │   ├── components/          sidebar, topbar, macros, sprite, toasts
-│   │   ├── dashboard/ documents/ editor/ history/ trash/ settings/
-│   │   ├── errors/
+│   │   ├── components/          sidebar, topbar, macros, sprite, toasts, charts
+│   │   ├── dashboard/ documents/ editor/ goals/ history/ mindmaps/ trash/
+│   │   ├── settings/ errors/
 │   │   └── pdf/                 document.html + document_fallback.html
 │   └── static/
-│       ├── css/                 base, markdown, editor
-│       ├── js/                  app, editor + modules/
+│       ├── css/                 base, markdown, editor, charts, mindmap, goals
+│       ├── js/                  app, editor, mindmap, goals + modules/
 │       └── favicon.svg
 ├── instance/                    app.db, backups/, exports/, logs/  (não versionado)
 ├── migrations/                  Alembic
-├── tests/                       908 testes (js/ roda sob o Node, se houver)
+├── tests/                       1770 testes (js/ roda sob o Node, se houver)
 ├── .env.example
 ├── .gitignore
 ├── requirements.txt

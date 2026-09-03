@@ -53,6 +53,23 @@
       {% if nav_counts.archived %}<span class="nav-count tabular">{{ nav_counts.archived }}</span>{% endif %}
     </a>
 
+    {#
+      Duas entradas para a jornada, e não sete. As outras telas de metas vivem
+      na barra de abas da própria seção: um menu global que ganha uma linha a
+      cada funcionalidade deixa de ser um menu e vira um índice.
+    #}
+    <p class="nav-section-title">Jornada</p>
+
+    <a class="nav-item" href="{{ url_for('goals.index') }}" data-tooltip="Metas"
+       {% if request.endpoint == 'goals.index' %}aria-current="page"{% endif %}>
+      {{ icon('rocket') }}<span class="nav-label">Metas</span>
+    </a>
+
+    <a class="nav-item" href="{{ url_for('goals.board') }}" data-tooltip="Esteira"
+       {% if request.endpoint == 'goals.board' %}aria-current="page"{% endif %}>
+      {{ icon('dashboard') }}<span class="nav-label">Esteira</span>
+    </a>
+
     <p class="nav-section-title">Organização</p>
 
     <a class="nav-item" href="{{ url_for('groups.index') }}" data-tooltip="Grupos"

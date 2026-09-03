@@ -1,0 +1,82 @@
+{#
+  Um cartão da esteira.
+
+  `draggable` é o atalho, não o caminho. O botão "avançar" ao lado envia um
+  formulário e move o cartão para a próxima coluna sem ponteiro nenhum — é
+  como um teclado, um leitor de tela e um navegador sem JavaScript chegam ao
+  mesmo lugar que o arrastar.
+#}
+{% from 'components/macros.html' import icon %}
+
+<article class="board-card" draggable="true"
+         data-uuid="{{ row.goal.uuid }}" data-day="{{ row.day_iso }}"
+         data-status="{{ row.status }}">
+  <div class="board-card-top">
+    <span class="goal-tag goal-priority" data-priority="{{ row.goal.priority }}">
+      {{ priority_labels[row.goal.priority] }}
+    </span>
+    <span class="goal-tag">
+      {{ icon(category_icons[row.goal.category], 'icon icon-sm') }}
+      {{ category_labels[row.goal.category] }}
+    </span>
+    <span class="board-card-grip" aria-hidden="true">{{ icon('grip', 'icon icon-sm') }}</span>
+  </div>
+
+  <h4 class="board-card-title">{{ row.goal.display_title }}</h4>
+  {% if row.goal.description %}
+    <p class="board-card-text">{{ row.goal.description }}</p>
+  {% endif %}
+
+  <div class="board-card-meta">
+    {% if row.goal.time %}
+      <span class="tabular">{{ icon('clock', 'icon icon-sm') }} {{ row.goal.time.strftime('%H:%M') }}</span>
+    {% endif %}
+    {% if row.goal.is_recurring %}
+      <span>{{ icon('restore', 'icon icon-sm') }} {{ recurrence_labels[row.goal.recurrence_type] }}</span>
+    {% endif %}
+    {% if not row.date %}
+      <span>{{ icon('infinity', 'icon icon-sm') }} Sem prazo</span>
+    {% endif %}
+    {% if row.goal.document %}
+      <a href="{{ url_for('editor.edit', public_uuid=row.goal.document.uuid) }}">
+        {{ icon('file', 'icon icon-sm') }} {{ row.goal.document.display_title }}
+      </a>
+    {% endif %}
+    {% if row.goal.link_url %}
+      <a href="{{ row.goal.link_url }}" target="_blank" rel="noopener noreferrer">
+        {{ icon('link', 'icon icon-sm') }} Link
+      </a>
+    {% endif %}
+  </div>
+
+  <div class="board-card-actions">
+    <form method="post" action="{{ url_for('goals.change_status', public_uuid=row.goal.uuid) }}"
+          class="inline-form">
+      {{ confirm_form.hidden_tag() }}
+      <input type="hidden" name="acao" value="ciclo">
+      <input type="hidden" name="dia" value="{{ row.day_iso }}">
+      <input type="hidden" name="next" value="{{ url_for('goals.board') }}">
+      <button type="submit" class="btn btn-ghost btn-sm"
+              aria-label="Avançar “{{ row.goal.display_title }}” para a próxima coluna">
+        {{ icon('chevron-right', 'icon icon-sm') }} Avançar
+      </button>
+    </form>
+
+    {% if not row.date %}
+      <form method="post" action="{{ url_for('goals.move_to_today', public_uuid=row.goal.uuid) }}"
+            class="inline-form">
+        {{ confirm_form.hidden_tag() }}
+        <button type="submit" class="btn btn-ghost btn-icon btn-sm"
+                title="Fazer hoje" aria-label="Trazer “{{ row.goal.display_title }}” para hoje">
+          {{ icon('calendar-check', 'icon icon-sm') }}
+        </button>
+      </form>
+    {% endif %}
+
+    <a class="btn btn-ghost btn-icon btn-sm"
+       href="{{ url_for('goals.edit', public_uuid=row.goal.uuid) }}"
+       title="Editar" aria-label="Editar “{{ row.goal.display_title }}”">
+      {{ icon('edit', 'icon icon-sm') }}
+    </a>
+  </div>
+</article>

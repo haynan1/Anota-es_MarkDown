@@ -1,0 +1,70 @@
+{% extends 'base.html' %}
+{% from 'components/macros.html' import icon %}
+
+{% set topbar_title = 'Plano' %}
+{% block title %}Plano · {{ app_name }}{% endblock %}
+
+{% block styles %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/goals.css') }}">
+{% endblock %}
+
+{% block content %}
+{% include 'goals/_nav.html' %}
+
+<div class="page-head">
+  <div class="page-head-row">
+    <div>
+      <h1 class="page-title">Plano</h1>
+      <p class="page-subtitle">
+        {{ start.strftime('%d/%m/%Y') }} até {{ end.strftime('%d/%m/%Y') }} ·
+        <span class="tabular">{{ done }}</span> de
+        <span class="tabular">{{ rows|length }}</span> concluída{{ 's' if rows|length != 1 }}
+      </p>
+    </div>
+    <div class="page-head-actions">
+      <div class="btn-group" role="group" aria-label="Janela do plano">
+        <a class="btn btn-sm {{ 'btn-primary' if view == 'semana' }}"
+           href="{{ url_for('goals.planning', janela='semana') }}"
+           {% if view == 'semana' %}aria-current="page"{% endif %}>Semana</a>
+        <a class="btn btn-sm {{ 'btn-primary' if view == 'mes' }}"
+           href="{{ url_for('goals.planning', janela='mes') }}"
+           {% if view == 'mes' %}aria-current="page"{% endif %}>Mês</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+{#
+  Os dias vazios ficam na lista de propósito: é onde cabe a próxima coisa.
+  Uma agenda que pula o que está livre esconde exatamente o espaço que o
+  planejamento está procurando.
+#}
+<div class="plan">
+  {% for day in by_day %}
+    <section class="plan-day{{ ' plan-day-today' if day.date == today_date }}{{ ' plan-day-empty' if not day.rows }}">
+      <header class="plan-day-head">
+        <p class="plan-day-date">
+          <span class="plan-day-number tabular">{{ day.date.strftime('%d') }}</span>
+          <span class="plan-day-name">{{ day.weekday }}</span>
+        </p>
+        {% if day.rows %}
+          <span class="plan-day-count subtle tabular">
+            {{ day.done }}/{{ day.rows|length }}
+          </span>
+        {% endif %}
+        {% if day.date == today_date %}
+          <span class="badge badge-accent">Hoje</span>
+        {% endif %}
+      </header>
+
+      {% if day.rows %}
+        <div class="goal-list">
+          {% for row in day.rows %}{% include 'goals/_row.html' %}{% endfor %}
+        </div>
+      {% else %}
+        <p class="plan-day-free subtle">Livre.</p>
+      {% endif %}
+    </section>
+  {% endfor %}
+</div>
+{% endblock %}

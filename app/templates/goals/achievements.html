@@ -1,0 +1,66 @@
+{% extends 'base.html' %}
+{% from 'components/macros.html' import icon %}
+
+{% set topbar_title = 'Conquistas' %}
+{% block title %}Conquistas · {{ app_name }}{% endblock %}
+
+{% block styles %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/goals.css') }}">
+{% endblock %}
+
+{% block content %}
+{% include 'goals/_nav.html' %}
+
+<div class="page-head">
+  <div class="page-head-row">
+    <div>
+      <h1 class="page-title">Conquistas</h1>
+      <p class="page-subtitle">
+        Todo avanço deixa uma marca no caminho. Uma conquista desbloqueada
+        nunca é revogada — a data em que você chegou lá continua sendo verdade.
+      </p>
+    </div>
+  </div>
+</div>
+
+<section class="achv-summary card card-pad">
+  <div>
+    <p class="achv-summary-count">
+      <span class="tabular">{{ unlocked }}</span>
+      <span class="subtle">de {{ total }} conquistas</span>
+    </p>
+    <progress class="meter" value="{{ unlocked }}" max="{{ total }}">
+      {{ (unlocked * 100 // total) if total else 0 }}%
+    </progress>
+  </div>
+  <p class="achv-summary-hint subtle">
+    Nível {{ progress.level }} · {{ progress.completed|number_br }} conclusões ·
+    recorde de {{ progress.record }} dia{{ 's' if progress.record != 1 }}
+  </p>
+</section>
+
+{% for group, cards in groups %}
+  <section class="achv-group section-gap" aria-labelledby="grupo-{{ loop.index }}">
+    <h2 class="achv-group-title" id="grupo-{{ loop.index }}">{{ group }}</h2>
+    <div class="grid grid-cards">
+      {% for card in cards %}
+        <article class="achv{{ ' achv-unlocked' if card.is_unlocked }}">
+          <span class="achv-icon" aria-hidden="true">
+            {{ icon(card.achievement.icon, 'icon icon-lg') }}
+          </span>
+          <div class="achv-body">
+            <h3 class="achv-title">{{ card.achievement.title }}</h3>
+            <p class="achv-text">{{ card.achievement.description }}</p>
+            {% if card.is_unlocked %}
+              <p class="achv-date">Desbloqueada {{ card.unlocked_at|since }}</p>
+            {% endif %}
+          </div>
+          {% if not card.is_unlocked %}
+            {{ icon('lock', 'icon icon-sm achv-lock', 'Ainda bloqueada') }}
+          {% endif %}
+        </article>
+      {% endfor %}
+    </div>
+  </section>
+{% endfor %}
+{% endblock %}

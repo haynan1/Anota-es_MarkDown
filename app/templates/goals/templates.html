@@ -1,0 +1,108 @@
+{% extends 'base.html' %}
+{% from 'components/macros.html' import icon, empty_state %}
+
+{% set topbar_title = 'Predefinidas' %}
+{% block title %}Metas predefinidas · {{ app_name }}{% endblock %}
+
+{% block styles %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/goals.css') }}">
+{% endblock %}
+
+{% block content %}
+{% include 'goals/_nav.html' %}
+
+<div class="page-head">
+  <div class="page-head-row">
+    <div>
+      <h1 class="page-title">Metas predefinidas</h1>
+      <p class="page-subtitle">
+        O que você sabe que vai fazer de novo, guardado pronto. Cadastrar não
+        marca nada na agenda: quando quiser usar, escolha o dia e ative.
+      </p>
+    </div>
+    <div class="page-head-actions">
+      <a class="btn btn-primary" href="{{ url_for('goals.create_template') }}">
+        {{ icon('plus', 'icon icon-sm') }} Nova predefinida
+      </a>
+    </div>
+  </div>
+</div>
+
+{% if templates %}
+  <div class="grid grid-cards">
+    {% for template in templates %}
+      <article class="tpl-card card">
+        <div class="tpl-card-body">
+          <div class="tpl-card-top">
+            <span class="goal-tag">
+              {{ icon(category_icons[template.category], 'icon icon-sm') }}
+              {{ category_labels[template.category] }}
+            </span>
+            <span class="goal-tag goal-priority" data-priority="{{ template.priority }}">
+              {{ priority_labels[template.priority] }}
+            </span>
+            {% if template.time %}
+              <span class="goal-tag tabular">
+                {{ icon('clock', 'icon icon-sm') }} {{ template.time.strftime('%H:%M') }}
+              </span>
+            {% endif %}
+          </div>
+
+          <h2 class="tpl-card-title">{{ template.display_title }}</h2>
+          {% if template.description %}
+            <p class="tpl-card-text">{{ template.description }}</p>
+          {% endif %}
+
+          {% if template.document %}
+            <a class="goal-tag goal-tag-link"
+               href="{{ url_for('editor.edit', public_uuid=template.document.uuid) }}">
+              {{ icon('file', 'icon icon-sm') }} {{ template.document.display_title }}
+            </a>
+          {% endif %}
+          {% if template.link_url %}
+            <a class="goal-tag goal-tag-link" href="{{ template.link_url }}"
+               target="_blank" rel="noopener noreferrer">
+              {{ icon('link', 'icon icon-sm') }} Link de apoio
+            </a>
+          {% endif %}
+        </div>
+
+        <form class="tpl-card-activate"
+              method="post"
+              action="{{ url_for('goals.activate_template', public_uuid=template.uuid) }}">
+          {{ activate_form.hidden_tag() }}
+          <div class="field">
+            <label class="field-label" for="ativar-{{ template.uuid }}">Ativar em</label>
+            <input class="input" type="date" id="ativar-{{ template.uuid }}"
+                   name="date" value="{{ today_date.isoformat() }}" required>
+          </div>
+          <button type="submit" class="btn btn-primary btn-sm">
+            {{ icon('rocket', 'icon icon-sm') }} Ativar
+          </button>
+        </form>
+
+        <div class="tpl-card-actions">
+          <a class="btn btn-ghost btn-icon btn-sm"
+             href="{{ url_for('goals.edit_template', public_uuid=template.uuid) }}"
+             title="Editar" aria-label="Editar “{{ template.display_title }}”">
+            {{ icon('edit', 'icon icon-sm') }}
+          </a>
+          <form method="post"
+                action="{{ url_for('goals.delete_template', public_uuid=template.uuid) }}"
+                class="inline-form"
+                data-confirm="Remover a predefinida “{{ template.display_title }}”?">
+            {{ confirm_form.hidden_tag() }}
+            <button type="submit" class="btn btn-ghost btn-icon btn-sm btn-danger"
+                    title="Remover" aria-label="Remover “{{ template.display_title }}”">
+              {{ icon('trash', 'icon icon-sm') }}
+            </button>
+          </form>
+        </div>
+      </article>
+    {% endfor %}
+  </div>
+{% else %}
+  {{ empty_state('bookmark', 'Seu catálogo está vazio',
+                 'Guarde uma meta que se repete na sua vida e ative em qualquer dia, sem configurar tudo de novo.') }}
+{% endif %}
+{% endblock %}

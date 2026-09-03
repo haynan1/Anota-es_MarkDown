@@ -4,6 +4,7 @@ Importing this module registers every mapper, which Alembic autogenerate and
 ``db.create_all()`` both rely on.
 """
 
+from app.models.achievement import AchievementUnlock
 from app.models.category import Category
 from app.models.document import (
     PAGE_SIZE_LABELS,
@@ -13,6 +14,21 @@ from app.models.document import (
     Document,
 )
 from app.models.document_version import DocumentVersion
+from app.models.goal import (
+    ACTIVE_STATUSES,
+    CATEGORY_ICONS,
+    CATEGORY_LABELS,
+    GOAL_CATEGORIES,
+    GOAL_PRIORITIES,
+    GOAL_STATUSES,
+    PRIORITY_LABELS,
+    RECURRENCE_LABELS,
+    RECURRENCE_TYPES,
+    STATUS_LABELS,
+    Goal,
+    GoalOccurrence,
+    GoalTemplate,
+)
 from app.models.group import Group, document_groups
 from app.models.media_asset import MediaAsset
 from app.models.mind_map import (
@@ -23,14 +39,20 @@ from app.models.mind_map import (
     MindMap,
     MindMapNode,
 )
+from app.models.phrase import MotivationalPhrase
 from app.models.setting import Setting
 from app.models.tag import Tag, document_tags
 
 __all__ = [
+    "AchievementUnlock",
     "Category",
     "Document",
     "DocumentVersion",
+    "Goal",
+    "GoalOccurrence",
+    "GoalTemplate",
     "Group",
+    "MotivationalPhrase",
     "MediaAsset",
     "MindMap",
     "MindMapNode",
@@ -46,4 +68,14 @@ __all__ = [
     "NODE_SHAPES",
     "LAYOUTS",
     "LAYOUT_LABELS",
+    "ACTIVE_STATUSES",
+    "CATEGORY_ICONS",
+    "CATEGORY_LABELS",
+    "GOAL_CATEGORIES",
+    "GOAL_PRIORITIES",
+    "GOAL_STATUSES",
+    "PRIORITY_LABELS",
+    "RECURRENCE_LABELS",
+    "RECURRENCE_TYPES",
+    "STATUS_LABELS",
 ]

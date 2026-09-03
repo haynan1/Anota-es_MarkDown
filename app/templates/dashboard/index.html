@@ -4,6 +4,7 @@
 
 {% block styles %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/charts.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/goals.css') }}">
 {% endblock %}
 
 {% set topbar_title = 'Painel' %}
@@ -64,6 +65,87 @@
       {% endif %}
     </p>
   </div>
+</section>
+
+
+{#
+  As missões do dia. Elas abrem o painel logo abaixo do resumo porque é aqui
+  que o dia começa — e porque a pergunta "o que eu faço agora" não deveria
+  exigir uma navegação. A lista é curta de propósito: o painel diz como está o
+  dia, a esteira é onde se trabalha nele.
+#}
+<section class="card card-pad section-gap" aria-labelledby="today-goals-title">
+  <div class="card-head-row">
+    <div>
+      <h2 class="card-title" id="today-goals-title">Missões de hoje</h2>
+      <p class="muted small">
+        {% if goal_total %}
+          <span class="tabular">{{ goal_done }}</span> de
+          <span class="tabular">{{ goal_total }}</span> concluída{{ 's' if goal_total != 1 }}
+          {% if goal_streak %}
+            · sequência de <span class="tabular">{{ goal_streak }}</span>
+            dia{{ 's' if goal_streak != 1 }}
+          {% endif %}
+        {% else %}
+          Nada marcado para hoje.
+        {% endif %}
+      </p>
+    </div>
+    <div class="row row-tight">
+      <a class="btn btn-sm" href="{{ url_for('goals.board') }}">Esteira</a>
+      <a class="btn btn-sm btn-primary" href="{{ url_for('goals.create') }}">
+        {{ icon('plus', 'icon icon-sm') }} Nova meta
+      </a>
+    </div>
+  </div>
+
+  {% if goal_total %}
+    <progress class="meter" value="{{ goal_done }}" max="{{ goal_total }}">
+      {{ (goal_done * 100 // goal_total) }}%
+    </progress>
+
+    <div class="today-goals">
+      {% for row in goal_rows %}
+        <div class="today-goal{{ ' is-done' if row.is_done }}">
+          <form method="post"
+                action="{{ url_for('goals.change_status', public_uuid=row.goal.uuid) }}"
+                class="inline-form">
+            {{ confirm_form.hidden_tag() }}
+            <input type="hidden" name="acao" value="alternar">
+            <input type="hidden" name="dia" value="{{ row.day_iso }}">
+            <input type="hidden" name="next" value="{{ url_for('dashboard.index') }}">
+            <button type="submit" class="goal-check"
+                    aria-label="{{ 'Reabrir' if row.is_done else 'Concluir' }} “{{ row.goal.display_title }}”">
+              {{ icon('check', 'icon icon-sm') }}
+            </button>
+          </form>
+          <span class="today-goal-title">{{ row.goal.display_title }}</span>
+          {% if row.goal.time %}
+            <span class="muted small tabular">{{ row.goal.time.strftime('%H:%M') }}</span>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+
+    {% if goal_total > goal_rows|length %}
+      <p class="muted small">
+        <a href="{{ url_for('goals.index') }}">Ver todas as {{ goal_total }} missões de hoje</a>
+      </p>
+    {% endif %}
+  {% else %}
+    <p class="muted small">
+      Uma meta pode apontar para um documento daqui — “terminar a proposta”
+      abre a proposta. <a href="{{ url_for('goals.create') }}">Crie a primeira</a>.
+    </p>
+  {% endif %}
+
+  {% if phrases %}
+    <blockquote class="phrase-now" data-phrases='{{ phrases|tojson }}'
+                data-interval="{{ phrase_interval }}">
+      {{ icon('quote', 'icon icon-sm') }}
+      <p data-phrase-text>{{ phrase }}</p>
+    </blockquote>
+  {% endif %}
 </section>
 
 {% if summary.has_any_data %}
@@ -230,4 +312,9 @@
     </section>
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+  {# Só a rotação da frase é usada aqui; o módulo se liga ao que a página tem. #}
+  <script src="{{ url_for('static', filename='js/goals.js') }}" type="module"></script>
 {% endblock %}

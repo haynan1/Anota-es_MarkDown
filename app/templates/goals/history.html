@@ -1,0 +1,63 @@
+{% extends 'base.html' %}
+{% from 'components/macros.html' import icon %}
+{% from 'components/charts.html' import line_chart, bar_chart %}
+
+{% set topbar_title = 'Histórico' %}
+{% block title %}Histórico · {{ app_name }}{% endblock %}
+
+{% block styles %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/charts.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/goals.css') }}">
+{% endblock %}
+
+{% block content %}
+{% include 'goals/_nav.html' %}
+
+<div class="page-head">
+  <div class="page-head-row">
+    <div>
+      <h1 class="page-title">Histórico</h1>
+      <p class="page-subtitle">
+        Uma leitura do seu ritmo. Os gráficos são desenhados no servidor e
+        trazem a tabela dos mesmos números logo abaixo.
+      </p>
+    </div>
+  </div>
+</div>
+
+{% include 'goals/_progress.html' %}
+
+<div class="grid grid-2 section-gap">
+  <section class="card card-pad">
+    <h2 class="card-title">Conclusões nos últimos {{ history_days }} dias</h2>
+    {{ line_chart(chart, 'Metas concluídas por dia') }}
+  </section>
+
+  <section class="card card-pad">
+    <h2 class="card-title">Onde sua energia foi</h2>
+    {{ bar_chart(categories, 'Conclusões por categoria') }}
+  </section>
+</div>
+
+<section class="card card-pad section-gap">
+  <h2 class="card-title">A conta por trás dos números</h2>
+  <dl class="goal-legend">
+    <div>
+      <dt>{{ icon('bolt', 'icon icon-sm') }} XP</dt>
+      <dd>Cada meta concluída vale 10 XP. Criar não vale nada — o prêmio é por fazer.</dd>
+    </div>
+    <div>
+      <dt>{{ icon('award', 'icon icon-sm') }} Nível</dt>
+      <dd>O nível N custa N × 150 XP, então subir vai ficando mais difícil sem nunca ter teto.</dd>
+    </div>
+    <div>
+      <dt>{{ icon('flame', 'icon icon-sm') }} Sequência</dt>
+      <dd>Dias seguidos com ao menos uma conclusão. O dia de hoje ainda não conta contra você.</dd>
+    </div>
+    <div>
+      <dt>{{ icon('check-circle', 'icon icon-sm') }} Conclusões</dt>
+      <dd>Um hábito cumprido trinta vezes vale trinta — cada dia de uma série conta sozinho.</dd>
+    </div>
+  </dl>
+</section>
+{% endblock %}

@@ -87,19 +87,23 @@ def schema(database):
         connection.close()
 
 
-def rewind(application):
-    """Put a database back in the state the previous release left it in.
+def rewind(application, steps: int = 1):
+    """Put a database back in the state an earlier release left it in.
 
-    By running the head migration's own ``downgrade`` rather than by undoing
-    its effects by hand here. Two things follow from that. It stays correct
-    when the head moves - a hardcoded list of tables to drop describes one
+    By running the migrations' own ``downgrade`` rather than by undoing their
+    effects by hand here. Two things follow from that. It stays correct when
+    the head moves - a hardcoded list of tables to drop describes one
     particular migration, and quietly stops describing the schema the moment
     another one lands, which is how a test about *being behind* ends up
     testing nothing. And it means every release's migration is exercised in
     both directions, which is the promise each of them makes.
+
+    ``steps`` exists because not every test is about the newest migration: the
+    data migration a release earlier still runs on every database that upgrades
+    today, and reaching it means walking back past the head.
     """
     with application.app_context():
-        downgrade(revision="-1")
+        downgrade(revision=f"-{steps}")
 
 
 def previous(application):
@@ -136,10 +140,20 @@ def test_pending_migration_is_applied_on_startup(tmp_path):
     # thing".
     #
     # The shape of the line follows what the head actually does. Today's head
-    # changes *data*, not schema: it clears the colour a map's centre used to
-    # carry a copy of. So the schema is asserted to be untouched here, and the
-    # data it did change is asserted in the test below.
-    assert after == before, "esta head não deveria alterar o schema"
+    # is purely additive: it brings the journey - metas, ocorrências,
+    # predefinidas, frases e conquistas - and touches nothing that was already
+    # there. Both halves of that are asserted, because "added five tables" and
+    # "kept every other column" are two different promises and only the second
+    # one is about people's data.
+    added = {table for table, _ in after - before}
+    assert added == {
+        "goals",
+        "goal_occurrences",
+        "goal_templates",
+        "motivational_phrases",
+        "achievement_unlocks",
+    }, f"a head trouxe tabelas inesperadas: {sorted(added)}"
+    assert not before - after, "esta head não deveria remover nada do schema"
 
 
 def seed_a_map_with_a_pinned_centre(database):
@@ -185,15 +199,19 @@ def colours(database):
         connection.close()
 
 
-def test_the_head_migration_repaints_only_the_inherited_centre(tmp_path):
-    """A migração de dados da vez, e o que ela tem o direito de tocar.
+def test_the_colour_migration_repaints_only_the_inherited_centre(tmp_path):
+    """Uma migração de dados da cadeia, e o que ela tem o direito de tocar.
 
     Uma migração que apaga um pouco demais é pior do que uma que não roda: ela
     descarta escolhas que alguém fez, e não há como saber depois quais eram.
     """
     database = tmp_path / "cor.db"
     application = build(tmp_path, database)
-    rewind(application)
+    # Dois degraus: a head de hoje só acrescenta tabelas, e a migração de dados
+    # que este teste exerce é a de antes dela. Ela continua rodando em todo
+    # banco que sobe até aqui, então continua valendo a pena provar o que ela
+    # toca - e, principalmente, o que ela não toca.
+    rewind(application, steps=2)
     seed_a_map_with_a_pinned_centre(database)
 
     build(tmp_path, database)

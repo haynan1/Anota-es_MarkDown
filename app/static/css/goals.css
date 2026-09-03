@@ -1,0 +1,567 @@
+/* ==========================================================================
+   Metas — a jornada
+
+   Uma folha só para as telas de metas, carregada apenas por elas. Nenhuma cor
+   literal: tudo vem dos tokens de base.css, então o tema claro e o escuro são
+   o mesmo código, e a cor de destaque escolhida nas configurações aparece aqui
+   sem que este arquivo precise saber qual é.
+
+   O vocabulário visual é o mesmo do resto do app — .card, .btn, .badge,
+   .field. O que existe aqui é só o que não existia: a faixa de progresso, a
+   linha de uma meta, a esteira, o plano dia a dia e as conquistas.
+   ========================================================================== */
+
+/* ── A faixa de progresso ────────────────────────────────────────────────── */
+
+/*
+  Sem caixa, sem borda. A separação vem do salto tipográfico entre rótulo e
+  número e do espaço em volta — a mesma decisão que a régua de estatísticas do
+  painel já tinha tomado, e por isso as duas telas continuam parecendo a mesma
+  aplicação.
+*/
+.journey {
+  display: grid;
+  grid-template-columns: minmax(220px, 320px) 1fr;
+  gap: var(--sp-5) var(--sp-7);
+  align-items: center;
+  padding: var(--sp-5) 0 var(--sp-6);
+  border-bottom: 1px solid var(--border);
+}
+
+.journey-eyebrow {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 620;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.journey-xp {
+  margin-top: var(--sp-1);
+  font-size: var(--fs-3xl);
+  font-weight: 640;
+  letter-spacing: -0.04em;
+  line-height: 1.05;
+}
+.journey-xp .subtle { font-size: var(--fs-md); font-weight: 500; }
+
+.journey-hint {
+  margin-top: var(--sp-2);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+}
+
+/*
+  A barra é um <progress> nativo: ela já se anuncia como "35 de 150" a um
+  leitor de tela, e a largura chega por atributo — que a CSP permite e um
+  style="width:…" não. O preço é estilizar dois pseudo-elementos diferentes,
+  um por motor, que é o que este bloco faz.
+*/
+.meter {
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 8px;
+  margin-top: var(--sp-3);
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--surface-sunken);
+  overflow: hidden;
+}
+.meter::-webkit-progress-bar {
+  background: var(--surface-sunken);
+  border-radius: var(--radius-full);
+}
+.meter::-webkit-progress-value {
+  background: linear-gradient(90deg, var(--accent), var(--accent-strong));
+  border-radius: var(--radius-full);
+  transition: width var(--dur) var(--ease);
+}
+.meter::-moz-progress-bar {
+  background: var(--accent);
+  border-radius: var(--radius-full);
+}
+
+.journey-figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--sp-4) var(--sp-5);
+  margin: 0;
+}
+.journey-figure dt {
+  display: flex; align-items: center; gap: var(--sp-2);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 560;
+}
+.journey-figure dt .icon { opacity: 0.8; }
+.journey-figure dd {
+  margin: var(--sp-1) 0 0;
+  font-size: var(--fs-2xl);
+  font-weight: 640;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+.journey-unit {
+  margin-left: var(--sp-2);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+/* ── A linha de uma meta ─────────────────────────────────────────────────── */
+
+.goal-count { margin: var(--sp-5) 0 var(--sp-3); font-size: var(--fs-xs); }
+
+.goal-list { display: flex; flex-direction: column; gap: var(--sp-2); }
+
+.goal-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: start;
+  gap: var(--sp-4);
+  padding: var(--sp-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+.goal-row:hover { border-color: var(--border-strong); box-shadow: var(--shadow-sm); }
+
+/*
+  O círculo é o gesto principal da tela, então ele é o único elemento da linha
+  com peso próprio. Concluída, a linha inteira recua: o texto esmaece e o
+  círculo se preenche — o que já foi feito não precisa mais competir pelo olho.
+*/
+.goal-check {
+  display: grid; place-items: center;
+  width: 28px; height: 28px;
+  margin-top: 2px;
+  padding: 0;
+  color: transparent;
+  background: transparent;
+  border: 2px solid var(--border-strong);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: all var(--dur) var(--ease);
+}
+.goal-check:hover { border-color: var(--accent); color: var(--accent); }
+.goal-concluida .goal-check {
+  color: var(--accent-contrast);
+  background: var(--success);
+  border-color: var(--success);
+}
+
+.goal-row-title { font-weight: 600; line-height: 1.35; }
+.goal-concluida .goal-row-title { color: var(--text-muted); text-decoration: line-through; }
+.goal-row-text {
+  margin-top: var(--sp-1);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  /* Duas linhas: a descrição contextualiza, não substitui a meta. */
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.goal-row-meta {
+  display: flex; flex-wrap: wrap; align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
+
+.goal-tag {
+  display: inline-flex; align-items: center; gap: var(--sp-1);
+  padding: 2px var(--sp-2);
+  color: var(--text-muted);
+  background: var(--surface-sunken);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-2xs);
+  font-weight: 560;
+  white-space: nowrap;
+}
+.goal-tag .icon { opacity: 0.8; }
+a.goal-tag-link { color: var(--accent); }
+a.goal-tag-link:hover { text-decoration: none; background: var(--accent-soft); }
+
+/*
+  Prioridade e situação usam a mesma família de cores semânticas do resto do
+  app. A cor nunca carrega o significado sozinha: o rótulo está escrito ao
+  lado, porque um ponto vermelho não diz "alta" para quem não distingue
+  vermelho de cinza.
+*/
+.goal-priority[data-priority="alta"] { color: var(--danger); background: var(--danger-soft); }
+.goal-priority[data-priority="media"] { color: var(--warning); background: var(--warning-soft); }
+
+.badge-status[data-status="em_andamento"] { color: var(--warning); background: var(--warning-soft); }
+.badge-status[data-status="concluida"] { color: var(--success); background: var(--success-soft); }
+
+.goal-row-when {
+  display: flex; flex-direction: column; align-items: flex-end;
+  gap: 2px;
+  min-width: 56px;
+}
+.goal-row-date { font-size: var(--fs-sm); font-weight: 600; }
+.goal-row-time { color: var(--text-muted); font-size: var(--fs-2xs); }
+.goal-overdue .goal-row-date { color: var(--danger); }
+
+.goal-row-actions { display: flex; align-items: center; gap: var(--sp-1); }
+
+@media (max-width: 560px) {
+  .goal-row { grid-template-columns: auto 1fr; }
+  .goal-row-when { align-items: flex-start; grid-column: 2; }
+  .goal-row-actions { grid-column: 2; justify-content: flex-start; }
+}
+
+/* ── A esteira ───────────────────────────────────────────────────────────── */
+
+.board {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(240px, 1fr));
+  gap: var(--sp-4);
+  align-items: start;
+}
+/* O mesmo limiar em que a barra lateral sai de cena: abaixo dele a tela é
+   estreita para tudo, e empilhar é a resposta - três colunas de 120px não são
+   um fluxo. */
+@media (max-width: 960px) {
+  .board { grid-template-columns: 1fr; }
+}
+
+.board-column {
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--sp-3);
+}
+.board-column-head {
+  display: flex; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-2) var(--sp-3);
+}
+.board-column-title { font-size: var(--fs-sm); font-weight: 620; }
+.board-column-count {
+  margin-left: auto;
+  padding: 0 var(--sp-2);
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+}
+
+.board-drop {
+  display: flex; flex-direction: column; gap: var(--sp-2);
+  min-height: 96px;
+  border-radius: var(--radius);
+  transition: background var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+/* O alvo do arrastar se anuncia por dentro, sem mover nada de lugar. */
+.board-drop.is-over {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.board-empty {
+  padding: var(--sp-5) var(--sp-3);
+  color: var(--text-subtle);
+  font-size: var(--fs-xs);
+  text-align: center;
+}
+
+.board-card {
+  padding: var(--sp-3);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  cursor: grab;
+}
+.board-card:hover { border-color: var(--border-strong); }
+.board-card.is-dragging { opacity: 0.5; cursor: grabbing; }
+/* Um pouso curto, para o olho seguir o cartão até a coluna nova. */
+.board-card.is-settling { animation: board-settle 320ms var(--ease); }
+@keyframes board-settle {
+  from { transform: translateY(-6px); box-shadow: var(--shadow-md); }
+  to { transform: none; box-shadow: var(--shadow-sm); }
+}
+
+.board-card-top {
+  display: flex; align-items: center; flex-wrap: wrap;
+  gap: var(--sp-1);
+  margin-bottom: var(--sp-2);
+}
+.board-card-grip { margin-left: auto; color: var(--text-subtle); }
+.board-card-title { font-size: var(--fs-sm); font-weight: 620; line-height: 1.35; }
+.board-card-text {
+  margin-top: var(--sp-1);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.board-card-meta {
+  display: flex; flex-wrap: wrap; align-items: center;
+  gap: var(--sp-1) var(--sp-3);
+  margin-top: var(--sp-3);
+  color: var(--text-muted);
+  font-size: var(--fs-2xs);
+}
+.board-card-meta .icon { vertical-align: -2px; opacity: 0.8; }
+.board-card-actions {
+  display: flex; align-items: center; gap: var(--sp-1);
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-2);
+  border-top: 1px solid var(--border);
+}
+
+.board-backlog { margin-top: var(--sp-4); }
+.goal-backlog-note { padding: var(--sp-3) var(--sp-5) var(--sp-4); font-size: var(--fs-xs); }
+
+/* ── Painéis recolhidos (atrasadas, acervo) ──────────────────────────────── */
+
+.goal-overdue-panel > summary,
+.goal-backlog > summary {
+  display: flex; align-items: center; flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-3);
+  padding: var(--sp-4) var(--sp-5);
+  cursor: pointer;
+  list-style: none;
+}
+.goal-overdue-panel > summary::-webkit-details-marker,
+.goal-backlog > summary::-webkit-details-marker { display: none; }
+
+.goal-overdue-title {
+  display: inline-flex; align-items: center; gap: var(--sp-2);
+  font-weight: 620;
+}
+.goal-overdue-panel > summary .goal-overdue-title { color: var(--warning); }
+.goal-overdue-caret {
+  margin-left: auto;
+  color: var(--text-muted);
+  transition: transform var(--dur) var(--ease);
+}
+details[open] > summary .goal-overdue-caret { transform: rotate(180deg); }
+
+.goal-overdue-list { padding: 0 var(--sp-5) var(--sp-5); }
+
+/* ── O plano ─────────────────────────────────────────────────────────────── */
+
+.plan { display: flex; flex-direction: column; gap: var(--sp-5); }
+
+.plan-day { padding-left: var(--sp-5); border-left: 2px solid var(--border); }
+.plan-day-today { border-left-color: var(--accent); }
+/* Um dia livre não é um erro; ele só não precisa do mesmo peso. */
+.plan-day-empty { opacity: 0.65; }
+
+.plan-day-head {
+  display: flex; align-items: baseline; gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+}
+.plan-day-date { display: flex; align-items: baseline; gap: var(--sp-2); }
+.plan-day-number {
+  font-size: var(--fs-xl);
+  font-weight: 640;
+  letter-spacing: -0.03em;
+}
+.plan-day-today .plan-day-number { color: var(--accent); }
+.plan-day-name {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 560;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.plan-day-count { font-size: var(--fs-xs); }
+.plan-day-free { font-size: var(--fs-sm); }
+
+/* ── Conquistas ──────────────────────────────────────────────────────────── */
+
+.achv-summary {
+  display: flex; align-items: center; flex-wrap: wrap;
+  gap: var(--sp-4) var(--sp-6);
+}
+.achv-summary > div { flex: 1 1 260px; }
+.achv-summary-count { font-size: var(--fs-2xl); font-weight: 640; letter-spacing: -0.03em; }
+.achv-summary-count .subtle { font-size: var(--fs-md); font-weight: 500; }
+.achv-summary-hint { font-size: var(--fs-xs); }
+
+.achv-group-title {
+  margin-bottom: var(--sp-3);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 620;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/*
+  Bloqueada é o estado padrão, e ele é discreto de propósito: a grade é longa,
+  e uma parede de cartões vibrantes que você ainda não ganhou vira ruído. A
+  cor entra quando a conquista é sua.
+*/
+.achv {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: start;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.achv-icon {
+  display: grid; place-items: center;
+  width: 44px; height: 44px;
+  color: var(--text-subtle);
+  background: var(--surface-sunken);
+  border-radius: var(--radius);
+}
+.achv-title { font-size: var(--fs-sm); font-weight: 620; }
+.achv-text { margin-top: 2px; color: var(--text-muted); font-size: var(--fs-xs); }
+.achv-date { margin-top: var(--sp-2); color: var(--success); font-size: var(--fs-2xs); font-weight: 560; }
+.achv-lock { color: var(--text-subtle); }
+
+.achv-unlocked { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.achv-unlocked .achv-icon { color: var(--accent); background: var(--accent-soft); }
+
+/* ── Predefinidas ────────────────────────────────────────────────────────── */
+
+.tpl-card { display: flex; flex-direction: column; }
+.tpl-card-body { padding: var(--sp-4); flex: 1; }
+.tpl-card-top { display: flex; flex-wrap: wrap; gap: var(--sp-1); margin-bottom: var(--sp-3); }
+.tpl-card-title { font-size: var(--fs-lg); font-weight: 620; letter-spacing: -0.02em; }
+.tpl-card-text { margin-top: var(--sp-2); color: var(--text-muted); font-size: var(--fs-sm); }
+
+.tpl-card-activate {
+  display: flex; align-items: flex-end; gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--surface-2);
+  border-top: 1px solid var(--border);
+}
+.tpl-card-activate .field { flex: 1; margin: 0; }
+.tpl-card-actions {
+  display: flex; justify-content: flex-end; gap: var(--sp-1);
+  padding: var(--sp-2) var(--sp-3);
+  border-top: 1px solid var(--border);
+}
+
+/* ── Frases ──────────────────────────────────────────────────────────────── */
+
+.phrase-now {
+  display: flex; align-items: flex-start; gap: var(--sp-3);
+  margin: var(--sp-5) 0 0;
+  padding: var(--sp-5);
+  background: var(--accent-soft);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: var(--fs-lg);
+  font-weight: 500;
+  line-height: 1.5;
+}
+.phrase-now .icon { margin-top: 6px; color: var(--accent); flex: none; }
+
+.phrase-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--sp-3);
+  margin-top: var(--sp-3);
+}
+.phrase-card {
+  display: flex; align-items: flex-start; gap: var(--sp-2);
+  padding: var(--sp-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: var(--fs-sm);
+}
+.phrase-card p { flex: 1; }
+.phrase-card-default { background: var(--surface-2); color: var(--text-muted); }
+
+/* ── Formulário ──────────────────────────────────────────────────────────── */
+
+.goal-fieldset {
+  margin: 0;
+  padding: var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.goal-fieldset legend { padding: 0 var(--sp-2); }
+.goal-fieldset > * + * { margin-top: var(--sp-4); }
+
+/* ── Legenda e zona de risco ─────────────────────────────────────────────── */
+
+.goal-legend {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--sp-4) var(--sp-6);
+  margin: var(--sp-4) 0 0;
+}
+.goal-legend dt {
+  display: flex; align-items: center; gap: var(--sp-2);
+  font-size: var(--fs-sm); font-weight: 620;
+}
+.goal-legend dd { margin: var(--sp-1) 0 0; color: var(--text-muted); font-size: var(--fs-xs); }
+
+.goal-danger { border-color: color-mix(in srgb, var(--danger) 35%, var(--border)); }
+.goal-danger .row { margin-top: var(--sp-4); }
+.goal-danger .input { max-width: 220px; }
+
+/* ── Painel: a faixa de missões do dia ───────────────────────────────────── */
+
+.card-head-row {
+  display: flex; align-items: flex-start; flex-wrap: wrap;
+  gap: var(--sp-3) var(--sp-4);
+  margin-bottom: var(--sp-4);
+}
+.card-head-row > .row { margin-left: auto; }
+
+.today-goals { display: flex; flex-direction: column; gap: var(--sp-2); margin-top: var(--sp-4); }
+.today-goal {
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-2) 0;
+}
+.today-goal + .today-goal { border-top: 1px solid var(--border); }
+.today-goal-title { flex: 1; font-size: var(--fs-sm); }
+.today-goal.is-done .today-goal-title { color: var(--text-muted); text-decoration: line-through; }
+.today-goal.is-done .goal-check {
+  color: var(--accent-contrast);
+  background: var(--success);
+  border-color: var(--success);
+}
+
+/* ── A barra da jornada ──────────────────────────────────────────────────── */
+
+/*
+  Uma faixa de abas, não um segundo menu. Ela rola na horizontal em telas
+  estreitas em vez de quebrar em duas linhas: sete itens quebrados empurram o
+  título da página para baixo da dobra em um celular.
+*/
+.goal-nav {
+  display: flex;
+  gap: var(--sp-1);
+  margin-bottom: var(--sp-5);
+  padding-bottom: var(--sp-2);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.goal-nav::-webkit-scrollbar { display: none; }
+
+.goal-nav-item {
+  display: inline-flex; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  color: var(--text-muted);
+  border-radius: var(--radius);
+  font-size: var(--fs-sm);
+  font-weight: 560;
+  white-space: nowrap;
+  transition: color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.goal-nav-item:hover { color: var(--text); background: var(--surface-sunken); text-decoration: none; }
+.goal-nav-item[aria-current="page"] {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.goal-nav-item .icon { opacity: 0.85; }

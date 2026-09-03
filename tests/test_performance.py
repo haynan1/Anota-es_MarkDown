@@ -75,10 +75,37 @@ class TestQueryCounts:
         assert counter.count <= 12, f"{counter.count} consultas na listagem"
 
     def test_dashboard_query_count_is_bounded(self, client, many_documents):
+        """O painel tem um teto, e ele sobe quando o painel ganha uma seção.
+
+        O número foi de 15 para 18 quando as missões do dia entraram na tela:
+        uma consulta para as metas da janela, uma para as exceções delas e uma
+        para as frases. As três são constantes - não crescem com o número de
+        documentos nem com o de metas, que é o que este teste existe para
+        garantir (ver o teste seguinte, que fixa a segunda metade disso).
+        """
         with QueryCounter() as counter:
             response = client.get("/")
         assert response.status_code == 200
-        assert counter.count <= 15, f"{counter.count} consultas no painel"
+        assert counter.count <= 18, f"{counter.count} consultas no painel"
+
+    def test_dashboard_does_not_scale_with_the_number_of_goals(self, client, app):
+        """Dez metas do dia custam o que uma custa."""
+        from app.services.goal_service import GoalInput, GoalService
+
+        with QueryCounter() as one_goal:
+            GoalService.create(GoalInput(title="Única"))
+            client.get("/")
+
+        for index in range(9):
+            GoalService.create(GoalInput(title=f"Meta {index}"))
+
+        with QueryCounter() as ten_goals:
+            client.get("/")
+
+        assert ten_goals.count <= one_goal.count, (
+            f"N+1 no painel: {one_goal.count} consultas com 1 meta, "
+            f"{ten_goals.count} com 10."
+        )
 
     def test_a_bulk_action_does_not_scale_queries_with_the_selection(
         self, app, many_documents
@@ -374,7 +401,11 @@ class TestBulkOperationsDoNotScaleQueries:
             f"N+1 no backup: {len(version_queries)} consultas de versões "
             f"para {corpus_with_history} documentos"
         )
-        assert counter.count <= 10, f"{counter.count} consultas no export"
+        # Doze, e não dez, desde que a jornada passou a viajar no backup:
+        # metas, exceções, predefinidas, frases e conquistas custam uma
+        # consulta cada. Todas constantes - o teste ao lado prova que o número
+        # não muda com o tamanho do acervo.
+        assert counter.count <= 12, f"{counter.count} consultas no export"
 
     def test_backup_query_count_is_flat(self, app, make_document):
         from app.services.backup_service import build_export_payload

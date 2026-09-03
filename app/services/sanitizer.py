@@ -22,6 +22,7 @@ Design notes
 from __future__ import annotations
 
 import re
+from urllib.parse import urlsplit
 
 import bleach
 from bleach.html5lib_shim import Filter
@@ -243,3 +244,42 @@ def sanitize_multiline_text(value: str, max_length: int | None = None) -> str:
     if max_length is not None and len(cleaned) > max_length:
         cleaned = cleaned[:max_length].rstrip()
     return cleaned
+
+
+# ── Endereços digitados ─────────────────────────────────────────────────────
+
+#: Esquemas que um endereço escrito por alguém pode usar. A ausência de
+#: ``javascript`` e ``data`` aqui é o que impede que um campo de link vire um
+#: vetor de execução quando o valor for renderizado num ``href``.
+LINK_SCHEMES = frozenset({"http", "https", "mailto"})
+
+
+def sanitize_link(
+    value: object, schemes: frozenset[str] = LINK_SCHEMES, max_length: int = 500
+) -> str:
+    """Um endereço digitado, ou uma recusa explicando o que fazer.
+
+    Diferente do resto deste módulo, que limpa e segue em frente: um link
+    inválido não tem versão limpa. Ou ele aponta para um lugar alcançável, ou
+    a pessoa precisa saber que aquilo que ela colou não é um endereço - e
+    aceitar em silêncio um ``javascript:`` "higienizado" para vazio esconderia
+    exatamente a tentativa que mais importa ver.
+    """
+    from app.services.exceptions import ValidationError
+
+    if not isinstance(value, str):
+        return ""
+    candidate = value.strip()
+    if not candidate:
+        return ""
+    if len(candidate) > max_length:
+        raise ValidationError("O endereço é longo demais.")
+
+    parts = urlsplit(candidate)
+    if parts.scheme.lower() not in schemes:
+        raise ValidationError(
+            "Use um endereço começando por https:// (ou http://, mailto:)."
+        )
+    if parts.scheme.lower() != "mailto" and not parts.netloc:
+        raise ValidationError("Endereço incompleto.")
+    return candidate

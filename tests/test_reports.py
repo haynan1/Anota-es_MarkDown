@@ -322,12 +322,18 @@ class TestPeriodFilter:
         assert 'aria-current="true"' in body
 
     def test_the_filter_sits_outside_the_chart_cards(self, client, make_document):
-        """A per-chart filter is the anti-pattern; one row scopes them all."""
+        """A per-chart filter is the anti-pattern; one row scopes them all.
+
+        Measured from the reports section rather than from the top of the page:
+        the dashboard has other cards above it now, and "the first card in the
+        document" stopped meaning "the first chart".
+        """
         make_document(title="Com dados", content="palavra " * 50)
         body = client.get("/").data.decode("utf-8")
 
-        filter_at = body.index('class="period-filter"')
-        first_card = body.index('class="card card-pad section-gap"')
+        reports_at = body.index('id="reports-title"')
+        filter_at = body.index('class="period-filter"', reports_at)
+        first_card = body.index('class="card card-pad section-gap"', reports_at)
         assert filter_at < first_card
 
     def test_the_aggregation_is_bounded_by_the_window(self, app, make_document):

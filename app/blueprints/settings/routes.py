@@ -146,6 +146,14 @@ def _restore_message(report) -> str:
         parts.append(f"{report.documents_skipped} já existente(s) mantido(s)")
     if report.groups_created:
         parts.append(f"{report.groups_created} grupo(s) recriado(s)")
+    if report.goals_created:
+        parts.append(f"{report.goals_created} meta(s) restaurada(s)")
+    if report.goal_templates_created:
+        parts.append(f"{report.goal_templates_created} predefinida(s)")
+    if report.phrases_created:
+        parts.append(f"{report.phrases_created} frase(s)")
+    if report.achievements_restored:
+        parts.append(f"{report.achievements_restored} conquista(s)")
     if report.safety_backup:
         parts.append(f"backup de segurança: {report.safety_backup}")
     if report.warnings:

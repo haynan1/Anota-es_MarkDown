@@ -6,7 +6,7 @@ the timezone chosen in Settings.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 DEFAULT_TIMEZONE = "America/Sao_Paulo"
@@ -15,6 +15,21 @@ DEFAULT_TIMEZONE = "America/Sao_Paulo"
 def utcnow() -> datetime:
     """Timezone-aware current UTC time."""
     return datetime.now(timezone.utc)
+
+
+def local_now(tz_name: str | None = None) -> datetime:
+    """Agora, no fuso escolhido nas configurações."""
+    return datetime.now(resolve_zone(tz_name))
+
+
+def today_in(tz_name: str | None = None) -> date:
+    """O dia de hoje para quem está lendo a tela.
+
+    Uma agenda pertence ao calendário de quem a usa, não ao UTC: às 22h de
+    São Paulo, ``utcnow().date()`` já virou amanhã e a meta de hoje apareceria
+    como atrasada.
+    """
+    return local_now(tz_name).date()
 
 
 def as_utc(value: datetime | None) -> datetime | None:

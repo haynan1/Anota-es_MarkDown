@@ -1,0 +1,46 @@
+{#
+  A faixa de progresso: nível, XP e o que sustenta a sequência.
+
+  A barra é um `<progress>` de verdade, e não uma `div` com largura. Três
+  motivos: ela já se anuncia a um leitor de tela como "35 de 150", a largura
+  chega por atributo — o que a Content-Security-Policy permite e um
+  `style="width:…"` não —, e o elemento nativo continua correto se o CSS não
+  carregar.
+#}
+{% from 'components/macros.html' import icon %}
+
+<section class="journey" aria-label="Seu progresso">
+  <div class="journey-level">
+    <p class="journey-eyebrow">Nível {{ progress.level }}</p>
+    <p class="journey-xp">
+      <span class="tabular">{{ progress.level_xp|number_br }}</span>
+      <span class="subtle">/ {{ progress.level_needed|number_br }} XP</span>
+    </p>
+    <progress class="meter" value="{{ progress.level_xp }}" max="{{ progress.level_needed }}">
+      {{ progress.level_percent }}%
+    </progress>
+    <p class="journey-hint">
+      {{ (progress.level_needed - progress.level_xp)|number_br }} XP para o nível
+      {{ progress.level + 1 }}
+    </p>
+  </div>
+
+  <dl class="journey-figures">
+    <div class="journey-figure">
+      <dt>{{ icon('flame', 'icon icon-sm') }} Sequência</dt>
+      <dd class="tabular">{{ progress.streak }}<span class="journey-unit">dia{{ 's' if progress.streak != 1 }}</span></dd>
+    </div>
+    <div class="journey-figure">
+      <dt>{{ icon('trophy', 'icon icon-sm') }} Recorde</dt>
+      <dd class="tabular">{{ progress.record }}<span class="journey-unit">dia{{ 's' if progress.record != 1 }}</span></dd>
+    </div>
+    <div class="journey-figure">
+      <dt>{{ icon('check-circle', 'icon icon-sm') }} Concluídas</dt>
+      <dd class="tabular">{{ progress.completed|number_br }}</dd>
+    </div>
+    <div class="journey-figure">
+      <dt>{{ icon('calendar-check', 'icon icon-sm') }} Dias produtivos</dt>
+      <dd class="tabular">{{ progress.productive_days|number_br }}</dd>
+    </div>
+  </dl>
+</section>

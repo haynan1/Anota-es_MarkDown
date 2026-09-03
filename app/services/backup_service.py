@@ -19,7 +19,7 @@ import json
 import logging
 import zipfile
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime, time
 from pathlib import Path
 
 from flask import current_app
@@ -27,10 +27,15 @@ from sqlalchemy.orm import joinedload, selectinload
 
 from app.extensions import db
 from app.models import (
+    AchievementUnlock,
     Category,
     Document,
     DocumentVersion,
+    Goal,
+    GoalOccurrence,
+    GoalTemplate,
     Group,
+    MotivationalPhrase,
     Setting,
     Tag,
     document_groups,
@@ -39,7 +44,15 @@ from app.repositories.group_repository import GroupRepository
 from app.repositories.taxonomy_repository import CategoryRepository, TagRepository
 from app.services.exceptions import ValidationError
 from app.services.group_service import GroupService
+from app.models.goal import (
+    GOAL_CATEGORIES,
+    GOAL_PRIORITIES,
+    GOAL_STATUSES,
+    RECURRENCE_TYPES,
+)
+from app.models.goal import new_uuid as new_goal_uuid
 from app.services.markdown_service import render_markdown
+from app.services.sanitizer import sanitize_plain_text
 from app.services.search_service import search_index
 from app.utils.dates import as_utc, parse_iso, utcnow
 from app.utils.files import (
@@ -89,6 +102,10 @@ class RestoreReport:
     documents_skipped: int = 0
     categories_created: int = 0
     groups_created: int = 0
+    goals_created: int = 0
+    goal_templates_created: int = 0
+    phrases_created: int = 0
+    achievements_restored: int = 0
     tags_created: int = 0
     settings_applied: int = 0
     safety_backup: str | None = None
@@ -141,6 +158,64 @@ def _serialize_document(document: Document) -> dict:
     }
 
 
+def _iso_date(value) -> str | None:
+    return value.isoformat() if value else None
+
+
+def _serialize_goal(goal: Goal) -> dict:
+    """Uma meta com a regra dela e as exceções que ela acumulou.
+
+    O documento ligado viaja pelo UUID, e não pelo id: um id só faz sentido no
+    banco que o gerou, e um backup restaurado em outra instalação apontaria
+    para um documento qualquer - ou para nenhum.
+    """
+    return {
+        "uuid": goal.uuid,
+        "title": goal.title,
+        "description": goal.description,
+        "link_url": goal.link_url,
+        "document_uuid": goal.document.uuid if goal.document else None,
+        "date": _iso_date(goal.date),
+        "time": goal.time.isoformat() if goal.time else None,
+        "has_deadline": goal.has_deadline,
+        "show_on_board": goal.show_on_board,
+        "priority": goal.priority,
+        "category": goal.category,
+        "status": goal.status,
+        "completed_at": _iso(goal.completed_at),
+        "recurrence_type": goal.recurrence_type,
+        "recurrence_days": goal.recurrence_days,
+        "recurrence_end_date": _iso_date(goal.recurrence_end_date),
+        "created_at": _iso(goal.created_at),
+        "updated_at": _iso(goal.updated_at),
+        "occurrences": [
+            {
+                "date": _iso_date(occurrence.occurrence_date),
+                "status": occurrence.status,
+                "completed_at": _iso(occurrence.completed_at),
+            }
+            for occurrence in sorted(
+                goal.occurrences, key=lambda item: item.occurrence_date
+            )
+        ],
+    }
+
+
+def _serialize_goal_template(template: GoalTemplate) -> dict:
+    return {
+        "uuid": template.uuid,
+        "title": template.title,
+        "description": template.description,
+        "link_url": template.link_url,
+        "document_uuid": template.document.uuid if template.document else None,
+        "time": template.time.isoformat() if template.time else None,
+        "show_on_board": template.show_on_board,
+        "priority": template.priority,
+        "category": template.category,
+        "created_at": _iso(template.created_at),
+    }
+
+
 def build_export_payload() -> dict:
     from app.services.settings_service import SettingsService
 
@@ -181,6 +256,35 @@ def build_export_payload() -> dict:
         ],
         "settings": SettingsService.export(),
         "documents": [_serialize_document(document) for document in documents],
+        # A jornada viaja junto. Um backup que salva os documentos e perde as
+        # metas restaura metade da aplicação - e a metade perdida é justamente
+        # a que não pode ser reconstruída relendo os arquivos .md do arquivo.
+        "goals": [
+            _serialize_goal(goal)
+            for goal in db.session.scalars(
+                db.select(Goal).options(
+                    selectinload(Goal.occurrences), joinedload(Goal.document)
+                )
+            )
+            .unique()
+            .all()
+        ],
+        "goal_templates": [
+            _serialize_goal_template(template)
+            for template in db.session.scalars(
+                db.select(GoalTemplate).options(joinedload(GoalTemplate.document))
+            )
+            .unique()
+            .all()
+        ],
+        "motivational_phrases": [
+            {"uuid": phrase.uuid, "text": phrase.text, "created_at": _iso(phrase.created_at)}
+            for phrase in db.session.scalars(db.select(MotivationalPhrase))
+        ],
+        "achievements": [
+            {"key": row.key, "unlocked_at": _iso(row.unlocked_at)}
+            for row in db.session.scalars(db.select(AchievementUnlock))
+        ],
     }
 
 
@@ -212,6 +316,8 @@ def create_backup(label: str = "") -> BackupInfo:
             "groups": len(payload["groups"]),
             "tags": len(payload["tags"]),
             "settings": len(payload["settings"]),
+            "goals": len(payload["goals"]),
+            "goal_templates": len(payload["goal_templates"]),
         },
     }
 
@@ -467,6 +573,194 @@ def _restore_document(entry: dict) -> Document:
     return document
 
 
+# ── Restauração da jornada ──────────────────────────────────────────────────
+
+
+def _parse_date(value: object):
+    """Uma data ISO vinda do arquivo, ou ``None``. Nunca levanta.
+
+    O arquivo é entrada não confiável: qualquer campo pode ter o tipo errado
+    ou uma data que não existe. Uma linha ruim vira "não sei", e quem chama
+    decide se isso invalida a entrada inteira.
+    """
+    if not isinstance(value, str):
+        return None
+    try:
+        return date.fromisoformat(value.strip()[:10])
+    except ValueError:
+        return None
+
+
+def _parse_time(value: object):
+    if not isinstance(value, str):
+        return None
+    try:
+        return time.fromisoformat(value.strip())
+    except ValueError:
+        return None
+
+
+def _one_of(value: object, allowed: tuple[str, ...], fallback: str) -> str:
+    return value if isinstance(value, str) and value in allowed else fallback
+
+
+def _restore_goal(entry: dict, documents: dict[str, int]) -> Goal:
+    anchor = _parse_date(entry.get("date"))
+    if anchor is None:
+        raise ValidationError("Meta sem data válida.")
+
+    goal = Goal(
+        uuid=entry.get("uuid") or new_goal_uuid(),
+        title=sanitize_plain_text(str(entry.get("title") or ""), max_length=160)
+        or "Meta sem título",
+        description=str(entry.get("description") or "")[:2000],
+        link_url=str(entry.get("link_url") or "")[:500],
+        document_id=documents.get(entry.get("document_uuid") or ""),
+        date=anchor,
+        time=_parse_time(entry.get("time")),
+        has_deadline=bool(entry.get("has_deadline", True)),
+        show_on_board=bool(entry.get("show_on_board", True)),
+        priority=_one_of(entry.get("priority"), GOAL_PRIORITIES, "media"),
+        category=_one_of(entry.get("category"), GOAL_CATEGORIES, "outros"),
+        status=_one_of(entry.get("status"), GOAL_STATUSES, "pendente"),
+        completed_at=parse_iso(entry.get("completed_at")),
+        recurrence_type=_one_of(entry.get("recurrence_type"), RECURRENCE_TYPES, "none"),
+        recurrence_end_date=_parse_date(entry.get("recurrence_end_date")),
+    )
+    days = entry.get("recurrence_days")
+    goal.recurrence_days = days if isinstance(days, int) and 0 < days <= 365 else None
+
+    created = parse_iso(entry.get("created_at"))
+    if created:
+        goal.created_at = created
+    updated = parse_iso(entry.get("updated_at"))
+    if updated:
+        goal.updated_at = updated
+
+    seen: set[date] = set()
+    for raw in entry.get("occurrences") or []:
+        if not isinstance(raw, dict):
+            continue
+        day = _parse_date(raw.get("date"))
+        # A unicidade (meta, dia) é uma restrição do banco: um arquivo com o
+        # mesmo dia duas vezes derrubaria a restauração inteira no commit.
+        if day is None or day in seen:
+            continue
+        seen.add(day)
+        goal.occurrences.append(
+            GoalOccurrence(
+                occurrence_date=day,
+                status=_one_of(raw.get("status"), GOAL_STATUSES, "pendente"),
+                completed_at=parse_iso(raw.get("completed_at")),
+            )
+        )
+
+    db.session.add(goal)
+    return goal
+
+
+def _restore_goal_template(entry: dict, documents: dict[str, int]) -> GoalTemplate:
+    template = GoalTemplate(
+        uuid=entry.get("uuid") or new_goal_uuid(),
+        title=sanitize_plain_text(str(entry.get("title") or ""), max_length=160)
+        or "Predefinida sem título",
+        description=str(entry.get("description") or "")[:2000],
+        link_url=str(entry.get("link_url") or "")[:500],
+        document_id=documents.get(entry.get("document_uuid") or ""),
+        time=_parse_time(entry.get("time")),
+        show_on_board=bool(entry.get("show_on_board", True)),
+        priority=_one_of(entry.get("priority"), GOAL_PRIORITIES, "media"),
+        category=_one_of(entry.get("category"), GOAL_CATEGORIES, "outros"),
+    )
+    created = parse_iso(entry.get("created_at"))
+    if created:
+        template.created_at = created
+    db.session.add(template)
+    return template
+
+
+def _restore_journey(payload: dict, report: RestoreReport) -> None:
+    """Metas, predefinidas, frases e conquistas.
+
+    Chamado depois dos documentos, e não antes: uma meta aponta para um
+    documento pelo UUID, e o mapa de UUIDs só está completo quando eles já
+    foram restaurados.
+    """
+    documents = {
+        row[0]: row[1]
+        for row in db.session.execute(db.select(Document.uuid, Document.id)).all()
+    }
+
+    existing_goals = {row[0] for row in db.session.execute(db.select(Goal.uuid)).all()}
+    for raw in payload.get("goals") or []:
+        if not isinstance(raw, dict):
+            report.warnings.append("Uma entrada de meta inválida foi ignorada.")
+            continue
+        if raw.get("uuid") in existing_goals:
+            continue
+        try:
+            goal = _restore_goal(raw, documents)
+        except Exception as exc:  # noqa: BLE001 - untrusted-input boundary
+            logger.exception("Falha ao restaurar meta")
+            report.warnings.append(f"Meta ignorada: {type(exc).__name__}")
+            db.session.rollback()
+            continue
+        existing_goals.add(goal.uuid)
+        report.goals_created += 1
+
+    existing_templates = {
+        row[0] for row in db.session.execute(db.select(GoalTemplate.uuid)).all()
+    }
+    for raw in payload.get("goal_templates") or []:
+        if not isinstance(raw, dict) or raw.get("uuid") in existing_templates:
+            continue
+        try:
+            template = _restore_goal_template(raw, documents)
+        except Exception as exc:  # noqa: BLE001 - untrusted-input boundary
+            logger.exception("Falha ao restaurar meta predefinida")
+            report.warnings.append(f"Predefinida ignorada: {type(exc).__name__}")
+            db.session.rollback()
+            continue
+        existing_templates.add(template.uuid)
+        report.goal_templates_created += 1
+
+    existing_phrases = {
+        row[0] for row in db.session.execute(db.select(MotivationalPhrase.uuid)).all()
+    }
+    for raw in payload.get("motivational_phrases") or []:
+        if not isinstance(raw, dict) or raw.get("uuid") in existing_phrases:
+            continue
+        text = sanitize_plain_text(str(raw.get("text") or ""), max_length=255)
+        if not text:
+            continue
+        phrase = MotivationalPhrase(uuid=raw.get("uuid") or new_goal_uuid(), text=text)
+        created = parse_iso(raw.get("created_at"))
+        if created:
+            phrase.created_at = created
+        db.session.add(phrase)
+        existing_phrases.add(phrase.uuid)
+        report.phrases_created += 1
+
+    unlocked = {
+        row[0] for row in db.session.execute(db.select(AchievementUnlock.key)).all()
+    }
+    for raw in payload.get("achievements") or []:
+        if not isinstance(raw, dict):
+            continue
+        key = raw.get("key")
+        if not isinstance(key, str) or not key or key in unlocked:
+            continue
+        row = AchievementUnlock(key=key[:80])
+        when = parse_iso(raw.get("unlocked_at"))
+        if when:
+            row.unlocked_at = when
+        db.session.add(row)
+        unlocked.add(key)
+        report.achievements_restored += 1
+
+    db.session.commit()
+
+
 def restore_backup(source, mode: str = "merge") -> RestoreReport:
     """Restore ``source`` (a path or file object) using ``mode``."""
     if mode not in RESTORE_MODES:
@@ -484,6 +778,14 @@ def restore_backup(source, mode: str = "merge") -> RestoreReport:
         # foreign keys are switched on per connection, so nothing here relies
         # on it. Leaving them behind would point at documents that no longer
         # exist.
+        # A jornada primeiro, e as ocorrências antes das metas: o SQLite só
+        # honra ON DELETE CASCADE com as chaves estrangeiras ligadas por
+        # conexão, então nada aqui depende delas.
+        db.session.execute(db.delete(GoalOccurrence))
+        db.session.execute(db.delete(Goal))
+        db.session.execute(db.delete(GoalTemplate))
+        db.session.execute(db.delete(MotivationalPhrase))
+        db.session.execute(db.delete(AchievementUnlock))
         db.session.execute(document_groups.delete())
         db.session.execute(db.delete(Group))
         db.session.execute(db.delete(DocumentVersion))
@@ -548,6 +850,8 @@ def restore_backup(source, mode: str = "merge") -> RestoreReport:
         report.documents_created += 1
 
     db.session.commit()
+
+    _restore_journey(payload, report)
 
     settings_payload = payload.get("settings")
     if isinstance(settings_payload, dict):

@@ -1,0 +1,51 @@
+{% extends 'base.html' %}
+{% from 'components/macros.html' import icon, field, select_field, checkbox_field %}
+
+{% set topbar_title = 'Predefinida' %}
+{% block title %}{{ 'Editar' if template else 'Nova' }} predefinida · {{ app_name }}{% endblock %}
+{% block content_class %}content-narrow{% endblock %}
+
+{% block styles %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/goals.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <a class="btn btn-ghost btn-sm" href="{{ url_for('goals.templates') }}">
+    {{ icon('arrow-left', 'icon icon-sm') }} Predefinidas
+  </a>
+  <h1 class="page-title">{{ 'Editar' if template else 'Nova' }} meta predefinida</h1>
+  <p class="page-subtitle">
+    O molde não tem data. Ele fica guardado até você escolher o dia de ativá-lo.
+  </p>
+</div>
+
+<form method="post" class="card card-pad stack stack-4">
+  {{ form.hidden_tag() }}
+
+  {{ field(form.title, placeholder='Ex.: Revisar o orçamento do mês', autofocus=true) }}
+  {{ field(form.description, placeholder='O que precisa estar feito', input_cls='textarea') }}
+
+  <div class="form-grid">
+    {{ select_field(form.document_uuid) }}
+    {{ field(form.link_url, placeholder='https://exemplo.com') }}
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="form-grid">
+    {{ select_field(form.priority) }}
+    {{ select_field(form.category) }}
+  </div>
+
+  {{ field(form.time) }}
+  {{ checkbox_field(form.show_on_board) }}
+
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary">
+      {{ icon('save', 'icon icon-sm') }} {{ 'Salvar' if template else 'Guardar predefinida' }}
+    </button>
+    <a class="btn btn-ghost" href="{{ url_for('goals.templates') }}">Cancelar</a>
+  </div>
+</form>
+{% endblock %}

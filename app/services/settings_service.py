@@ -64,6 +64,15 @@ SETTINGS_SCHEMA: tuple[SettingDefinition, ...] = (
     # itself with a generation date - a code listing, not a document.
     SettingDefinition("pdf_show_generated_date", True, kind="bool"),
     SettingDefinition("backup_keep_last", 10, kind="int", minimum=1, maximum=200),
+    # ── Metas ───────────────────────────────────────────────────────────────
+    # Preferências da jornada. Ficam aqui, e não numa tabela de perfil: esta
+    # aplicação tem um dono só, e uma segunda tabela de preferências seria uma
+    # segunda verdade sobre a mesma pessoa.
+    SettingDefinition("goals_phrases_enabled", True, kind="bool"),
+    SettingDefinition(
+        "goals_phrase_interval", 30, kind="int", minimum=1, maximum=60
+    ),
+    SettingDefinition("goals_undated_on_board", False, kind="bool"),
 )
 
 _BY_KEY = {definition.key: definition for definition in SETTINGS_SCHEMA}

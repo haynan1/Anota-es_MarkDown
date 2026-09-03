@@ -46,7 +46,13 @@ class TestRenderedPagesHaveNoInlineCode:
     """The strict CSP only works because no template emits inline code."""
 
     @pytest.mark.parametrize(
-        "path", ["/", "/documentos/", "/lixeira/", "/configuracoes/", "/documentos/categorias"]
+        "path",
+        [
+            "/", "/documentos/", "/lixeira/", "/configuracoes/",
+            "/documentos/categorias",
+            "/metas/", "/metas/esteira", "/metas/plano", "/metas/conquistas",
+            "/metas/nova", "/metas/frases",
+        ],
     )
     def test_pages_contain_no_inline_style_or_handler(self, client, document, path):
         body = client.get(path).data.decode("utf-8")

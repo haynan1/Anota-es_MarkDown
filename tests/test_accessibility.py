@@ -20,6 +20,14 @@ PAGES = [
     "/documentos/importar",
     "/grupos/",
     "/mapas/",
+    "/metas/",
+    "/metas/esteira",
+    "/metas/plano",
+    "/metas/historico",
+    "/metas/conquistas",
+    "/metas/predefinidas",
+    "/metas/nova",
+    "/metas/frases",
 ]
 
 

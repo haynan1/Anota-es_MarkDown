@@ -1,0 +1,107 @@
+{#
+  Uma meta em um dia.
+
+  O círculo à esquerda é um formulário, não um script: concluir precisa
+  funcionar sem JavaScript, e um POST é o que faz o botão voltar para a mesma
+  página com o estado novo já desenhado. O `dia` viaja junto porque, numa
+  série, "concluí" sem data não diz qual terça.
+#}
+{% from 'components/macros.html' import icon %}
+
+<article class="goal-row goal-{{ row.status }}{{ ' goal-overdue' if row.is_overdue }}">
+  <form method="post" action="{{ url_for('goals.change_status', public_uuid=row.goal.uuid) }}"
+        class="inline-form">
+    {{ confirm_form.hidden_tag() }}
+    <input type="hidden" name="acao" value="alternar">
+    <input type="hidden" name="dia" value="{{ row.day_iso }}">
+    <input type="hidden" name="next" value="{{ request.full_path if request.query_string else request.path }}">
+    <button type="submit" class="goal-check"
+            aria-label="{{ 'Reabrir' if row.is_done else 'Concluir' }} “{{ row.goal.display_title }}”"
+            title="{{ 'Reabrir' if row.is_done else 'Concluir' }}">
+      {{ icon('check', 'icon icon-sm') }}
+    </button>
+  </form>
+
+  <div class="goal-row-main">
+    <p class="goal-row-title">{{ row.goal.display_title }}</p>
+    {% if row.goal.description %}
+      <p class="goal-row-text">{{ row.goal.description }}</p>
+    {% endif %}
+
+    <div class="goal-row-meta">
+      <span class="badge badge-status" data-status="{{ row.status }}">
+        {{ status_labels[row.status] }}
+      </span>
+      <span class="goal-tag">
+        {{ icon(category_icons[row.goal.category], 'icon icon-sm') }}
+        {{ category_labels[row.goal.category] }}
+      </span>
+      <span class="goal-tag goal-priority" data-priority="{{ row.goal.priority }}">
+        {{ priority_labels[row.goal.priority] }}
+      </span>
+      {% if row.goal.is_recurring %}
+        <span class="goal-tag">{{ icon('restore', 'icon icon-sm') }}
+          {{ recurrence_labels[row.goal.recurrence_type] }}</span>
+      {% endif %}
+      {% if not row.goal.has_deadline %}
+        <span class="goal-tag">{{ icon('infinity', 'icon icon-sm') }} Sem prazo</span>
+      {% endif %}
+      {% if row.is_overdue %}
+        <span class="badge badge-warning">{{ icon('alert', 'icon icon-sm') }} Atrasada</span>
+      {% endif %}
+      {% if row.goal.document %}
+        <a class="goal-tag goal-tag-link"
+           href="{{ url_for('editor.edit', public_uuid=row.goal.document.uuid) }}">
+          {{ icon('file', 'icon icon-sm') }} {{ row.goal.document.display_title }}
+        </a>
+      {% endif %}
+      {% if row.goal.link_url %}
+        <a class="goal-tag goal-tag-link" href="{{ row.goal.link_url }}"
+           target="_blank" rel="noopener noreferrer">
+          {{ icon('link', 'icon icon-sm') }} Link
+        </a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="goal-row-when">
+    {% if row.date %}
+      <span class="goal-row-date tabular">{{ row.date.strftime('%d/%m') }}</span>
+      {% if row.goal.time %}
+        <span class="goal-row-time tabular">{{ row.goal.time.strftime('%H:%M') }}</span>
+      {% endif %}
+    {% else %}
+      <span class="goal-row-date subtle">Sem prazo</span>
+    {% endif %}
+  </div>
+
+  <div class="goal-row-actions">
+    {% if not row.goal.has_deadline and not row.is_done %}
+      <form method="post" action="{{ url_for('goals.move_to_today', public_uuid=row.goal.uuid) }}"
+            class="inline-form">
+        {{ confirm_form.hidden_tag() }}
+        <input type="hidden" name="next" value="{{ request.path }}">
+        <button type="submit" class="btn btn-ghost btn-icon btn-sm"
+                title="Fazer hoje" aria-label="Trazer “{{ row.goal.display_title }}” para hoje">
+          {{ icon('calendar-check', 'icon icon-sm') }}
+        </button>
+      </form>
+    {% endif %}
+
+    <a class="btn btn-ghost btn-icon btn-sm"
+       href="{{ url_for('goals.edit', public_uuid=row.goal.uuid) }}"
+       title="Editar" aria-label="Editar “{{ row.goal.display_title }}”">
+      {{ icon('edit', 'icon icon-sm') }}
+    </a>
+
+    <form method="post" action="{{ url_for('goals.delete', public_uuid=row.goal.uuid) }}"
+          class="inline-form" data-confirm="Remover “{{ row.goal.display_title }}”? Isso apaga também o histórico dela.">
+      {{ confirm_form.hidden_tag() }}
+      <input type="hidden" name="next" value="{{ request.path }}">
+      <button type="submit" class="btn btn-ghost btn-icon btn-sm btn-danger"
+              title="Remover" aria-label="Remover “{{ row.goal.display_title }}”">
+        {{ icon('trash', 'icon icon-sm') }}
+      </button>
+    </form>
+  </div>
+</article>

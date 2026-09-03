@@ -1,0 +1,28 @@
+{#
+  A barra da jornada.
+
+  A barra lateral guarda as duas telas de uso diário — Metas e Esteira — e
+  nada além disso: um menu global que cresce a cada funcionalidade deixa de
+  ser um menu. As outras cinco telas são deste assunto, e por isso vivem aqui,
+  ao lado dele, onde já se está.
+#}
+{% from 'components/macros.html' import icon %}
+
+{% set sections = [
+  ('goals.index',       'list',           'Metas'),
+  ('goals.board',       'dashboard',      'Esteira'),
+  ('goals.planning',    'calendar-check', 'Plano'),
+  ('goals.templates',   'bookmark',       'Predefinidas'),
+  ('goals.history',     'history',        'Histórico'),
+  ('goals.achievements','trophy',         'Conquistas'),
+  ('goals.phrases',     'quote',          'Frases'),
+] %}
+
+<nav class="goal-nav" aria-label="Seções da jornada">
+  {% for endpoint, glyph, label in sections %}
+    <a class="goal-nav-item" href="{{ url_for(endpoint) }}"
+       {% if request.endpoint == endpoint %}aria-current="page"{% endif %}>
+      {{ icon(glyph, 'icon icon-sm') }}<span>{{ label }}</span>
+    </a>
+  {% endfor %}
+</nav>

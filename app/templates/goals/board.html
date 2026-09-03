@@ -1,0 +1,108 @@
+{% extends 'base.html' %}
+{% from 'components/macros.html' import icon, empty_state %}
+
+{% set topbar_title = 'Esteira' %}
+{% block title %}Esteira · {{ app_name }}{% endblock %}
+
+{% block styles %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/goals.css') }}">
+{% endblock %}
+
+{% block content %}
+{% include 'goals/_nav.html' %}
+
+<div class="page-head">
+  <div class="page-head-row">
+    <div>
+      <h1 class="page-title">Esteira</h1>
+      <p class="page-subtitle">
+        As três colunas mostram o dia de hoje — {{ today_date.strftime('%d/%m/%Y') }}.
+        Arraste um cartão, ou use o botão de avançar: os dois fazem a mesma coisa.
+      </p>
+    </div>
+    <div class="page-head-actions">
+      <a class="btn btn-primary" href="{{ url_for('goals.create') }}">
+        {{ icon('plus', 'icon icon-sm') }} Nova meta
+      </a>
+    </div>
+  </div>
+</div>
+
+{% if overdue %}
+  <details class="card goal-overdue-panel section-gap">
+    <summary>
+      <span class="goal-overdue-title">
+        {{ icon('alert', 'icon icon-sm') }}
+        {{ overdue|length }} meta{{ 's' if overdue|length != 1 }} atrasada{{ 's' if overdue|length != 1 }}
+      </span>
+      <span class="subtle">Conclua ou reagende para a esteira voltar a refletir o seu plano.</span>
+      {{ icon('chevron-down', 'icon icon-sm goal-overdue-caret') }}
+    </summary>
+    <div class="goal-list goal-overdue-list">
+      {% for row in overdue %}{% include 'goals/_row.html' %}{% endfor %}
+    </div>
+  </details>
+{% endif %}
+
+<div class="board section-gap" data-board>
+  {% for column in columns %}
+    <section class="board-column" aria-labelledby="col-{{ column.status }}">
+      <header class="board-column-head">
+        <h2 class="board-column-title" id="col-{{ column.status }}">{{ column.label }}</h2>
+        <span class="board-column-count tabular" data-count>{{ column.rows|length }}</span>
+      </header>
+
+      <div class="board-drop" data-status="{{ column.status }}"
+           aria-label="Coluna {{ column.label }}">
+        {% for row in column.rows %}
+          {% include 'goals/_card.html' %}
+        {% else %}
+          <p class="board-empty" data-empty>Nada aqui hoje.</p>
+        {% endfor %}
+      </div>
+    </section>
+  {% endfor %}
+</div>
+
+{% if not columns[0].rows and not columns[1].rows and not columns[2].rows %}
+  {{ empty_state('rocket', 'O dia está livre',
+                 'Nenhuma meta marcada para hoje. Crie uma, ou traga do acervo algo sem prazo.') }}
+{% endif %}
+
+{% if backlog_total %}
+  <details class="card goal-backlog section-gap">
+    <summary>
+      <span class="goal-overdue-title">{{ icon('infinity', 'icon icon-sm') }} Acervo sem prazo</span>
+      <span class="subtle">
+        {{ backlog_shown }} de {{ backlog_total }} meta{{ 's' if backlog_total != 1 }} guardada{{ 's' if backlog_total != 1 }}
+      </span>
+      {{ icon('chevron-down', 'icon icon-sm goal-overdue-caret') }}
+    </summary>
+    <div class="board board-backlog" data-board>
+      {% for column in backlog_columns %}
+        <section class="board-column">
+          <header class="board-column-head">
+            <h3 class="board-column-title">{{ column.label }}</h3>
+            <span class="board-column-count tabular" data-count>{{ column.rows|length }}</span>
+          </header>
+          <div class="board-drop" data-status="{{ column.status }}">
+            {% for row in column.rows %}
+              {% include 'goals/_card.html' %}
+            {% else %}
+              <p class="board-empty" data-empty>Nada aqui.</p>
+            {% endfor %}
+          </div>
+        </section>
+      {% endfor %}
+    </div>
+    <p class="goal-backlog-note subtle">
+      Mostrando as {{ backlog_shown }} primeiras. O acervo inteiro está em
+      <a href="{{ url_for('goals.index') }}">Metas</a>.
+    </p>
+  </details>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ url_for('static', filename='js/goals.js') }}" type="module"></script>
+{% endblock %}

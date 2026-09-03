@@ -16,7 +16,8 @@ import re
 from pathlib import Path
 
 STYLESHEETS = (
-    "base.css", "editor.css", "charts.css", "markdown.css", "mindmap.css"
+    "base.css", "editor.css", "charts.css", "markdown.css", "mindmap.css",
+    "goals.css",
 )
 
 # The 4px scale, in the two units it is written in.

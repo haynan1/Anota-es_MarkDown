@@ -180,7 +180,14 @@ class TestRequestIntegersCannotCrashAPage:
 
     @pytest.mark.parametrize(
         "path",
-        ["/documentos/?pagina={}", "/lixeira/?pagina={}", "/documentos/?categoria={}"],
+        [
+            "/documentos/?pagina={}",
+            "/lixeira/?pagina={}",
+            "/documentos/?categoria={}",
+            "/metas/?situacao={}",
+            "/metas/?categoria={}",
+            "/metas/plano?janela={}",
+        ],
     )
     @pytest.mark.parametrize("value", ["9" * 5000, "²"])
     def test_listing_screens_answer_with_a_page(self, client, document, path, value):

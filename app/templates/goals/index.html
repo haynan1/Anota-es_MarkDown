@@ -1,0 +1,94 @@
+{% extends 'base.html' %}
+{% from 'components/macros.html' import icon, empty_state %}
+
+{% set topbar_title = 'Metas' %}
+{% block title %}Metas · {{ app_name }}{% endblock %}
+
+{% block styles %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/goals.css') }}">
+{% endblock %}
+
+{% block content %}
+{% include 'goals/_nav.html' %}
+
+<div class="page-head">
+  <div class="page-head-row">
+    <div>
+      <h1 class="page-title">Metas</h1>
+      <p class="page-subtitle">
+        Tudo que você combinou consigo mesmo: o que está para hoje, o que ficou
+        para trás e o que ainda não tem dia marcado.
+      </p>
+    </div>
+    <div class="page-head-actions">
+      <a class="btn btn-primary" href="{{ url_for('goals.create') }}">
+        {{ icon('plus', 'icon icon-sm') }} Nova meta
+      </a>
+    </div>
+  </div>
+</div>
+
+{% include 'goals/_progress.html' %}
+
+{# Filtros por GET: a seleção fica no endereço, então uma lista filtrada
+   sobrevive a um recarregar e pode ser guardada como favorito. #}
+<form class="toolbar section-gap" method="get" role="search">
+  <div class="toolbar-filters">
+    <div class="select-wrap select-wrap-sm">
+      <label class="visually-hidden" for="filter-status">Situação</label>
+      <select class="select select-sm" id="filter-status" name="situacao">
+        <option value="">Todas as situações</option>
+        {% for value, label in status_labels.items() %}
+          <option value="{{ value }}" {{ 'selected' if status == value }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      {{ icon('chevron-down', 'icon icon-sm') }}
+    </div>
+
+    <div class="select-wrap select-wrap-sm">
+      <label class="visually-hidden" for="filter-priority">Prioridade</label>
+      <select class="select select-sm" id="filter-priority" name="prioridade">
+        <option value="">Todas as prioridades</option>
+        {% for value, label in priority_labels.items() %}
+          <option value="{{ value }}" {{ 'selected' if priority == value }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      {{ icon('chevron-down', 'icon icon-sm') }}
+    </div>
+
+    <div class="select-wrap select-wrap-sm">
+      <label class="visually-hidden" for="filter-category">Categoria</label>
+      <select class="select select-sm" id="filter-category" name="categoria">
+        <option value="">Todas as categorias</option>
+        {% for value, label in category_labels.items() %}
+          <option value="{{ value }}" {{ 'selected' if category == value }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      {{ icon('chevron-down', 'icon icon-sm') }}
+    </div>
+  </div>
+
+  <div class="toolbar-actions">
+    <button type="submit" class="btn btn-sm">{{ icon('filter', 'icon icon-sm') }} Filtrar</button>
+    {% if status or priority or category %}
+      <a class="btn btn-ghost btn-sm" href="{{ url_for('goals.index') }}">Limpar</a>
+    {% endif %}
+  </div>
+</form>
+
+{% if rows %}
+  <p class="goal-count subtle">
+    <span class="tabular">{{ rows|length }}</span> meta{{ 's' if rows|length != 1 }}
+    {% if status or priority or category %}neste filtro{% endif %}
+  </p>
+  <div class="goal-list">
+    {% for row in rows %}{% include 'goals/_row.html' %}{% endfor %}
+  </div>
+{% elif status or priority or category %}
+  {{ empty_state('filter', 'Nada neste filtro',
+                 'Ajuste a situação, a prioridade ou a categoria para ver outras metas.') }}
+{% else %}
+  {{ empty_state('rocket', 'Sua jornada começa aqui',
+                 'Crie a primeira meta e o painel passa a acompanhar o seu ritmo.') }}
+{% endif %}
+{% endblock %}

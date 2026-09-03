@@ -40,7 +40,6 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from urllib.parse import urlsplit
 
 from sqlalchemy import update
 
@@ -82,7 +81,11 @@ from app.services.mind_map_export import (
 from app.services.mind_map_drawing import build_scene
 from app.services.mind_map_layout import LayoutNode, bounding_box, compute_layout
 from app.services.mind_map_picture import Picture, to_jpeg, to_pdf, to_png
-from app.services.sanitizer import sanitize_multiline_text, sanitize_plain_text
+from app.services.sanitizer import (
+    sanitize_link,
+    sanitize_multiline_text,
+    sanitize_plain_text,
+)
 from app.utils.dates import utcnow
 from app.utils.files import safe_slug
 
@@ -1231,22 +1234,8 @@ def _clean_color(value: object, fallback: str) -> str:
 
 
 def _clean_url(value: object, schemes: frozenset[str]) -> str:
-    if not isinstance(value, str):
-        return ""
-    candidate = value.strip()
-    if not candidate:
-        return ""
-    if len(candidate) > MAX_URL_LENGTH:
-        raise ValidationError("O endereço é longo demais.")
-
-    parts = urlsplit(candidate)
-    if parts.scheme.lower() not in schemes:
-        raise ValidationError(
-            "Use um endereço começando por https:// (ou http://, mailto:)."
-        )
-    if parts.scheme.lower() != "mailto" and not parts.netloc:
-        raise ValidationError("Endereço incompleto.")
-    return candidate
+    """A regra de endereços, compartilhada com todo campo de link do app."""
+    return sanitize_link(value, schemes, MAX_URL_LENGTH)
 
 
 def _resolve_asset(value: object) -> int | None:

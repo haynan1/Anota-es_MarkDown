@@ -1,0 +1,92 @@
+{% extends 'base.html' %}
+{% from 'components/macros.html' import icon, field, select_field, checkbox_field %}
+
+{% set topbar_title = 'Editar meta' if goal else 'Nova meta' %}
+{% block title %}{{ 'Editar meta' if goal else 'Nova meta' }} · {{ app_name }}{% endblock %}
+{% block content_class %}content-narrow{% endblock %}
+
+{% block styles %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/goals.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <a class="btn btn-ghost btn-sm" href="{{ url_for('goals.index') }}">
+    {{ icon('arrow-left', 'icon icon-sm') }} Metas
+  </a>
+  <h1 class="page-title">{{ 'Editar meta' if goal else 'Nova meta' }}</h1>
+  <p class="page-subtitle">
+    Uma meta é um combinado com você mesmo. Diga o que é, quando acontece e o
+    que ela repete — o resto a jornada acompanha sozinha.
+  </p>
+</div>
+
+{#
+  `data-goal-form` liga o realce progressivo: com JavaScript, os campos de
+  prazo e de repetição só aparecem quando fazem sentido. Sem ele, tudo fica
+  visível e o formulário continua inteiro — o servidor é quem decide o que
+  vale, e ele ignora um campo de repetição enviado por uma meta sem prazo.
+#}
+<form method="post" class="card card-pad stack stack-4" data-goal-form>
+  {{ form.hidden_tag() }}
+
+  {{ field(form.title, placeholder='Ex.: Terminar a proposta da Acme', autofocus=true) }}
+  {{ field(form.description, placeholder='O que precisa estar feito para isto contar como concluído', input_cls='textarea') }}
+
+  <div class="form-grid">
+    {{ select_field(form.document_uuid) }}
+    {{ field(form.link_url, placeholder='https://exemplo.com') }}
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="stack stack-2">
+    {{ checkbox_field(form.has_deadline) }}
+    <p class="field-hint">
+      Sem prazo, a meta fica no acervo sem nunca aparecer como atrasada — até
+      você trazê-la para hoje.
+    </p>
+  </div>
+
+  <fieldset class="goal-fieldset" data-when="deadline">
+    <legend class="field-label">Quando</legend>
+    <div class="form-grid">
+      {{ field(form.date) }}
+      {{ field(form.time) }}
+    </div>
+    {{ select_field(form.recurrence_type) }}
+    <div class="form-grid">
+      <div data-when="count">{{ field(form.recurrence_days, placeholder='30') }}</div>
+      <div data-when="until">{{ field(form.recurrence_end_date) }}</div>
+    </div>
+    <p class="field-hint">
+      Uma meta que se repete é concluída um dia de cada vez: marcar a terça não
+      marca a quinta.
+    </p>
+  </fieldset>
+
+  <div class="divider"></div>
+
+  <div class="form-grid">
+    {{ select_field(form.priority) }}
+    {{ select_field(form.category) }}
+  </div>
+
+  <div data-when="single">
+    {{ select_field(form.status) }}
+  </div>
+
+  {{ checkbox_field(form.show_on_board) }}
+
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary">
+      {{ icon('save', 'icon icon-sm') }} {{ 'Salvar meta' if goal else 'Criar meta' }}
+    </button>
+    <a class="btn btn-ghost" href="{{ url_for('goals.index') }}">Cancelar</a>
+  </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ url_for('static', filename='js/goals.js') }}" type="module"></script>
+{% endblock %}
