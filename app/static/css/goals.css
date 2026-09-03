@@ -28,6 +28,14 @@
   border-bottom: 1px solid var(--border);
 }
 
+/* Duas colunas não cabem num celular: 412px menos o recuo, menos os 220px do
+   medidor, menos a calha, deixam 112px para uma coluna que pede 120. A conta
+   não fecha por 8px, e o que estoura é uma faixa de números. Abaixo do
+   limiar estreito, o medidor fica em cima e as figuras embaixo. */
+@media (max-width: 560px) {
+  .journey { grid-template-columns: 1fr; gap: var(--sp-5); }
+}
+
 .journey-eyebrow {
   color: var(--text-muted);
   font-size: var(--fs-xs);
@@ -141,7 +149,10 @@
   padding: 0;
   color: transparent;
   background: transparent;
-  border: 2px solid var(--border-strong);
+  /* --border-strong desenha uma caixa, não um controle: 1.5:1 contra o cartão.
+     Este círculo é o gesto principal da tela e precisa ser visto antes de ser
+     procurado. */
+  border: 2px solid var(--text-muted);
   border-radius: var(--radius-full);
   cursor: pointer;
   transition: all var(--dur) var(--ease);
@@ -190,11 +201,11 @@ a.goal-tag-link:hover { text-decoration: none; background: var(--accent-soft); }
   lado, porque um ponto vermelho não diz "alta" para quem não distingue
   vermelho de cinza.
 */
-.goal-priority[data-priority="alta"] { color: var(--danger); background: var(--danger-soft); }
-.goal-priority[data-priority="media"] { color: var(--warning); background: var(--warning-soft); }
+.goal-priority[data-priority="alta"] { color: var(--danger-ink); background: var(--danger-soft); }
+.goal-priority[data-priority="media"] { color: var(--warning-ink); background: var(--warning-soft); }
 
-.badge-status[data-status="em_andamento"] { color: var(--warning); background: var(--warning-soft); }
-.badge-status[data-status="concluida"] { color: var(--success); background: var(--success-soft); }
+.badge-status[data-status="em_andamento"] { color: var(--warning-ink); background: var(--warning-soft); }
+.badge-status[data-status="concluida"] { color: var(--success-ink); background: var(--success-soft); }
 
 .goal-row-when {
   display: flex; flex-direction: column; align-items: flex-end;
@@ -264,7 +275,7 @@ a.goal-tag-link:hover { text-decoration: none; background: var(--accent-soft); }
 
 .board-empty {
   padding: var(--sp-5) var(--sp-3);
-  color: var(--text-subtle);
+  color: var(--text-muted);
   font-size: var(--fs-xs);
   text-align: center;
 }
@@ -335,7 +346,7 @@ a.goal-tag-link:hover { text-decoration: none; background: var(--accent-soft); }
   display: inline-flex; align-items: center; gap: var(--sp-2);
   font-weight: 620;
 }
-.goal-overdue-panel > summary .goal-overdue-title { color: var(--warning); }
+.goal-overdue-panel > summary .goal-overdue-title .icon { color: var(--warning); }
 .goal-overdue-caret {
   margin-left: auto;
   color: var(--text-muted);
@@ -413,13 +424,13 @@ details[open] > summary .goal-overdue-caret { transform: rotate(180deg); }
 .achv-icon {
   display: grid; place-items: center;
   width: 44px; height: 44px;
-  color: var(--text-subtle);
+  color: var(--text-muted);
   background: var(--surface-sunken);
   border-radius: var(--radius);
 }
 .achv-title { font-size: var(--fs-sm); font-weight: 620; }
 .achv-text { margin-top: 2px; color: var(--text-muted); font-size: var(--fs-xs); }
-.achv-date { margin-top: var(--sp-2); color: var(--success); font-size: var(--fs-2xs); font-weight: 560; }
+.achv-date { margin-top: var(--sp-2); color: var(--text-muted); font-size: var(--fs-2xs); font-weight: 560; }
 .achv-lock { color: var(--text-subtle); }
 
 .achv-unlocked { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
@@ -434,12 +445,12 @@ details[open] > summary .goal-overdue-caret { transform: rotate(180deg); }
 .tpl-card-text { margin-top: var(--sp-2); color: var(--text-muted); font-size: var(--fs-sm); }
 
 .tpl-card-activate {
-  display: flex; align-items: flex-end; gap: var(--sp-2);
+  display: flex; align-items: flex-end; flex-wrap: wrap; gap: var(--sp-2);
   padding: var(--sp-3) var(--sp-4);
   background: var(--surface-2);
   border-top: 1px solid var(--border);
 }
-.tpl-card-activate .field { flex: 1; margin: 0; }
+.tpl-card-activate .field { flex: 1 1 130px; margin: 0; }
 .tpl-card-actions {
   display: flex; justify-content: flex-end; gap: var(--sp-1);
   padding: var(--sp-2) var(--sp-3);

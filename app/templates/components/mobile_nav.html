@@ -16,9 +16,16 @@
       {{ icon('file-plus') }}<span>Novo</span>
     </button>
   </form>
-  <a class="mobile-nav-item" href="{{ url_for('trash.index') }}"
-     {% if request.endpoint == 'trash.index' %}aria-current="page"{% endif %}>
-    {{ icon('trash') }}<span>Lixeira</span>
+  {#
+    A barra de baixo é a superfície de alcance diário, e cinco é o que cabe:
+    a grade divide a largura em partes iguais e um sexto item corta o rótulo
+    "Documentos". Por isso a esteira entra no lugar da lixeira - o dia se
+    trabalha aqui todo dia, e a lixeira se visita quando se apaga algo. Ela
+    continua a um toque, na gaveta, ao lado de Grupos e Mapas mentais.
+  #}
+  <a class="mobile-nav-item" href="{{ url_for('goals.board') }}"
+     {% if request.endpoint == 'goals.board' %}aria-current="page"{% endif %}>
+    {{ icon('dashboard') }}<span>Esteira</span>
   </a>
   <a class="mobile-nav-item" href="{{ url_for('settings.index') }}"
      {% if request.endpoint == 'settings.index' %}aria-current="page"{% endif %}>

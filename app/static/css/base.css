@@ -14,7 +14,13 @@
   --surface-2:     #FAFBFF;
   --surface-sunken: #EEF1F8;
   --text:          #111827;
-  --text-muted:    #64748B;
+  /* 4.45:1 sobre --bg era o valor antigo: reprovava o AA por cinco centésimos,
+     e este cinza carrega quase todo o texto de apoio da aplicação - subtítulo,
+     dica de campo, rótulo de estatística, meta de cartão. Escurecido até
+     5.31:1 sobre --bg e 5.02:1 sobre --surface-sunken, que é o fundo mais
+     escuro em que ele pousa. Continua sendo um cinza-ardósia de apoio; passou
+     a ser um que se lê. */
+  --text-muted:    #5B6878;
   --text-subtle:   #94A3B8;
   --border:        #E2E8F0;
   --border-strong: #CBD5E1;
@@ -30,6 +36,25 @@
   --warning-soft:  rgba(217, 119, 6, 0.12);
   --danger:        #DC2626;
   --danger-soft:   rgba(220, 38, 38, 0.10);
+
+  /*
+    Tinta, não cor.
+
+    ``--success`` e companhia são calibrados para preencher: um ponto, uma
+    barra, um ícone sobre a superfície. Escritos *sobre o próprio tom -soft*
+    eles caem para 2.8:1 no tema claro - a etiqueta "Concluída" ficava
+    ilegível justamente na cor que deveria comemorá-la.
+
+    Estes três existem para esse uso e só para ele: a mesma família de cor,
+    escurecida até passar o AA em qualquer um dos fundos claros. O matiz
+    continua vindo do fundo tingido; a tinta só precisa ser lida.
+
+    No tema escuro não há o que corrigir - a cor clara sobre o tom -soft já
+    passa com folga -, então lá eles são a própria cor.
+  */
+  --success-ink:   #0F6B31;
+  --warning-ink:   #8F4F04;
+  --danger-ink:    #991B1B;
 
   --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
   --shadow-md: 0 4px 16px -4px rgba(15, 23, 42, 0.12);
@@ -107,6 +132,11 @@
   --warning-soft:  rgba(251, 191, 36, 0.14);
   --danger:        #F87171;
   --danger-soft:   rgba(248, 113, 113, 0.14);
+
+  /* No escuro a própria cor já se lê sobre o tom -soft: 7.6:1, 8.0:1 e 5.3:1. */
+  --success-ink:   #4ADE80;
+  --warning-ink:   #FBBF24;
+  --danger-ink:    #F87171;
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-md: 0 4px 16px -4px rgba(0, 0, 0, 0.5);
@@ -841,9 +871,10 @@ a:hover { text-decoration: underline; }
   font-size: var(--fs-xs); font-weight: 560; white-space: nowrap;
 }
 .badge-accent { background: var(--accent-soft); color: var(--accent); }
-.badge-success { background: var(--success-soft); color: var(--success); }
-.badge-warning { background: var(--warning-soft); color: var(--warning); }
-.badge-danger { background: var(--danger-soft); color: var(--danger); }
+/* Fundo com a cor, texto com a tinta - ver os tokens ``--*-ink``. */
+.badge-success { background: var(--success-soft); color: var(--success-ink); }
+.badge-warning { background: var(--warning-soft); color: var(--warning-ink); }
+.badge-danger { background: var(--danger-soft); color: var(--danger-ink); }
 .badge-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--category-color, var(--accent)); flex: none; }
 /* A badge that filters. It reads as a label until the pointer says otherwise —
    the surface lifts and the text sharpens, the same gesture .chip:hover makes. */

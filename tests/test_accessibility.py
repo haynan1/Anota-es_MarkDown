@@ -7,6 +7,7 @@ users: unlabelled controls, icon-only buttons with no name, missing landmarks.
 
 from __future__ import annotations
 
+import pathlib
 import re
 
 import pytest
@@ -418,3 +419,116 @@ class TestTheCanvasIsReachableWithoutAMouse:
     def test_the_board_is_a_main_landmark(self, canvas):
         """This screen replaces base.html's shell, so it brings its own."""
         assert re.search(r'<main[^>]*id="main-content"', canvas)
+
+class TestColourContrast:
+    """O contraste, lido dos tokens em vez de confiado ao olho.
+
+    Um par de cores que reprova o AA não aparece numa revisão de tela: ele
+    aparece quando alguém tenta ler a etiqueta num notebook ao sol. Estes
+    pares foram medidos uma vez, e agora são medidos toda vez - os valores
+    saem de ``base.css``, então trocar um token move o teste junto e uma
+    regressão falha aqui em vez de meses depois.
+
+    Referência: WCAG 2.1 AA - 4.5:1 para texto, 3:1 para texto grande e para
+    elementos gráficos que identificam um controle (1.4.11).
+    """
+
+    TEXT_MIN = 4.5
+    LARGE_MIN = 3.0
+    NON_TEXT_MIN = 3.0
+
+    @staticmethod
+    def tokens(theme: str) -> dict[str, str]:
+        """Os tokens de cor como o CSS realmente os declara."""
+        source = (
+            pathlib.Path("app/static/css/base.css").read_text(encoding="utf-8")
+        )
+        selector = ':root {' if theme == "light" else ':root[data-theme="dark"] {'
+        start = source.index(selector)
+        block = source[start : source.index("}", start)]
+        found = {}
+        for name, value in re.findall(
+            r"--([a-z0-9-]+):\s*(#[0-9A-Fa-f]{6}|rgba\([^)]+\))", block
+        ):
+            found[name] = value
+        return found
+
+    @staticmethod
+    def channels(value: str) -> tuple[float, float, float, float]:
+        if value.startswith("#"):
+            raw = value.lstrip("#")
+            return (*(int(raw[i : i + 2], 16) for i in (0, 2, 4)), 1.0)
+        parts = [part.strip() for part in value[5:-1].split(",")]
+        return (float(parts[0]), float(parts[1]), float(parts[2]), float(parts[3]))
+
+    @classmethod
+    def resolve(cls, theme: str, token: str, backdrop: str) -> tuple[float, ...]:
+        """A cor final de um token, com o alpha composto sobre o fundo real."""
+        palette = cls.tokens(theme)
+        red, green, blue, alpha = cls.channels(palette[token])
+        if alpha == 1.0:
+            return (red, green, blue)
+        base = cls.channels(palette[backdrop])[:3]
+        return tuple(c * alpha + b * (1 - alpha) for c, b in zip((red, green, blue), base))
+
+    @staticmethod
+    def ratio(front: tuple[float, ...], back: tuple[float, ...]) -> float:
+        def luminance(colour):
+            def channel(value):
+                v = value / 255
+                return v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4
+            r, g, b = (channel(c) for c in colour)
+            return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+        a, b = luminance(front), luminance(back)
+        return (max(a, b) + 0.05) / (min(a, b) + 0.05)
+
+    def measure(self, theme, ink, fill, under):
+        return self.ratio(
+            self.resolve(theme, ink, under), self.resolve(theme, fill, under)
+        )
+
+    # (o que é, tinta, fundo da tinta, fundo desse fundo)
+    TEXT_PAIRS = [
+        ("texto de apoio sobre o fundo da página", "text-muted", "bg", "bg"),
+        ("texto de apoio sobre um cartão", "text-muted", "surface", "bg"),
+        ("texto de apoio sobre a superfície rebaixada", "text-muted", "surface-sunken", "bg"),
+        ("etiqueta de prioridade alta", "danger-ink", "danger-soft", "surface"),
+        ("etiqueta de prioridade média", "warning-ink", "warning-soft", "surface"),
+        ("etiqueta de situação concluída", "success-ink", "success-soft", "surface"),
+        ("aba ativa da jornada", "accent", "accent-soft", "bg"),
+        ("data atrasada", "danger", "surface", "bg"),
+        ("link para um documento ligado", "accent", "surface", "bg"),
+        ("frase motivacional", "text", "accent-soft", "bg"),
+    ]
+
+    # Elementos gráficos que identificam um controle.
+    NON_TEXT_PAIRS = [
+        ("o círculo de concluir, em repouso", "text-muted", "surface"),
+        ("o alvo do arrastar, iluminado", "accent", "surface-sunken"),
+        ("o preenchimento do medidor de nível", "accent", "surface-sunken"),
+        ("o visto sobre o círculo concluído", "accent-contrast", "success"),
+    ]
+
+    @pytest.mark.parametrize("theme", ["light", "dark"])
+    @pytest.mark.parametrize("label,ink,fill,under", TEXT_PAIRS)
+    def test_text_meets_aa(self, theme, label, ink, fill, under):
+        value = self.measure(theme, ink, fill, under)
+        assert value >= self.TEXT_MIN, (
+            f"{label} no tema {theme}: {value:.2f}:1, abaixo de {self.TEXT_MIN}:1"
+        )
+
+    @pytest.mark.parametrize("theme", ["light", "dark"])
+    @pytest.mark.parametrize("label,ink,fill", NON_TEXT_PAIRS)
+    def test_controls_are_perceivable(self, theme, label, ink, fill):
+        value = self.measure(theme, ink, fill, fill)
+        assert value >= self.NON_TEXT_MIN, (
+            f"{label} no tema {theme}: {value:.2f}:1, abaixo de {self.NON_TEXT_MIN}:1"
+        )
+
+    def test_the_semantic_inks_exist_in_both_themes(self):
+        """A tinta é o que torna a etiqueta legível; sem ela o par volta a 2.8:1."""
+        for theme in ("light", "dark"):
+            palette = self.tokens(theme)
+            for token in ("success-ink", "warning-ink", "danger-ink"):
+                assert token in palette, f"--{token} sumiu do tema {theme}"
