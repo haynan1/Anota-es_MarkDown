@@ -131,7 +131,33 @@ class GoalService:
 
     @staticmethod
     def _apply(goal: Goal, data: GoalInput) -> None:
-        """Valida a entrada e a escreve na meta. Não faz commit."""
+        """Escreve na meta o que ``_clean`` aprovou. Não faz commit.
+
+        A validação inteira acontece antes de a primeira coluna ser tocada, e
+        isso não é estilo. Escrever campo a campo e só então descobrir que o
+        link é inválido deixa a meta com o título novo e o resto antigo - e o
+        SQLAlchemy leva esse estado pela metade ao banco no próximo autoflush,
+        que a própria renderização da página de erro dispara. A edição
+        recusada gravava.
+        """
+        clean = GoalService._clean(data)
+
+        # Corrigir o título de uma meta concluída não é concluí-la de novo. O
+        # carimbo é o que sustenta a sequência e as conquistas de horário:
+        # renová-lo a cada edição mudaria o dia em que a conclusão aconteceu.
+        if (
+            clean["status"] == STATUS_DONE
+            and goal.status == STATUS_DONE
+            and goal.completed_at is not None
+        ):
+            clean["completed_at"] = goal.completed_at
+
+        for field, value in clean.items():
+            setattr(goal, field, value)
+
+    @staticmethod
+    def _clean(data: GoalInput) -> dict[str, object]:
+        """Toda a validação, e nada além dela. Não toca em nenhuma meta."""
         title = sanitize_plain_text(data.title or "", max_length=MAX_TITLE_LENGTH)
         if not title:
             raise ValidationError("Escreva o título da meta.")
@@ -145,70 +171,75 @@ class GoalService:
         if data.recurrence_type not in RECURRENCE_TYPES:
             raise ValidationError("Tipo de repetição inválido.")
 
-        goal.title = title
-        goal.description = sanitize_multiline_text(
-            data.description or "", max_length=MAX_DESCRIPTION_LENGTH
-        )
-        goal.link_url = sanitize_link(data.link_url or "", max_length=MAX_URL_LENGTH)
-        goal.document_id = GoalService._resolve_document(data.document_uuid)
-        goal.priority = data.priority
-        goal.category = data.category
-        goal.has_deadline = bool(data.has_deadline)
-        goal.show_on_board = bool(data.show_on_board)
-
-        if goal.has_deadline:
-            goal.date = GoalService._check_date(data.date or today())
-            goal.time = data.time
-            goal.recurrence_type = data.recurrence_type
+        has_deadline = bool(data.has_deadline)
+        if has_deadline:
+            anchor = GoalService._check_date(data.date or today())
+            moment = data.time
+            recurrence = data.recurrence_type
         else:
             # Sem prazo: a âncora existe só para a aritmética, e nenhuma regra
             # de repetição faz sentido sem um dia para repetir a partir de.
-            goal.date = today()
-            goal.time = None
-            goal.recurrence_type = RECURRENCE_NONE
+            anchor = today()
+            moment = None
+            recurrence = RECURRENCE_NONE
 
-        GoalService._apply_recurrence(goal, data)
+        days, end_date = GoalService._clean_recurrence(recurrence, anchor, data)
 
         # Ver o cabeçalho: numa série, ``status`` é o padrão do dia, não uma
         # conclusão. Concluir uma série se faz um dia de cada vez.
-        goal.status = STATUS_PENDING if goal.is_recurring else data.status
-        goal.completed_at = utcnow() if goal.status == STATUS_DONE else None
+        status = STATUS_PENDING if recurrence != RECURRENCE_NONE else data.status
+
+        return {
+            "title": title,
+            "description": sanitize_multiline_text(
+                data.description or "", max_length=MAX_DESCRIPTION_LENGTH
+            ),
+            "link_url": sanitize_link(data.link_url or "", max_length=MAX_URL_LENGTH),
+            "document_id": GoalService._resolve_document(data.document_uuid),
+            "priority": data.priority,
+            "category": data.category,
+            "has_deadline": has_deadline,
+            "show_on_board": bool(data.show_on_board),
+            "date": anchor,
+            "time": moment,
+            "recurrence_type": recurrence,
+            "recurrence_days": days,
+            "recurrence_end_date": end_date,
+            "status": status,
+            "completed_at": utcnow() if status == STATUS_DONE else None,
+        }
 
     @staticmethod
-    def _apply_recurrence(goal: Goal, data: GoalInput) -> None:
-        if goal.recurrence_type == RECURRENCE_NONE:
-            goal.recurrence_days = None
-            goal.recurrence_end_date = None
-            return
+    def _clean_recurrence(
+        recurrence: str, anchor: date_type, data: GoalInput
+    ) -> tuple[int | None, date_type | None]:
+        if recurrence == RECURRENCE_NONE:
+            return None, None
 
-        if goal.recurrence_type == "count":
-            days = data.recurrence_days or 0
-            if days < 1:
-                raise ValidationError(
-                    "Diga por quantos dias esta meta se repete."
-                )
-            if days > MAX_RECURRENCE_DAYS:
+        days: int | None = None
+        if recurrence == "count":
+            requested = data.recurrence_days or 0
+            if requested < 1:
+                raise ValidationError("Diga por quantos dias esta meta se repete.")
+            if requested > MAX_RECURRENCE_DAYS:
                 raise ValidationError(
                     f"A repetição por quantidade vai até {MAX_RECURRENCE_DAYS} dias."
                 )
-            goal.recurrence_days = days
-        else:
-            goal.recurrence_days = None
+            days = requested
 
-        if goal.recurrence_type == "forever":
+        if recurrence == "forever":
             # "Sem fim" é literal: guardar uma data final aqui seria guardar
             # uma contradição que alguma tela acabaria acreditando.
-            goal.recurrence_end_date = None
-            return
+            return days, None
 
         end = data.recurrence_end_date
         if end is not None:
-            if end < goal.date:
+            if end < anchor:
                 raise ValidationError(
                     "A data final da repetição é anterior ao começo dela."
                 )
             GoalService._check_date(end)
-        goal.recurrence_end_date = end
+        return days, end
 
     @staticmethod
     def _check_date(value: date_type) -> date_type:
@@ -331,6 +362,7 @@ class GoalService:
 
     @staticmethod
     def _apply_template(template: GoalTemplate, data: GoalInput) -> None:
+        """Valida tudo, escreve depois - pelo mesmo motivo que ``_apply``."""
         title = sanitize_plain_text(data.title or "", max_length=MAX_TITLE_LENGTH)
         if not title:
             raise ValidationError("Escreva o título da meta predefinida.")
@@ -339,18 +371,20 @@ class GoalService:
         if data.category not in GOAL_CATEGORIES:
             raise ValidationError("Categoria inválida.")
 
-        template.title = title
-        template.description = sanitize_multiline_text(
-            data.description or "", max_length=MAX_DESCRIPTION_LENGTH
-        )
-        template.link_url = sanitize_link(
-            data.link_url or "", max_length=MAX_URL_LENGTH
-        )
-        template.document_id = GoalService._resolve_document(data.document_uuid)
-        template.time = data.time
-        template.show_on_board = bool(data.show_on_board)
-        template.priority = data.priority
-        template.category = data.category
+        clean = {
+            "title": title,
+            "description": sanitize_multiline_text(
+                data.description or "", max_length=MAX_DESCRIPTION_LENGTH
+            ),
+            "link_url": sanitize_link(data.link_url or "", max_length=MAX_URL_LENGTH),
+            "document_id": GoalService._resolve_document(data.document_uuid),
+            "time": data.time,
+            "show_on_board": bool(data.show_on_board),
+            "priority": data.priority,
+            "category": data.category,
+        }
+        for field, value in clean.items():
+            setattr(template, field, value)
 
     @staticmethod
     def activate_template(template: GoalTemplate, day: date_type) -> Goal:

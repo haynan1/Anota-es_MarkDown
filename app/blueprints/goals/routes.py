@@ -44,7 +44,13 @@ from app.repositories.phrase_repository import PhraseRepository
 from app.services.achievement_service import AchievementService
 from app.services.chart_geometry import build_bar_chart, build_line_chart
 from app.services.exceptions import ValidationError
-from app.services.goal_schedule import Occurrence, rows_between, rows_for_day, today
+from app.services.goal_schedule import (
+    Occurrence,
+    rows_between,
+    rows_for_day,
+    sort_rows,
+    today,
+)
 from app.services.goal_service import GoalService
 from app.services.phrase_service import (
     DEFAULT_PHRASES,
@@ -66,6 +72,11 @@ BACKLOG_PREVIEW = 10
 # Quantos dias o gráfico do histórico desenha.
 HISTORY_DAYS = 14
 
+# Teto de linhas no acervo. Com uma linha por meta, uma jornada real não chega
+# perto disto; o limite existe para que a tela tenha um custo declarado mesmo
+# diante de um banco que alguém encheu. Quem passar daqui filtra.
+MAX_LIST_ROWS = 400
+
 WEEKDAY_NAMES = ("seg", "ter", "qua", "qui", "sex", "sáb", "dom")
 
 
@@ -74,7 +85,14 @@ WEEKDAY_NAMES = ("seg", "ter", "qua", "qui", "sex", "sáb", "dom")
 
 @goals_bp.get("/metas/")
 def index():
-    """O acervo inteiro, com os filtros que a pessoa escolheu."""
+    """O acervo: uma linha por meta, com os filtros que a pessoa escolheu.
+
+    *Por meta*, e não por dia. Esta é a distinção que separa esta tela da
+    esteira e do plano: ali um hábito diário é trinta coisas a fazer, aqui ele
+    é uma coisa que você tem. Listar as ocorrências faria um único hábito
+    ocupar um ano de linhas sozinho, empurrar todo o resto para fora da tela e
+    custar meio segundo de renderização por hábito.
+    """
     reference = today()
     rows = rows_between(
         reference - timedelta(days=LIST_PAST_DAYS),
@@ -85,6 +103,9 @@ def index():
     status = _one_of(request.args.get("situacao"), GOAL_STATUSES)
     priority = _one_of(request.args.get("prioridade"), GOAL_PRIORITIES)
     category = _one_of(request.args.get("categoria"), GOAL_CATEGORIES)
+    # Filtrar antes de recolher: escolhida a linha da série e só depois
+    # aplicado o filtro, uma busca por "concluídas" mostraria o dia pendente
+    # que foi escolhido para representá-la.
     rows = [
         row
         for row in rows
@@ -93,9 +114,15 @@ def index():
         and (not category or row.goal.category == category)
     ]
 
+    rows = _one_row_per_goal(rows, reference)
+    truncated = len(rows) > MAX_LIST_ROWS
+
     return render_template(
         "goals/index.html",
-        rows=rows,
+        rows=rows[:MAX_LIST_ROWS],
+        total=len(rows),
+        truncated=truncated,
+        limit=MAX_LIST_ROWS,
         today_date=reference,
         status=status,
         priority=priority,
@@ -563,6 +590,31 @@ def _labels() -> dict[str, object]:
         "category_icons": CATEGORY_ICONS,
         "recurrence_labels": RECURRENCE_LABELS,
     }
+
+
+def _one_row_per_goal(
+    rows: list[Occurrence], reference: date
+) -> list[Occurrence]:
+    """Recolhe cada série ao dia que interessa dela.
+
+    O dia que interessa é o próximo que ainda não passou - é o que responde
+    "quando isto acontece de novo". Se a série inteira ficou para trás, é o
+    dia mais recente dela, que é a pendência a resolver. Metas avulsas e sem
+    prazo já têm uma linha só e passam por aqui intactas.
+    """
+    def rank(row: Occurrence) -> tuple[int, int]:
+        if row.date is None:
+            return (0, 0)
+        if row.date >= reference:
+            return (0, row.date.toordinal())
+        return (1, -row.date.toordinal())
+
+    best: dict[int, Occurrence] = {}
+    for row in rows:
+        current = best.get(row.goal.id)
+        if current is None or rank(row) < rank(current):
+            best[row.goal.id] = row
+    return sort_rows(list(best.values()))
 
 
 def _columns(rows: list[Occurrence]) -> list[dict[str, object]]:

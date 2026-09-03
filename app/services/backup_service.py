@@ -52,7 +52,11 @@ from app.models.goal import (
 )
 from app.models.goal import new_uuid as new_goal_uuid
 from app.services.markdown_service import render_markdown
-from app.services.sanitizer import sanitize_plain_text
+from app.services.sanitizer import (
+    sanitize_link,
+    sanitize_multiline_text,
+    sanitize_plain_text,
+)
 from app.services.search_service import search_index
 from app.utils.dates import as_utc, parse_iso, utcnow
 from app.utils.files import (
@@ -604,6 +608,27 @@ def _one_of(value: object, allowed: tuple[str, ...], fallback: str) -> str:
     return value if isinstance(value, str) and value in allowed else fallback
 
 
+def _safe_link(value: object) -> str:
+    """Um endereço vindo do arquivo, ou vazio.
+
+    O caminho de escrita recusa um ``javascript:`` na cara da pessoa; aqui ele
+    é descartado em silêncio, e a diferença é proposital. O arquivo é entrada
+    hostil e uma restauração processa centenas de entradas: abortar a meta
+    inteira por causa do campo mais opcional que ela tem trocaria um link ruim
+    por uma meta perdida. O link vai embora, a meta fica.
+
+    Sem isto, um arquivo forjado escreveria ``javascript:`` direto num ``href``
+    que a tela renderiza - o texto sai escapado pelo Jinja, mas o esquema do
+    endereço não é texto, é execução.
+    """
+    from app.services.exceptions import ValidationError as _ValidationError
+
+    try:
+        return sanitize_link(value, max_length=500)
+    except _ValidationError:
+        return ""
+
+
 def _restore_goal(entry: dict, documents: dict[str, int]) -> Goal:
     anchor = _parse_date(entry.get("date"))
     if anchor is None:
@@ -613,8 +638,10 @@ def _restore_goal(entry: dict, documents: dict[str, int]) -> Goal:
         uuid=entry.get("uuid") or new_goal_uuid(),
         title=sanitize_plain_text(str(entry.get("title") or ""), max_length=160)
         or "Meta sem título",
-        description=str(entry.get("description") or "")[:2000],
-        link_url=str(entry.get("link_url") or "")[:500],
+        description=sanitize_multiline_text(
+            str(entry.get("description") or ""), max_length=2000
+        ),
+        link_url=_safe_link(entry.get("link_url")),
         document_id=documents.get(entry.get("document_uuid") or ""),
         date=anchor,
         time=_parse_time(entry.get("time")),
@@ -664,8 +691,10 @@ def _restore_goal_template(entry: dict, documents: dict[str, int]) -> GoalTempla
         uuid=entry.get("uuid") or new_goal_uuid(),
         title=sanitize_plain_text(str(entry.get("title") or ""), max_length=160)
         or "Predefinida sem título",
-        description=str(entry.get("description") or "")[:2000],
-        link_url=str(entry.get("link_url") or "")[:500],
+        description=sanitize_multiline_text(
+            str(entry.get("description") or ""), max_length=2000
+        ),
+        link_url=_safe_link(entry.get("link_url")),
         document_id=documents.get(entry.get("document_uuid") or ""),
         time=_parse_time(entry.get("time")),
         show_on_board=bool(entry.get("show_on_board", True)),

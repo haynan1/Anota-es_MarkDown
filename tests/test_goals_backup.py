@@ -163,6 +163,88 @@ class TestRestore:
 
         assert report.goals_created == 1
 
+    def test_an_executable_link_in_the_archive_is_dropped(self, app):
+        """O arquivo é entrada hostil, e um href é execução, não texto.
+
+        O Jinja escapa o texto de um atributo, mas não decide o esquema do
+        endereço: um ``javascript:`` restaurado sairia clicável. O link some;
+        a meta fica, porque descartar a meta inteira por causa do campo mais
+        opcional que ela tem trocaria um link ruim por um compromisso perdido.
+        """
+        from app.services.backup_service import RestoreReport, _restore_journey
+
+        report = RestoreReport(mode="merge")
+        _restore_journey(
+            {
+                "goals": [
+                    {
+                        "uuid": "armadilha",
+                        "title": "Meta forjada",
+                        "date": today().isoformat(),
+                        "link_url": "javascript:alert(document.cookie)",
+                    }
+                ],
+                "goal_templates": [
+                    {
+                        "uuid": "molde-forjado",
+                        "title": "Molde",
+                        "link_url": "data:text/html,<script>1</script>",
+                    }
+                ],
+            },
+            report,
+        )
+
+        assert report.goals_created == 1
+        assert report.goal_templates_created == 1
+        goals = GoalRepository.window(today(), today())
+        assert goals[0].link_url == ""
+        assert GoalRepository.templates()[0].link_url == ""
+
+    def test_an_https_link_in_the_archive_survives(self, app):
+        from app.services.backup_service import RestoreReport, _restore_journey
+
+        report = RestoreReport(mode="merge")
+        _restore_journey(
+            {
+                "goals": [
+                    {
+                        "uuid": "boa",
+                        "title": "Meta",
+                        "date": today().isoformat(),
+                        "link_url": "https://exemplo.com/x",
+                    }
+                ]
+            },
+            report,
+        )
+
+        assert GoalRepository.window(today(), today())[0].link_url == (
+            "https://exemplo.com/x"
+        )
+
+    def test_markup_in_a_restored_description_is_stripped(self, app):
+        from app.services.backup_service import RestoreReport, _restore_journey
+
+        report = RestoreReport(mode="merge")
+        _restore_journey(
+            {
+                "goals": [
+                    {
+                        "uuid": "html",
+                        "title": "Meta",
+                        "date": today().isoformat(),
+                        "description": "<script>alert(1)</script>Fazer",
+                    }
+                ]
+            },
+            report,
+        )
+
+        description = GoalRepository.window(today(), today())[0].description
+        assert "<script>" not in description
+        assert "Fazer" in description
+
     def test_an_invented_achievement_key_is_kept_but_not_counted(self, app):
         from app.services.backup_service import RestoreReport, _restore_journey
 

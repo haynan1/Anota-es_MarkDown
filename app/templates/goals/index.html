@@ -77,9 +77,16 @@
 </form>
 
 {% if rows %}
+  {#
+    Uma linha por meta, e não por dia: uma série aparece aqui uma vez, no
+    próximo dia dela. Os dias são assunto da esteira e do plano.
+  #}
   <p class="goal-count subtle">
-    <span class="tabular">{{ rows|length }}</span> meta{{ 's' if rows|length != 1 }}
+    <span class="tabular">{{ total }}</span> meta{{ 's' if total != 1 }}
     {% if status or priority or category %}neste filtro{% endif %}
+    {% if truncated %}
+      · mostrando as primeiras {{ limit }}, use os filtros para ver o resto
+    {% endif %}
   </p>
   <div class="goal-list">
     {% for row in rows %}{% include 'goals/_row.html' %}{% endfor %}
