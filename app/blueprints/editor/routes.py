@@ -5,6 +5,7 @@ from flask import flash, redirect, render_template, request, url_for
 from app.blueprints.documents.forms import ConfirmForm, DocumentMetadataForm
 from app.blueprints.editor import editor_bp
 from app.extensions import db
+from app.repositories.goal_repository import GoalRepository
 from app.repositories.group_repository import GroupRepository
 from app.repositories.taxonomy_repository import CategoryRepository
 from app.repositories.version_repository import VersionRepository
@@ -107,6 +108,9 @@ def edit(public_uuid: str):
         document=document,
         form=form,
         groups=groups,
+        # O outro lado do atalho: quem abre o texto vê que ele é a missão de
+        # alguém, sem precisar procurar.
+        linked_goals=GoalRepository.linked_to_document(document.id),
         confirm_form=ConfirmForm(),
         version_count=VersionRepository.count(document.id),
         autosave_seconds=settings["autosave_seconds"],

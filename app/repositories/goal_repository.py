@@ -15,7 +15,7 @@ datas da janela, e voltam indexadas por (meta, dia).
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from datetime import date
 
 from sqlalchemy import func, or_, select
@@ -36,6 +36,10 @@ MAX_TEMPLATES = 200
 # "quantas", "em que categoria" e "a que horas" - perguntas que precisam das
 # linhas, não de um agregado. O teto existe para que esse custo seja conhecido.
 MAX_COMPLETION_ROWS = 5000
+
+# Quantas metas ligadas o editor mostra. O painel é uma gaveta lateral, não uma
+# lista: passar disso vira outra tela.
+LINKED_SHOWN = 5
 
 
 class GoalRepository:
@@ -117,8 +121,15 @@ class GoalRepository:
         ).one_or_none()
 
     @staticmethod
-    def linked_to_document(document_id: int, limit: int = 50) -> list[Goal]:
-        """Metas apontando para um documento - o outro lado do atalho."""
+    def linked_to_document(
+        document_id: int, limit: int = LINKED_SHOWN
+    ) -> list[Goal]:
+        """Metas apontando para um documento - o outro lado do atalho.
+
+        Da meta se chega ao documento por um link no cartão; daqui se volta.
+        Sem este lado, a ligação seria de mão única e quem abre o texto não
+        saberia que ele é a missão de alguém.
+        """
         return list(
             db.session.scalars(
                 select(Goal)
@@ -294,17 +305,14 @@ class GoalRepository:
         )
 
     @staticmethod
-    def delete_all(goal_ids: Iterable[int] | None = None) -> int:
-        """Apaga metas - todas, ou só as indicadas.
+    def delete_all() -> int:
+        """Apaga todas as metas. Devolve quantas eram.
 
         Pelo ORM e não por um ``DELETE`` em massa: as exceções dependem do
         ``ON DELETE CASCADE``, que o SQLite só respeita com as chaves
         estrangeiras ligadas por conexão. O caminho do ORM não depende disso.
         """
-        stmt = select(Goal)
-        if goal_ids is not None:
-            stmt = stmt.where(Goal.id.in_(list(goal_ids)))
-        goals = list(db.session.scalars(stmt).all())
+        goals = list(db.session.scalars(select(Goal)).all())
         for goal in goals:
             db.session.delete(goal)
         return len(goals)

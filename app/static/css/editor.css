@@ -546,3 +546,13 @@ label.md-tool:focus-within {
   /* No Ctrl key on a phone. */
   .align-item-key { display: none; }
 }
+
+
+/* Metas ligadas ao documento, na gaveta de organização. Uma lista de atalhos,
+   não um formulário: a ligação se edita na meta, que é quem a possui. */
+.linked-goals { list-style: none; display: flex; flex-direction: column; gap: var(--sp-2); }
+.linked-goals a {
+  display: flex; align-items: center; gap: var(--sp-2);
+  font-size: var(--fs-sm);
+}
+.linked-goals .icon { flex: none; opacity: 0.8; }

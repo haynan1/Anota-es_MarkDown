@@ -139,6 +139,52 @@ class TestOccurrenceState:
         assert GoalRepository.occurrence(goal.id, today()) is not None
         assert GoalRepository.occurrence(goal.id, today() + timedelta(days=1)) is None
 
+    def test_two_tabs_completing_the_same_day_do_not_collide(
+        self, app, db, monkeypatch
+    ):
+        """A restrição (meta, dia) é do banco, e é ela que fecha a fresta.
+
+        Ler-e-depois-inserir tem um intervalo entre os dois passos, e duas abas
+        concluindo o mesmo dia caem nele: a segunda batia na restrição única e
+        virava um erro 500 para quem só tinha clicado duas vezes.
+
+        A leitura obsoleta é encenada em vez de esperada: a primeira consulta
+        responde "não existe" — como responderia à aba que perdeu a corrida —
+        e as seguintes dizem a verdade. Sem forçar isso, o teste passaria pelo
+        caminho feliz e não teria olhado o retry uma única vez.
+        """
+        from app.models import GoalOccurrence
+        from app.repositories.goal_repository import GoalRepository as Repo
+
+        goal = GoalService.create(
+            GoalInput(title="Correr", recurrence_type="forever")
+        )
+
+        # A outra aba chegou primeiro e já gravou a linha do dia.
+        db.session.add(
+            GoalOccurrence(
+                goal_id=goal.id, occurrence_date=today(), status=STATUS_PENDING
+            )
+        )
+        db.session.commit()
+
+        honest = Repo.occurrence
+        calls = {"n": 0}
+
+        def stale(goal_id, day):
+            calls["n"] += 1
+            return None if calls["n"] == 1 else honest(goal_id, day)
+
+        monkeypatch.setattr(Repo, "occurrence", staticmethod(stale))
+
+        status = GoalService.set_status(goal, STATUS_DONE, today())
+
+        assert calls["n"] >= 2, "o retry não chegou a ser exercitado"
+        assert status == STATUS_DONE
+        rows = rows_between(today(), today())
+        assert len(rows) == 1
+        assert rows[0].status == STATUS_DONE
+
     def test_a_series_cannot_be_born_completed(self, app):
         """Marcar a série inteira concluiria terças que ainda não chegaram."""
         goal = GoalService.create(

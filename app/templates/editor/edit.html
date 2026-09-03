@@ -288,6 +288,29 @@
 
       <hr class="divider">
 
+      {# O outro lado do atalho. Da meta se chega ao documento pelo cartão;
+         daqui se volta. Somente leitura: a ligação se edita na meta, que é
+         quem a possui. #}
+      <p class="field-label">Metas ligadas a este documento</p>
+      {% if linked_goals %}
+        <ul class="linked-goals">
+          {% for goal in linked_goals %}
+            <li>
+              <a href="{{ url_for('goals.edit', public_uuid=goal.uuid) }}">
+                {{ icon('rocket', 'icon icon-sm') }} {{ goal.display_title }}
+              </a>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="field-hint">
+          Nenhuma. <a href="{{ url_for('goals.create') }}">Crie uma meta</a>
+          apontando para este documento e ele vira a missão de um dia.
+        </p>
+      {% endif %}
+
+      <hr class="divider">
+
       <p class="field-label">Preferências de PDF deste documento</p>
       {{ select_field(form.page_size) }}
       {{ select_field(form.pdf_theme) }}

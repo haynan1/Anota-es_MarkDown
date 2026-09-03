@@ -163,6 +163,33 @@ class TestRestore:
 
         assert report.goals_created == 1
 
+    def test_a_bad_entry_does_not_take_the_good_ones_with_it(self, app):
+        """Cada entrada vive no seu próprio savepoint.
+
+        Sem isso, o ``rollback`` de uma entrada ruim desfazia a transação
+        inteira — e como a restauração só faz commit no fim, levava junto tudo
+        que já tinha sido restaurado antes dela. O relatório, que conta na
+        hora, continuava dizendo que restaurou: o arquivo devolvia menos dados
+        do que anunciava, e ninguém tinha como saber.
+        """
+        from app.services.backup_service import RestoreReport, _restore_journey
+
+        report = RestoreReport(mode="merge")
+        _restore_journey(
+            {
+                "goals": [
+                    {"uuid": "antes", "title": "Antes", "date": today().isoformat()},
+                    {"uuid": "ruim", "title": "Sem data"},
+                    {"uuid": "depois", "title": "Depois", "date": today().isoformat()},
+                ]
+            },
+            report,
+        )
+
+        assert report.goals_created == 2
+        # E o que o relatório diz é o que o banco tem.
+        assert GoalRepository.total() == report.goals_created
+
     def test_an_executable_link_in_the_archive_is_dropped(self, app):
         """O arquivo é entrada hostil, e um href é execução, não texto.
 

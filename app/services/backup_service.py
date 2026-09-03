@@ -80,6 +80,16 @@ MAX_ARCHIVE_MEMBERS = 20_000
 
 RESTORE_MODES = ("merge", "replace")
 
+# Cada entrada restaurada vive dentro do seu próprio savepoint.
+#
+# Sem isso, `session.rollback()` numa entrada ruim desfaz a transação inteira -
+# e como a restauração só faz commit no fim, isso leva junto tudo que já tinha
+# sido restaurado antes dela. O relatório, que conta na hora, continuava
+# dizendo que restaurou. Um arquivo com uma linha corrompida no meio devolvia
+# menos dados do que anunciava, e ninguém tinha como saber.
+#
+# Com o savepoint, o rollback alcança só a entrada que falhou.
+
 
 @dataclass(slots=True)
 class BackupInfo:
@@ -728,11 +738,11 @@ def _restore_journey(payload: dict, report: RestoreReport) -> None:
         if raw.get("uuid") in existing_goals:
             continue
         try:
-            goal = _restore_goal(raw, documents)
+            with db.session.begin_nested():
+                goal = _restore_goal(raw, documents)
         except Exception as exc:  # noqa: BLE001 - untrusted-input boundary
             logger.exception("Falha ao restaurar meta")
             report.warnings.append(f"Meta ignorada: {type(exc).__name__}")
-            db.session.rollback()
             continue
         existing_goals.add(goal.uuid)
         report.goals_created += 1
@@ -744,11 +754,11 @@ def _restore_journey(payload: dict, report: RestoreReport) -> None:
         if not isinstance(raw, dict) or raw.get("uuid") in existing_templates:
             continue
         try:
-            template = _restore_goal_template(raw, documents)
+            with db.session.begin_nested():
+                template = _restore_goal_template(raw, documents)
         except Exception as exc:  # noqa: BLE001 - untrusted-input boundary
             logger.exception("Falha ao restaurar meta predefinida")
             report.warnings.append(f"Predefinida ignorada: {type(exc).__name__}")
-            db.session.rollback()
             continue
         existing_templates.add(template.uuid)
         report.goal_templates_created += 1
@@ -865,7 +875,8 @@ def restore_backup(source, mode: str = "merge") -> RestoreReport:
             report.documents_skipped += 1
             continue
         try:
-            document = _restore_document(raw)
+            with db.session.begin_nested():
+                document = _restore_document(raw)
         except Exception as exc:  # noqa: BLE001 - untrusted-input boundary
             # The archive is attacker-shaped data: any field can be the wrong
             # type, out of range or malformed. One bad entry must not abort a
@@ -873,7 +884,6 @@ def restore_backup(source, mode: str = "merge") -> RestoreReport:
             # surfaced in the report and the loop continues.
             logger.exception("Falha ao restaurar documento")
             report.warnings.append(f"Documento ignorado: {type(exc).__name__}")
-            db.session.rollback()
             continue
         existing_uuids.add(document.uuid)
         report.documents_created += 1

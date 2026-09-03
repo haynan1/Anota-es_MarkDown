@@ -23,6 +23,8 @@ from dataclasses import dataclass
 from datetime import date as date_type
 from datetime import time as time_type
 
+from sqlalchemy.exc import IntegrityError
+
 from app.extensions import db
 from app.models import Goal, GoalOccurrence, GoalTemplate
 from app.models.goal import (
@@ -46,7 +48,11 @@ from app.repositories.goal_repository import (
 )
 from app.services.exceptions import NotFoundError, ValidationError
 from app.services.goal_schedule import status_on, today
-from app.services.sanitizer import sanitize_link, sanitize_multiline_text, sanitize_plain_text
+from app.services.sanitizer import (
+    sanitize_link,
+    sanitize_multiline_text,
+    sanitize_plain_text,
+)
 from app.utils.dates import utcnow
 
 # Teto do acervo. Nenhuma pessoa administra mais metas do que isto à mão; o
@@ -280,19 +286,37 @@ class GoalService:
             raise ValidationError("Status inválido.")
 
         stamp = utcnow() if status == STATUS_DONE else None
-        if GoalService._is_occurrence(goal, day):
-            occurrence = GoalRepository.occurrence(goal.id, day)
-            if occurrence is None:
-                occurrence = GoalOccurrence(goal_id=goal.id, occurrence_date=day)
-                db.session.add(occurrence)
-            occurrence.status = status
-            occurrence.completed_at = stamp
-        else:
+        if not GoalService._is_occurrence(goal, day):
             goal.status = status
             goal.completed_at = stamp
+            db.session.commit()
+            return status
 
-        db.session.commit()
+        try:
+            GoalService._write_occurrence(goal, day, status, stamp)
+            db.session.commit()
+        except IntegrityError:
+            # Duas abas concluíram o mesmo dia, e a restrição (meta, dia)
+            # recusou a segunda linha. Ler-e-depois-inserir tem uma fresta
+            # entre os dois passos, e é o banco que a fecha - então a resposta
+            # certa é acatar a recusa e escrever na linha que ganhou a corrida,
+            # e não devolver um erro para quem só clicou duas vezes.
+            db.session.rollback()
+            GoalService._write_occurrence(goal, day, status, stamp)
+            db.session.commit()
         return status
+
+    @staticmethod
+    def _write_occurrence(
+        goal: Goal, day: date_type, status: str, stamp
+    ) -> GoalOccurrence:
+        occurrence = GoalRepository.occurrence(goal.id, day)
+        if occurrence is None:
+            occurrence = GoalOccurrence(goal_id=goal.id, occurrence_date=day)
+            db.session.add(occurrence)
+        occurrence.status = status
+        occurrence.completed_at = stamp
+        return occurrence
 
     @staticmethod
     def _is_occurrence(goal: Goal, day: date_type | None) -> bool:
@@ -418,7 +442,9 @@ class GoalService:
         sobre um acervo vazio.
         """
         goals = GoalRepository.delete_all()
-        templates = list(db.session.scalars(db.select(GoalTemplate)).all())
+        templates = list(
+            db.session.scalars(db.select(GoalTemplate).limit(MAX_TEMPLATES)).all()
+        )
         for template in templates:
             db.session.delete(template)
         achievements = AchievementRepository.clear()

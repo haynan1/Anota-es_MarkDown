@@ -28,7 +28,7 @@ from app.services.achievements_catalog import (
     Achievement,
     AchievementContext,
 )
-from app.services.progress_service import build_progress
+from app.services.progress_service import Progress, build_progress
 from app.services.settings_service import SettingsService
 from app.utils.dates import to_local, utcnow
 
@@ -50,8 +50,16 @@ class AchievementCard:
 
 class AchievementService:
     @staticmethod
-    def build_context() -> AchievementContext:
-        progress = build_progress()
+    def build_context(progress: Progress | None = None) -> AchievementContext:
+        """O contexto da jornada.
+
+        ``progress`` é aceito de fora porque quem acabou de calculá-lo não deve
+        pagar por ele de novo: o endpoint da esteira devolve o progresso na
+        resposta *e* pergunta se algo foi desbloqueado, e as duas coisas leem a
+        mesma janela de 400 dias. Sem isto, cada cartão arrastado varria o
+        calendário duas vezes.
+        """
+        progress = progress or build_progress()
         timezone = SettingsService.get("timezone")
 
         categories: Counter[str] = Counter()
@@ -109,7 +117,7 @@ class AchievementService:
         )
 
     @staticmethod
-    def sync() -> list[Achievement]:
+    def sync(progress: Progress | None = None) -> list[Achievement]:
         """Desbloqueia o que passou a ser verdade. Devolve só o que é novidade.
 
         Chamado depois de toda ação que muda a jornada. O retorno é o que a
@@ -117,7 +125,7 @@ class AchievementService:
         além da leitura do contexto.
         """
         unlocked = AchievementRepository.unlocked()
-        context = AchievementService.build_context()
+        context = AchievementService.build_context(progress)
 
         fresh = [
             item

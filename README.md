@@ -923,6 +923,13 @@ MarkDown_Projetos/
   faz de um corpo.
 - **Sem testes de navegador.** O JavaScript foi validado manualmente e por
   verificações de integração; não há Playwright ou Selenium.
+- **A sequência olha 400 dias para trás.** Nenhuma sequência diária real passa
+  disso, e o limite é o que impede o cálculo de crescer com a idade da
+  instalação. O custo é proporcional ao número de metas que se repetem: com 30
+  séries a leitura leva cerca de 30 ms; com centenas, ela apareceria.
+- **O acervo de metas mostra até 400 linhas.** Uma série aparece uma vez, no
+  próximo dia dela, então uma jornada real não chega perto do teto — quem
+  chegar, filtra. A esteira e o plano continuam mostrando os dias.
 - **Os arquivos enviados não entram no backup.** O ZIP guarda documentos,
   histórico, taxonomias, grupos e configurações — as imagens, vídeos e anexos
   ficam em `instance/uploads/`. Copie essa pasta junto ao restaurar em outra

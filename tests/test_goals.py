@@ -89,6 +89,26 @@ class TestTheDocumentLink:
                 GoalInput(title="Meta", document_uuid="nao-existe")
             )
 
+    def test_the_editor_shows_the_goals_pointing_at_the_document(
+        self, client, make_goal, document
+    ):
+        """A ligação tem dois lados.
+
+        Da meta se chega ao documento pelo cartão. Sem este lado, quem abre o
+        texto não saberia que ele é a missão de alguém.
+        """
+        make_goal(title="Terminar a proposta", document_uuid=document.uuid)
+
+        body = client.get(f"/editor/{document.uuid}").data.decode("utf-8")
+
+        assert "Metas ligadas a este documento" in body
+        assert "Terminar a proposta" in body
+
+    def test_the_editor_invites_when_there_is_no_goal(self, client, document):
+        body = client.get(f"/editor/{document.uuid}").data.decode("utf-8")
+
+        assert "Crie uma meta" in body
+
     def test_deleting_the_document_keeps_the_goal(self, app, db, make_goal, document):
         """Perder o texto tira o atalho, nunca o compromisso."""
         goal = make_goal(document_uuid=document.uuid)

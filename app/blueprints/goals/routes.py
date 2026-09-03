@@ -558,6 +558,9 @@ def api_change_status(public_uuid: str):
     day = _read_day(raw_day if isinstance(raw_day, str) else None)
 
     GoalService.set_status(goal, status, day)
+
+    # Calculado uma vez e emprestado: a resposta carrega o progresso e a
+    # sincronização das conquistas pergunta pelos mesmos números.
     progress = build_progress()
 
     return jsonify(
@@ -566,7 +569,7 @@ def api_change_status(public_uuid: str):
             "status": status,
             "achievements": [
                 {"title": item.title, "icon": item.icon}
-                for item in AchievementService.sync()
+                for item in AchievementService.sync(progress)
             ],
             "progress": {
                 "completed": progress.completed,
