@@ -1432,6 +1432,99 @@ a:focus-visible { text-decoration: underline; text-underline-offset: 0.18em; }
 .backup-path { overflow-wrap: anywhere; word-break: break-word; font-family: var(--font-mono); font-size: var(--fs-sm); }
 .form-actions { display: flex; gap: var(--sp-3); flex-wrap: wrap; padding-top: var(--sp-5); border-top: 1px solid var(--rule); margin-top: var(--sp-2); }
 
+/* ── Palette picker ─────────────────────────────────────────────────────────
+   Escolher uma paleta é uma decisão visual, então a opção é a própria imagem
+   do resultado: uma miniatura da aplicação — a barra lateral no tom escuro, a
+   página no tom claro, e a cor de destaque atravessando as duas.
+
+   As três cores chegam por `data-color`, o mesmo mecanismo que pinta as
+   categorias: a CSP proíbe `style=` no HTML, e o JavaScript escreve a
+   propriedade pelo CSSOM, onde ela é permitida.
+   -------------------------------------------------------------------------- */
+
+.palette-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: var(--sp-3);
+  border: 0; margin: 0 0 var(--sp-5); padding: 0;
+  min-width: 0;  /* um <fieldset> tem min-width: min-content por padrão */
+}
+
+.palette-option {
+  display: grid;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  cursor: pointer;
+  transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.palette-option:hover { border-color: var(--border-strong); background: var(--surface-2); }
+
+/* O rádio continua existindo e continua sendo o alvo do teclado; o que some é
+   o círculo, porque o cartão inteiro já é o controle. O anel de foco é
+   desenhado no cartão, via :has, para que quem navega por Tab veja a mesma
+   coisa que quem clica. */
+.palette-radio {
+  position: absolute; width: 1px; height: 1px;
+  padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+.palette-option:has(.palette-radio:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Escolhida: a mesma inversão para tinta que os chips de filtro usam, aqui
+   como anel em vez de preenchimento — o cartão precisa continuar mostrando
+   as cores da paleta, que são o assunto. */
+.palette-option:has(.palette-radio:checked) {
+  border-color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--text);
+  background: var(--surface);
+}
+
+.palette-preview {
+  display: grid;
+  grid-template-columns: 32% 1fr;
+  height: 62px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.palette-preview-rail { background: var(--category-color, var(--surface-sunken)); }
+.palette-preview-page {
+  display: grid; place-items: center;
+  background: var(--category-color, var(--surface));
+}
+.palette-preview-mark {
+  width: 46%; height: 5px;
+  border-radius: var(--radius-full);
+  background: var(--category-color, var(--accent));
+}
+
+.palette-option-body { display: grid; gap: var(--sp-1); min-width: 0; }
+.palette-option-name {
+  display: flex; align-items: center; gap: var(--sp-2);
+  color: var(--text);
+  font-size: var(--fs-md); font-weight: 600;
+}
+/* O visto é o que impede o estado de ser só a borda — uma diferença de
+   espessura de 1px não é uma distinção que todo mundo enxerga. */
+.palette-option-check { opacity: 0; color: var(--accent); margin-left: auto; }
+.palette-option:has(.palette-radio:checked) .palette-option-check { opacity: 1; }
+
+.palette-option-text {
+  color: var(--text-muted);
+  font-size: var(--fs-sm); line-height: 1.5;
+  text-wrap: pretty;
+}
+
+/* A cor de destaque vem depois das paletas e pertence ao mesmo assunto, então
+   ela perde a margem que a separaria como um campo solto. */
+.palette-accent { margin-bottom: 0; }
+
 /* ── Toolbar / filters ──────────────────────────────────────────────────── */
 
 /* Two deliberate rows: the search owns the first line, the four filters share

@@ -24,10 +24,30 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-# The two grounds an accent is read against, from base.css. They are the whole
-# reason the two themes need different answers.
-LIGHT_GROUND = "#FDFCFA"
-DARK_GROUND = "#131110"
+# The two grounds an accent is read against.
+#
+# They are the whole reason the two themes need different answers — and, since
+# the palettes arrived, they are no longer constants: the same gold is a
+# different problem on bone than on paper. ``build_ramp`` takes the grounds it
+# should measure against, and the caller is expected to hand over the *worst*
+# surface of each theme rather than the average one.
+#
+# These remain as the defaults, and they are the default palette's hardest
+# surfaces: the sunken one in the light theme, the raised one in the dark.
+LIGHT_GROUND = "#E7E2D8"
+DARK_GROUND = "#262119"
+
+# The opacity ``theme.css.jinja`` composes ``--accent-soft`` with.
+#
+# It lives here because it is not decoration — it is part of the contrast
+# problem. An accent is written *on its own tint* all over the application: a
+# badge, a selected row, a drop target. That tint is the accent at 11% over
+# whatever it sits on, which drags the ground a little closer to the ink and
+# is therefore always harder than the plain surface.
+#
+# Solving only against the plain surface is what let a gold pass at 5.0:1 and
+# then land at 4.1:1 on the badge that actually used it.
+SOFT_ALPHA = {"light": 0.11, "dark": 0.16}
 
 # Ink used when a light accent needs dark text on top of it.
 LIGHT_INK = "#1A1712"
@@ -119,18 +139,39 @@ def _blend(colour: str, towards: str, amount: float) -> str:
     )
 
 
-def _reach(colour: str, ground: str, towards: str, target: float = AA_TEXT) -> str:
-    """Push ``colour`` toward ``towards`` until it clears ``target`` on ``ground``.
+def _clears(candidate: str, ground: str, target: float, alpha: float) -> bool:
+    """Whether ``candidate`` is readable on ``ground`` *and* on its own tint.
+
+    Two checks, because the accent is written on two different things. On the
+    plain surface it has to clear the theme's aim; on ``--accent-soft`` — the
+    same colour at ``alpha`` over that surface — it only has to clear the AA
+    floor, since a badge is a small thing and the aim above the floor exists
+    to give the plain case some room, not to gold-plate the tint.
+    """
+    if contrast(candidate, ground) < target:
+        return False
+    tint = _blend(ground, candidate, alpha)
+    return contrast(candidate, tint) >= AA_TEXT
+
+
+def _reach(
+    colour: str,
+    ground: str,
+    towards: str,
+    target: float = AA_TEXT,
+    alpha: float = 0.0,
+) -> str:
+    """Push ``colour`` toward ``towards`` until it is readable on ``ground``.
 
     Forty steps of 2.5% each covers the full distance; the loop returns the
     first step that passes, so a colour already above the bar is returned
     untouched and a colour just below it moves as little as it has to.
     """
-    if contrast(colour, ground) >= target:
+    if _clears(colour, ground, target, alpha):
         return colour
     for step in range(1, 41):
         candidate = _blend(colour, towards, step * 0.025)
-        if contrast(candidate, ground) >= target:
+        if _clears(candidate, ground, target, alpha):
             return candidate
     return towards
 
@@ -140,20 +181,31 @@ def _best_ink(background: str) -> str:
     return PAPER if contrast(PAPER, background) >= contrast(LIGHT_INK, background) else LIGHT_INK
 
 
-def build_ramp(seed: str | None) -> AccentRamp:
-    """Derive the legible light and dark accents for one chosen colour."""
+def build_ramp(
+    seed: str | None,
+    light_ground: str = LIGHT_GROUND,
+    dark_ground: str = DARK_GROUND,
+) -> AccentRamp:
+    """Derive the legible light and dark accents for one chosen colour.
+
+    ``light_ground`` and ``dark_ground`` are the *hardest* surfaces the accent
+    will be read on in each theme — the chosen palette's, not this module's
+    defaults. Measuring against the wrong ground is how a colour passes a test
+    and then disappears on screen, and measuring against the average one is
+    how it passes on the page and fails on the badge.
+    """
     base = _format(_parse(seed))
 
     # Light theme: the accent is read as text on near-white, so it descends
-    # toward ink until it clears the bar.
-    light = _reach(base, LIGHT_GROUND, LIGHT_INK, LIGHT_TARGET)
+    # toward ink until it clears the bar — on the surface and on its own tint.
+    light = _reach(base, light_ground, LIGHT_INK, LIGHT_TARGET, SOFT_ALPHA["light"])
     # The hover state is one visible step deeper, and deeper on a pale ground
     # only ever helps contrast — no second check needed.
     light_strong = _blend(light, LIGHT_INK, 0.16)
 
     # Dark theme: the same colour ascends toward paper until it clears the bar
     # against the near-black ground.
-    dark = _reach(base, DARK_GROUND, PAPER, DARK_TARGET)
+    dark = _reach(base, dark_ground, PAPER, DARK_TARGET, SOFT_ALPHA["dark"])
     # Here "stronger" means brighter: deepening a colour on a black ground
     # would walk it back toward invisibility.
     dark_strong = _blend(dark, PAPER, 0.18)

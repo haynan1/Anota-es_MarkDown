@@ -11,6 +11,7 @@ from app.services.backup_service import (
     resolve_backup,
     restore_backup,
 )
+from app.services import palette as palettes
 from app.services.exceptions import ServiceError
 from app.services.media_service import enforce_content_length
 from app.services.pdf_service import engine_info
@@ -33,6 +34,7 @@ def index():
     return render_template(
         "settings/index.html",
         form=form,
+        palettes=palettes.PALETTES,
         backups=list_backups(),
         restore_form=BackupRestoreForm(),
         confirm_form=ConfirmForm(),

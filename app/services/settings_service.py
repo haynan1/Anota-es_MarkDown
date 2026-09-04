@@ -15,6 +15,7 @@ from flask import g
 from app.extensions import db
 from app.models import PAGE_SIZES, PDF_THEMES, Setting
 from app.services.accent import DEFAULT_ACCENT
+from app.services.palette import DEFAULT_PALETTE, PALETTES
 from app.services.sanitizer import sanitize_plain_text
 
 # Settings are a closed set of three shapes, not arbitrary objects. Naming the
@@ -24,6 +25,10 @@ SettingValue: TypeAlias = str | int | bool
 SettingKind: TypeAlias = Literal["str", "int", "bool", "color"]
 
 THEMES = ("auto", "light", "dark")
+# Declarado como ``choices`` e não como texto livre: uma chave desconhecida —
+# vinda de um backup mais novo, de uma edição à mão ou de uma paleta que
+# deixou de existir — volta para a padrão em vez de gerar uma tela sem cores.
+PALETTE_KEYS = tuple(palette.key for palette in PALETTES)
 PDF_FONTS = ("sans", "serif", "mono")
 PDF_MARGINS = ("compact", "normal", "wide")
 
@@ -48,6 +53,7 @@ class SettingDefinition:
 SETTINGS_SCHEMA: tuple[SettingDefinition, ...] = (
     SettingDefinition("app_name", "Markdown Studio", max_length=60),
     SettingDefinition("theme", "auto", choices=THEMES),
+    SettingDefinition("palette", DEFAULT_PALETTE, choices=PALETTE_KEYS),
     SettingDefinition("accent_color", DEFAULT_ACCENT, kind="color"),
     SettingDefinition("timezone", "America/Sao_Paulo", max_length=64),
     SettingDefinition("autosave_seconds", 3, kind="int", minimum=1, maximum=60),

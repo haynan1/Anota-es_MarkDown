@@ -21,17 +21,70 @@
       {{ field(form.app_name) }}
       {{ select_field(form.timezone) }}
       {{ select_field(form.theme) }}
-      <div class="field">
-        {{ form.accent_color.label(class='field-label') }}
-        <div class="row row-tight">
-          {{ form.accent_color(class='color-input', type='color') }}
-          <span class="field-hint">Aplicada em botões, links e destaques.</span>
-        </div>
-        {% for error in form.accent_color.errors %}
-          <span class="field-error">{{ icon('alert', 'icon icon-sm') }}{{ error }}</span>
-        {% endfor %}
-      </div>
       {{ field(form.autosave_seconds, type='number') }}
+    </div>
+  </section>
+
+  {#
+    A paleta é escolhida olhando, não lendo. Cada opção mostra uma miniatura
+    da aplicação — a barra lateral no tom escuro, a página no tom claro, e a
+    cor de destaque atravessando as duas —, porque "Carvão" numa lista
+    suspensa não diz nada a ninguém.
+
+    As cores da miniatura chegam por `data-color`, que é o mecanismo que o
+    resto do app já usa para pintar categorias: a CSP proíbe `style=` no HTML,
+    e o JavaScript escreve a propriedade pelo CSSOM, onde ela é permitida.
+  #}
+  <section class="card card-pad" aria-labelledby="s-palette">
+    <h2 class="card-title" id="s-palette">Paleta</h2>
+    <p class="field-hint">
+      O conjunto de cores da interface: o fundo, o papel dos painéis, a tinta
+      do texto e a régua das bordas. O tema claro e o escuro vêm juntos —
+      trocar a paleta troca os dois.
+    </p>
+    <hr class="divider">
+
+    <fieldset class="palette-picker" data-palette-picker>
+      <legend class="visually-hidden">{{ form.palette.label.text }}</legend>
+      {% for option in form.palette %}
+        {% set palette = palettes[loop.index0] %}
+        <label class="palette-option" for="{{ option.id }}">
+          {{ option(class='palette-radio', **{'data-accent': palette.accent}) }}
+          <span class="palette-preview" aria-hidden="true">
+            <span class="palette-preview-rail" data-color="{{ palette.dark.bg }}"></span>
+            <span class="palette-preview-page" data-color="{{ palette.light.bg }}">
+              <span class="palette-preview-mark" data-color="{{ palette.accent }}"></span>
+            </span>
+          </span>
+          <span class="palette-option-body">
+            <span class="palette-option-name">
+              {{ palette.name }}
+              {# O estado não é só a borda: um visto diz qual está escolhida. #}
+              {{ icon('check', 'icon icon-sm palette-option-check') }}
+            </span>
+            <span class="palette-option-text">{{ palette.description }}</span>
+          </span>
+        </label>
+      {% endfor %}
+    </fieldset>
+
+    <div class="field palette-accent">
+      {{ form.accent_color.label(class='field-label') }}
+      <div class="row row-tight">
+        {{ form.accent_color(class='color-input', type='color') }}
+        <button type="button" class="btn btn-sm" data-action="adopt-palette-accent">
+          Usar a cor da paleta
+        </button>
+      </div>
+      <span class="field-hint">
+        Aplicada em botões, links e destaques. Ela é sua: a paleta só diz com
+        qual cor nasce, e trocar de paleta só substitui esta quando você ainda
+        não tinha escolhido a sua. A aplicação escurece ou clareia o tom o
+        necessário para ele se ler nos dois temas — nunca mais que isso.
+      </span>
+      {% for error in form.accent_color.errors %}
+        <span class="field-error">{{ icon('alert', 'icon icon-sm') }}{{ error }}</span>
+      {% endfor %}
     </div>
   </section>
 
@@ -212,4 +265,8 @@
 </section>
 
 <p class="small subtle section-gap">{{ app_name }} v{{ app_version }}</p>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ url_for('static', filename='js/settings.js') }}" type="module"></script>
 {% endblock %}

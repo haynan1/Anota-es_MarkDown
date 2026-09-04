@@ -150,7 +150,13 @@ depender de internet para funcionar.
 - As metas viajam no backup, com as exceções de cada dia
 
 **Interface**
-- Tema claro, escuro ou automático; cor principal configurável
+- Tema claro, escuro ou automático, e paletas de cor completas — **Papel**
+  (tinta quente sobre papel quente) e **Carvão** (preto neutro e ouro velho).
+  Uma paleta troca o fundo, o papel dos painéis, a tinta do texto e as bordas
+  nos dois temas de uma vez
+- Cor principal configurável por cima da paleta. A aplicação escurece ou
+  clareia o tom escolhido só o necessário para ele se ler nos dois temas —
+  inclusive sobre o próprio tom translúcido, que é onde ele quase sempre falha
 - Responsiva: sidebar recolhível no desktop, navegação inferior no celular
 - Acessibilidade: navegação por teclado, foco visível, ARIA, `prefers-reduced-motion`
 - Nenhum estado comunicado apenas por cor
@@ -265,10 +271,19 @@ models/        Mapeamento SQLAlchemy 2.0.
 
 - **CSP sem `unsafe-inline`.** A aplicação não emite nenhum script nem estilo
   inline. O Python-Markdown gera `style="text-align:…"` em células de tabela; o
-  sanitizador reescreve isso como classe CSS. A cor de destaque escolhida pelo
-  usuário é servida como folha de estilo em `/assets/theme.css`. Cores de
-  categoria chegam como `data-color` e são aplicadas via CSSOM pelo JavaScript,
-  o que a CSP não restringe.
+  sanitizador reescreve isso como classe CSS. A paleta escolhida pelo usuário —
+  superfícies, tinta, bordas e destaque — é servida como folha de estilo em
+  `/assets/theme.css`. Cores de categoria chegam como `data-color` e são
+  aplicadas via CSSOM pelo JavaScript, o que a CSP não restringe.
+
+- **O contraste é calculado, não escolhido.** A cor de destaque do usuário é um
+  hex livre, e um hex livre não sabe em que fundo vai cair. `app/services/`
+  `accent.py` caminha esse tom em direção à tinta ou ao papel — sem tocar no
+  matiz — até ele passar de facto do limite de contraste sobre a superfície
+  mais difícil da paleta em uso, e sobre o próprio tom translúcido com que ele
+  preenche etiquetas. CSS não sabe medir contraste, então isso não podia morar
+  lá. Cada paleta atravessa a mesma bateria de pares na suíte, nos dois temas,
+  antes de existir para alguém.
 
 - **Concorrência otimista por número de revisão.** Cada salvamento envia a
   `revision` que o cliente viu por último. Se não bater, o servidor responde
@@ -302,9 +317,14 @@ models/        Mapeamento SQLAlchemy 2.0.
 - **Dois motores de PDF atrás de uma interface.** WeasyPrint quando disponível,
   xhtml2pdf sempre. Ver [Dependências do WeasyPrint](#dependências-do-weasyprint).
 
-- **Sem bibliotecas externas por CDN.** Ícones são um sprite SVG próprio, o CSS
-  é escrito à mão e as fontes usam a pilha do sistema. A aplicação funciona sem
-  internet.
+- **Sem bibliotecas externas por CDN.** Ícones são um sprite SVG próprio e o
+  CSS é escrito à mão. As três famílias tipográficas — Newsreader para a voz,
+  Public Sans para a interface, JetBrains Mono para rótulos e datas — viajam
+  com a aplicação em subconjuntos `.woff2` sob a OFL, porque a CSP declara
+  `font-src 'self'` e porque a aplicação precisa abrir numa máquina sem rede.
+  Cada pilha termina numa fonte do sistema da mesma espécie, então um arquivo
+  ausente degrada para o *tipo* certo de letra e não para a grotesca da
+  interface. A aplicação funciona sem internet.
 
 ---
 

@@ -4,10 +4,11 @@ from zoneinfo import available_timezones
 
 from flask_wtf import FlaskForm
 from flask_wtf.file import FileAllowed, FileField, FileRequired
-from wtforms import BooleanField, IntegerField, SelectField, StringField
+from wtforms import BooleanField, IntegerField, RadioField, SelectField, StringField
 from wtforms.validators import DataRequired, Length, NumberRange, Optional, Regexp
 
 from app.models import PAGE_SIZE_LABELS, PDF_THEME_LABELS
+from app.services import palette as palettes
 from app.services.settings_service import (
     PDF_FONT_LABELS,
     PDF_MARGIN_LABELS,
@@ -45,6 +46,18 @@ class SettingsForm(FlaskForm):
         validators=[DataRequired(message="Informe um nome."), Length(max=60)],
     )
     theme = SelectField("Tema", choices=_choices(THEME_LABELS))
+    # Um RadioField e não um <select>: as opções são visuais, e uma paleta
+    # escolhida por nome numa lista suspensa é uma paleta escolhida às cegas.
+    # As choices vêm do registro, então acrescentar uma paleta não passa por
+    # este arquivo.
+    #
+    # `validate_choice=False` porque a validação de verdade já acontece uma
+    # camada abaixo: a definição em SETTINGS_SCHEMA declara as mesmas chaves
+    # como ``choices``, e qualquer coisa fora delas volta para a padrão antes
+    # de tocar o banco. Deixar o formulário reprovar aqui só transformaria um
+    # valor impossível de digitar — é um grupo de rádio — numa tela inteira de
+    # configurações recusada.
+    palette = RadioField("Paleta", choices=palettes.choices(), validate_choice=False)
     accent_color = StringField(
         "Cor principal",
         validators=[
@@ -91,7 +104,7 @@ class SettingsForm(FlaskForm):
             raise ValidationError("Fuso horário desconhecido.")
 
     def to_settings(self) -> dict[str, object]:
-        return {
+        values: dict[str, object] = {
             "app_name": self.app_name.data,
             "theme": self.theme.data,
             "accent_color": self.accent_color.data,
@@ -104,6 +117,15 @@ class SettingsForm(FlaskForm):
             "pdf_show_generated_date": self.pdf_show_generated_date.data,
             "backup_keep_last": self.backup_keep_last.data,
         }
+
+        # Ausente significa "não mexa", e não "volte para a padrão". Um envio
+        # sem o campo — um cliente antigo, um script, um formulário montado à
+        # mão — não deve derrubar a paleta escolhida só por não falar dela.
+        # ``update_many`` aplica apenas as chaves que recebe.
+        if self.palette.data:
+            values["palette"] = self.palette.data
+
+        return values
 
 
 class BackupRestoreForm(FlaskForm):

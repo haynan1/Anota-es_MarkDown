@@ -175,12 +175,21 @@ def _register_generated_assets(app: Flask) -> None:
 
     @app.route("/assets/theme.css")
     def theme_css() -> Response:
+        from app.services import palette as palettes
+        from app.services.accent import SOFT_ALPHA, build_ramp
         from app.services.settings_service import SettingsService
 
-        from app.services.accent import DEFAULT_ACCENT, build_ramp
-
-        accent = SettingsService.get("accent_color", DEFAULT_ACCENT)
-        css = render_template("theme.css.jinja", ramp=build_ramp(accent))
+        palette = palettes.get(SettingsService.get("palette"))
+        # A cor de destaque é do usuário; a paleta só diz com qual ela nasce.
+        accent = SettingsService.get("accent_color") or palette.accent
+        # Medida contra a superfície mais difícil de cada tema desta paleta:
+        # a rebaixada no claro, a levantada no escuro. Ver accent.build_ramp.
+        ramp = build_ramp(
+            accent, palette.light.surface_sunken, palette.dark.surface_2
+        )
+        css = render_template(
+            "theme.css.jinja", palette=palette, ramp=ramp, soft_alpha=SOFT_ALPHA
+        )
         response = Response(css, mimetype="text/css")
         response.headers["Cache-Control"] = "no-cache"
         return response

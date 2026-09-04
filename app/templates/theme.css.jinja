@@ -1,31 +1,49 @@
 {#
-  Generated stylesheet carrying the user's accent colour.
+  A folha gerada: a paleta escolhida e a cor de destaque dela.
 
-  Served from /assets/theme.css instead of an inline <style> block so the
-  Content-Security-Policy can stay free of 'unsafe-inline'.
+  Servida em /assets/theme.css em vez de um <style> embutido para que a
+  Content-Security-Policy possa continuar sem 'unsafe-inline'.
 
-  The values below are not the hex the user typed. They come from
-  ``app.services.accent``, which walks that hex toward ink or toward paper
-  until it measurably clears the contrast bar on the ground it will be read
-  on — a different distance for each theme, computed rather than guessed.
-  See that module for why a fixed ``color-mix`` could not do this job.
+  Ela emite o conjunto inteiro de superfícies, não só o destaque. É o que faz
+  "trocar de tema" trocar o fundo, o papel dos painéis, a tinta do texto e a
+  régua das bordas de uma vez — ver app/services/palette.py. Os valores em
+  base.css são a reserva: o que se vê no instante antes desta folha chegar, e
+  o que se veria se ela nunca chegasse.
+
+  As cores de destaque não são o hex que o usuário digitou. Elas saem de
+  app/services/accent.py, que caminha aquele hex em direção à tinta ou ao
+  papel até ele passar de facto do limite de contraste sobre a superfície
+  *desta* paleta — uma distância diferente para cada tema e para cada paleta,
+  calculada e não chutada.
+
+  Nada de cor semântica aqui. Verde de concluído, âmbar de atenção e vermelho
+  de perigo são estado, não estilo, e continuam em base.css valendo para
+  qualquer paleta.
 #}
 :root {
+{% for name, value in palette.light.as_css().items() %}  --{{ name }}: {{ value }};
+{% endfor %}
   --accent:          {{ ramp.light }};
   --accent-strong:   {{ ramp.light_strong }};
-  --accent-soft:     color-mix(in srgb, {{ ramp.light }} 11%, transparent);
+  {# A opacidade vem de accent.SOFT_ALPHA, não de um número escrito aqui: o
+     solver resolve o destaque contando com ela, e as duas divergirem faria a
+     cor ser calculada para um fundo diferente do que a tela pinta. #}
+  --accent-soft:     color-mix(in srgb, {{ ramp.light }} {{ soft_alpha.light * 100 }}%, transparent);
   --accent-line:     color-mix(in srgb, {{ ramp.light }} 34%, transparent);
   --accent-contrast: {{ ramp.light_contrast }};
 
-  /* The colour exactly as chosen, for places where it is a mark rather than
-     a surface carrying text: a category dot, a group's spine, a chart key. */
+  /* A cor exatamente como foi escolhida, para onde ela é uma marca e não uma
+     superfície carregando texto: o ponto de uma categoria, a lombada de um
+     grupo, a chave de um gráfico. */
   --accent-seed:     {{ ramp.seed }};
 }
 
 :root[data-theme="dark"] {
+{% for name, value in palette.dark.as_css().items() %}  --{{ name }}: {{ value }};
+{% endfor %}
   --accent:          {{ ramp.dark }};
   --accent-strong:   {{ ramp.dark_strong }};
-  --accent-soft:     color-mix(in srgb, {{ ramp.dark }} 16%, transparent);
+  --accent-soft:     color-mix(in srgb, {{ ramp.dark }} {{ soft_alpha.dark * 100 }}%, transparent);
   --accent-line:     color-mix(in srgb, {{ ramp.dark }} 40%, transparent);
   --accent-contrast: {{ ramp.dark_contrast }};
   --accent-seed:     {{ ramp.dark }};
