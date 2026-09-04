@@ -150,10 +150,12 @@ depender de internet para funcionar.
 - As metas viajam no backup, com as exceções de cada dia
 
 **Interface**
-- Tema claro, escuro ou automático, e paletas de cor completas — **Papel**
-  (tinta quente sobre papel quente) e **Carvão** (preto neutro e ouro velho).
-  Uma paleta troca o fundo, o papel dos painéis, a tinta do texto e as bordas
-  nos dois temas de uma vez
+- Tema claro, escuro ou automático, e cinco paletas de cor completas —
+  **Papel** (tinta quente sobre papel quente), **Carvão** (preto neutro e ouro
+  velho), **Ardósia** (a aparência original: índigo sobre cartões brancos),
+  **Dark** (azul-meia-noite e azul elétrico) e **Verde** (mata fechada e
+  esmeralda). Uma paleta troca o fundo, o papel dos painéis, a tinta do texto
+  e as bordas nos dois temas de uma vez
 - Cor principal configurável por cima da paleta. A aplicação escurece ou
   clareia o tom escolhido só o necessário para ele se ler nos dois temas —
   inclusive sobre o próprio tom translúcido, que é onde ele quase sempre falha

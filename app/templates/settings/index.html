@@ -50,10 +50,20 @@
         {% set palette = palettes[loop.index0] %}
         <label class="palette-option" for="{{ option.id }}">
           {{ option(class='palette-radio', **{'data-accent': palette.accent}) }}
+          {# A miniatura é uma tela em miniatura, não duas amostras de cor: a
+             barra escura com um painel levantado dentro, a página clara com um
+             cartão em cima e o destaque sobre ele. Seis cores da paleta em
+             62px — o suficiente para duas paletas de temperatura parecida
+             deixarem de ser o mesmo desenho com uma listra de cor diferente. #}
           <span class="palette-preview" aria-hidden="true">
-            <span class="palette-preview-rail" data-color="{{ palette.dark.bg }}"></span>
+            <span class="palette-preview-rail" data-color="{{ palette.dark.bg }}">
+              <span class="palette-preview-panel" data-color="{{ palette.dark.surface_2 }}"></span>
+              <span class="palette-preview-line" data-color="{{ palette.dark.text_muted }}"></span>
+            </span>
             <span class="palette-preview-page" data-color="{{ palette.light.bg }}">
-              <span class="palette-preview-mark" data-color="{{ palette.accent }}"></span>
+              <span class="palette-preview-card" data-color="{{ palette.light.surface }}">
+                <span class="palette-preview-mark" data-color="{{ palette.accent }}"></span>
+              </span>
             </span>
           </span>
           <span class="palette-option-body">

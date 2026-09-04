@@ -56,10 +56,10 @@
   /* The faintest grey the app may set text in. It used to be a blue-grey at
      2.4:1 — decorative, and unreadable by the standard this file claims to
      hold. 4.7:1 on the darkest ground it can land on. */
-  --text-subtle:   #686155;
+  --text-subtle:   #686153;
 
   --border:        #E0DACE;
-  --border-strong: #C6BFB0;
+  --border-strong: #C7BFB0;
   /* The editorial hairline: under a page head, between two figures, across a
      section break. Fainter than --border because it separates regions of the
      page rather than drawing an object's edge. */
@@ -193,10 +193,10 @@
     palette. --surface sits *above* --bg and --surface-sunken *below* it, so
     a recessed rail and a raised panel are both expressible without a shadow.
   */
-  --bg:            #131110;
-  --surface:       #1B1815;
-  --surface-2:     #262119;
-  --surface-sunken: #0B0A09;
+  --bg:            #13110D;
+  --surface:       #1B1813;
+  --surface-2:     #252118;
+  --surface-sunken: #0C0A07;
 
   --text:          #F2EEE7;   /* 16.3:1 on --bg */
   --text-muted:    #A39C90;   /* 6.9:1 on --bg */
@@ -205,8 +205,8 @@
   /* Strong enough to be seen. The previous pair sat at 1.3:1 against the
      page, which is a hairline in the arithmetic and nothing at all on a
      screen — every panel edge in the dark theme was invisible. */
-  --border:        #35302A;
-  --border-strong: #4B453B;
+  --border:        #363025;
+  --border-strong: #4C4537;
   --rule:          color-mix(in srgb, var(--text) 14%, transparent);
 
   --accent:        #6FA8A2;
@@ -1487,15 +1487,45 @@ a:focus-visible { text-decoration: underline; text-underline-offset: 0.18em; }
 
 .palette-preview {
   display: grid;
-  grid-template-columns: 32% 1fr;
+  grid-template-columns: 34% 1fr;
   height: 62px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
 }
-.palette-preview-rail { background: var(--category-color, var(--surface-sunken)); }
+
+/* A barra lateral do tema escuro, com o painel levantado e uma linha de texto
+   de apoio dentro. São esses dois degraus — não o preto da página — que
+   diferenciam um preto azulado de um preto neutro num quadrado de 20px. */
+.palette-preview-rail {
+  position: relative;
+  padding: 8px 6px;
+  display: grid;
+  align-content: start;
+  gap: 5px;
+  background: var(--category-color, var(--surface-sunken));
+}
+.palette-preview-panel {
+  height: 13px;
+  border-radius: 2px;
+  background: var(--category-color, var(--surface-2));
+}
+.palette-preview-line {
+  height: 3px; width: 68%;
+  border-radius: var(--radius-full);
+  background: var(--category-color, var(--text-muted));
+}
+
+/* A página do tema claro, com um cartão levantado sobre ela. */
 .palette-preview-page {
   display: grid; place-items: center;
+  padding: 8px;
+  background: var(--category-color, var(--surface));
+}
+.palette-preview-card {
+  display: grid; place-items: center;
+  width: 100%; height: 100%;
+  border-radius: 2px;
   background: var(--category-color, var(--surface));
 }
 .palette-preview-mark {
